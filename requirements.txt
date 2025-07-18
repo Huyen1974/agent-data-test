@@ -418,7 +418,7 @@ rank-bm25==0.2.2
     # via langroid
 rapidfuzz==3.13.0
     # via thefuzz
-redis==5.3.0
+redis==6.2.0
     # via
     #   fakeredis
     #   langroid
