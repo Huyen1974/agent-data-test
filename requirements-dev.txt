@@ -120,7 +120,7 @@ docstring-parser==0.16
     #   langroid
 docutils==0.21.2
     # via rich-rst
-duckduckgo-search==6.4.2
+duckduckgo-search==8.1.1
     # via langroid
 email-validator==2.2.0
     # via pydantic
