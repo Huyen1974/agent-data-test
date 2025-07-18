@@ -51,7 +51,7 @@ bs4==0.0.2
     # via langroid
 build==1.2.2.post1
     # via pip-tools
-cachetools==5.5.2
+cachetools==6.1.0
     # via google-auth
 cerebras-cloud-sdk==1.35.0
     # via langroid

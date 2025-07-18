@@ -43,7 +43,7 @@ beautifulsoup4==4.13.4
     #   markdownify
 bs4==0.0.2
     # via langroid
-cachetools==5.5.2
+cachetools==6.1.0
     # via google-auth
 cerebras-cloud-sdk==1.35.0
     # via langroid
