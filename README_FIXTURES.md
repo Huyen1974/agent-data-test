@@ -50,11 +50,75 @@ All expected outputs follow the ToolMessage format:
 
 ## Regenerating Fixtures
 
-To regenerate the fixtures (if input queries change):
+### Mock Mode (Default)
+
+To regenerate mock fixtures (safe for CI):
 
 ```bash
 python scripts/gen_fixtures.py
 ```
+
+This mode uses mock data and does not require external API access.
+
+### Real Agent Mode
+
+To generate fixtures using real Langroid agent with OpenAI + Qdrant:
+
+```bash
+python scripts/gen_fixtures.py --no-mock
+```
+
+## Running Real Agent Tests
+
+For real agent testing with OpenAI and Qdrant integration:
+
+### Prerequisites
+
+1. **Environment Variables**: Set the following in your environment:
+   ```bash
+   export OPENAI_API_KEY="your-openai-api-key"
+   export QDRANT_CLUSTER1_KEY="your-qdrant-api-key"
+   export QDRANT_CLUSTER1_ID="your-qdrant-cluster-id"
+   ```
+
+2. **Dependencies**: Install Langroid:
+   ```bash
+   pip install langroid==0.58.0
+   ```
+
+### Real Agent Configuration
+
+- **Collection**: `test_documents` (automatically cleaned before each run)
+- **Schema**: Langroid creates automatically (cosine distance, 384-dim vectors)
+- **Embedding Model**: `text-embedding-3-small` (OpenAI)
+- **Region**: `asia-southeast1`
+- **Clean Collection**: Yes, ensures reproducibility for CI runs
+
+### Running Real Tests
+
+```bash
+# Generate real agent fixtures
+python scripts/gen_fixtures.py --no-mock
+
+# Run tests to validate CPG1.1 (Qdrant connectivity) and CPG1.2 (OpenAI connectivity)
+pytest tests/test_fixture_pipeline.py -m fixture --disable-warnings
+```
+
+### Real Mode Validation
+
+When using `--no-mock`, the tests validate:
+
+- **CPG1.1 (Qdrant Connectivity)**: Response metadata cites `test_documents` collection
+- **CPG1.2 (OpenAI Connectivity)**: Real responses generated with `mock_data: false`
+- **Collection Info**: Proper embedding model and distance metric configuration
+- **Regional Configuration**: Correct asia-southeast1 region usage
+
+### CI Integration
+
+Real agent tests are configured to run only:
+- With `e2e` label on pull requests
+- On manual workflow dispatch
+- Never in normal CI to keep builds fast
 
 This script:
 
@@ -88,7 +152,7 @@ pytest tests/test_fixture_pipeline.py -v
 ### Key Principles
 
 1. **Deterministic**: Same input always produces same output
-2. **Offline**: No external API dependencies
+2. **Offline**: No external API dependencies (mock mode)
 3. **Versioned**: Tied to specific Langroid version (0.58.0)
 4. **Structured**: Consistent JSON schema for all outputs
 
@@ -101,24 +165,26 @@ The test suite validates:
 - Content quality and completeness
 - Metadata consistency across fixtures
 - Offline mode compliance (mock_data flag)
+- Real agent mode validation (when mock_data: false)
 
 ## Integration with CI/CD
 
 Fixture tests are designed to run in CI environments:
 
-- No external dependencies required
+- No external dependencies required (mock mode)
 - Fast execution (< 5 seconds)
 - Clear pass/fail criteria
 - Coverage reporting included
+- E2E tests only run with explicit trigger
 
 ## Future Enhancements
 
-When connecting to real Langroid agents:
+When expanding real agent testing:
 
-1. Update `scripts/gen_fixtures.py` to use actual DocChatAgent
-2. Remove `# MOCK` flags and implement real agent calls
-3. Add environment variable support for API keys
-4. Expand test coverage for edge cases
+1. Add more diverse query types and edge cases
+2. Implement retry logic for transient network issues
+3. Add performance benchmarking for response times
+4. Expand collection management and cleanup utilities
 
 ## File Organization
 
@@ -135,6 +201,10 @@ agent_data/fixtures/
 - **v0.1.0** (2024-07-30): Initial golden fixtures for Langroid 0.58.0
 - Mock-based implementation for CI safety
 - Comprehensive test suite with structure validation
+- **v0.6b** (2025-07-30): Real OpenAI + Qdrant integration
+- Added `--no-mock` flag for real agent testing
+- CPG1.1 (Qdrant connectivity) and CPG1.2 (OpenAI connectivity) validation
+- E2E workflow for controlled real agent testing
 
 ---
 

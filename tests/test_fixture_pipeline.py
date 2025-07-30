@@ -130,9 +130,53 @@ class TestFixturePipeline:
             assert (
                 "mock_data" in metadata
             ), f"{output_key} metadata should have 'mock_data' flag"
-            assert (
-                metadata["mock_data"] is True
-            ), f"{output_key} should be marked as mock data"
+
+    def test_real_agent_mode_validation(
+        self, expected_outputs: dict[str, dict[str, Any]]
+    ):
+        """Test validation for real agent mode (--no-mock flag) when mock_data is False."""
+        for output_key, output_data in expected_outputs.items():
+            metadata = output_data["metadata"]
+
+            # Check if this is real agent mode (mock_data: false)
+            if not metadata.get("mock_data", True):
+                # Real agent mode validation
+
+                # Should have additional metadata fields for real mode
+                assert (
+                    "embedding_model" in metadata
+                ), f"{output_key} should have embedding_model in real mode"
+                assert (
+                    metadata["embedding_model"] == "text-embedding-3-small"
+                ), f"{output_key} should use text-embedding-3-small embedding"
+
+                assert (
+                    "collection_name" in metadata
+                ), f"{output_key} should have collection_name in real mode"
+                assert (
+                    metadata["collection_name"] == "test_documents"
+                ), f"{output_key} should cite test_documents collection"
+
+                assert (
+                    "qdrant_region" in metadata
+                ), f"{output_key} should have qdrant_region in real mode"
+                assert (
+                    metadata["qdrant_region"] == "asia-southeast1"
+                ), f"{output_key} should use asia-southeast1 region"
+
+                # Content should have collection_info for real mode
+                content = output_data["content"]
+                if "collection_info" in content:
+                    collection_info = content["collection_info"]
+                    assert (
+                        collection_info["collection_name"] == "test_documents"
+                    ), f"{output_key} collection_info should reference test_documents"
+                    assert (
+                        collection_info["embedding_model"] == "text-embedding-3-small"
+                    ), f"{output_key} should use correct embedding model"
+                    assert (
+                        collection_info["distance_metric"] == "cosine"
+                    ), f"{output_key} should use cosine distance metric"
 
     def test_output_content_quality(self, expected_outputs: dict[str, dict[str, Any]]):
         """Test that output content has meaningful responses."""
@@ -184,15 +228,18 @@ class TestFixturePipeline:
         ), "Should use Langroid model version"
 
     def test_offline_mode_compliance(self, expected_outputs: dict[str, dict[str, Any]]):
-        """Test that fixtures are marked for offline mode (no external API calls)."""
+        """Test that mock fixtures are marked for offline mode (no external API calls)."""
         for output_key, output_data in expected_outputs.items():
             metadata = output_data["metadata"]
 
-            # Ensure mock_data flag is present and True
+            # Ensure mock_data flag is present
             assert "mock_data" in metadata, f"{output_key} should have mock_data flag"
-            assert (
-                metadata["mock_data"] is True
-            ), f"{output_key} should be marked as mock data"
+
+            # If this is mock mode, ensure it's marked as such
+            if metadata.get("mock_data", True):
+                assert (
+                    metadata["mock_data"] is True
+                ), f"{output_key} should be marked as mock data when in mock mode"
 
     def test_query_response_alignment(
         self,
@@ -227,5 +274,5 @@ def test_fixture_coverage_included():
     test_class = TestFixturePipeline
     test_methods = [method for method in dir(test_class) if method.startswith("test_")]
     assert (
-        len(test_methods) >= 6
+        len(test_methods) >= 7
     ), "Should have multiple test methods for comprehensive coverage"

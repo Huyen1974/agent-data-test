@@ -135,7 +135,37 @@ Nếu CI đỏ, phải:
 
 ---
 
-## 10. Bảo vệ RULES – Không được xóa
+## 10. E2E Tests (CPG1.1, CPG1.2) - Kiểm soát chặt chẽ
+
+### Quy tắc E2E Tests
+- E2E tests (CPG1.1 Qdrant connectivity, CPG1.2 OpenAI connectivity) chỉ được chạy khi:
+  - Pull request có label `e2e` được gán thủ công
+  - Workflow dispatch được kích hoạt thủ công với input `e2e: true`
+- ⛔ **TUYỆT ĐỐI KHÔNG** chạy E2E tests trong normal PR hoặc push để giữ CI nhanh
+
+### Cấu hình E2E Tests
+- **Workflow**: `.github/workflows/agent-e2e.yml`
+- **Dependencies**: `langroid==0.58.0`, `pytest`
+- **Environment**: `OPENAI_API_KEY`, `QDRANT_CLUSTER1_KEY`, `QDRANT_CLUSTER1_ID`
+- **Collection**: `test_documents` (cleaned before each run)
+- **Embedding**: `text-embedding-3-small` (OpenAI)
+- **Region**: `asia-southeast1`
+
+### Validation Requirements
+- **CPG1.1**: Response metadata phải cite `test_documents` collection (Qdrant connectivity)
+- **CPG1.2**: Real responses generated với `mock_data: false` (OpenAI connectivity)
+- **Collection Info**: Đúng embedding model và distance metric
+- **Regional Config**: Đúng asia-southeast1 region
+
+### Command Sequence
+```bash
+python scripts/gen_fixtures.py --no-mock
+pytest tests/test_fixture_pipeline.py -m fixture --disable-warnings
+```
+
+---
+
+## 11. Bảo vệ RULES – Không được xóa
 - Khi cập nhật RULES, Cursor tuyệt đối không được xoá bất kỳ nội dung nào nếu Prompt không cho phép rõ ràng.
 - Chỉ được thêm phần mới nếu Prompt không nói về xoá.
 - Tất cả cập nhật rules phải commit cùng commit logic.
