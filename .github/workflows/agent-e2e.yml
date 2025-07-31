@@ -24,8 +24,7 @@ jobs:
       QDRANT_CLUSTER1_ID: ${{ secrets.QDRANT_CLUSTER1_ID }}
       QDRANT_CLUSTER1_KEY: ${{ secrets.QDRANT_CLUSTER1_KEY }}
       QDRANT_API_KEY: ${{ secrets.QDRANT_CLUSTER1_KEY }}
-      QDRANT_CLUSTER_ID: ${{ secrets.QDRANT_CLUSTER1_ID }}
-      QDRANT_REGION: "asia-southeast1"
+      QDRANT_API_URL: https://${{ secrets.QDRANT_CLUSTER1_ID }}.us-east4-0.gcp.cloud.qdrant.io:6333
     steps:
       - uses: actions/checkout@v4
 
@@ -52,6 +51,15 @@ jobs:
             exit 1
           }
           echo "::notice::✅ GCP SA key test passed"
+
+          # Qdrant API test
+          echo "::notice::Testing Qdrant API connectivity..."
+          curl -fsSL -H "api-key: $QDRANT_API_KEY" \
+            "$QDRANT_API_URL/collections" >/dev/null || {
+            echo "::error::Qdrant API test failed - Check QDRANT_API_KEY and QDRANT_API_URL"
+            exit 1
+          }
+          echo "::notice::✅ Qdrant API test passed"
 
           echo "::notice::✅ All secret smoke tests passed"
 
