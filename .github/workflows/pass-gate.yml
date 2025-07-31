@@ -13,10 +13,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SHA=${{ github.event.pull_request.merge_commit_sha }}
+
+          # Check combined status
           STATE=$(curl -s -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/${{ github.repository }}/commits/$SHA/status \
             | jq -r .state)
+
+          # Check specific contexts
+          CONTEXTS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/${{ github.repository }}/commits/$SHA/status \
+            | jq -r '.statuses[] | select(.context == "agent-e2e" or .context == "lint-only") | .state')
+
           if [[ "$STATE" != "success" ]]; then
             echo "::error::Merged while CI=$STATE – revert!"
             exit 1
           fi
+
+          # Additional check for critical contexts
+          for context_state in $CONTEXTS; do
+            if [[ "$context_state" != "success" ]]; then
+              echo "::error::Critical context failed: $context_state"
+              exit 1
+            fi
+          done

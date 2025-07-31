@@ -69,6 +69,18 @@ for var in "${REQUIRED_VARS[@]}"; do
     fi
 done
 
+# Special validation for QDRANT_API_URL if it exists
+if [[ -n "${QDRANT_API_URL:-}" ]]; then
+    if [[ ! "$QDRANT_API_URL" =~ ^https://.*\.cloud\.qdrant\.io:6333$ ]]; then
+        echo "::error::❌ QDRANT_API_URL format validation failed!"
+        echo "::error::Expected format: https://<cluster-id>.<region>.gcp.cloud.qdrant.io:6333"
+        echo "::error::Got: $QDRANT_API_URL"
+        exit 1
+    else
+        echo "✅ QDRANT_API_URL format validated"
+    fi
+fi
+
 # Report any issues
 if [[ ${#missing_vars[@]} -gt 0 ]] || [[ ${#placeholder_vars[@]} -gt 0 ]]; then
     echo "::error::❌ Secret verification failed!"
