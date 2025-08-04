@@ -108,7 +108,7 @@ duckduckgo-search==6.4.2
     # via langroid
 email-validator==2.2.0
     # via pydantic
-exa-py==1.14.17
+exa-py==1.14.20
     # via langroid
 exceptiongroup==1.3.0
     # via fastmcp
