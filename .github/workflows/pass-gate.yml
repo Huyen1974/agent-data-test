@@ -13,10 +13,39 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SHA=${{ github.event.pull_request.merge_commit_sha }}
+
+          # Check combined status
           STATE=$(curl -s -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/${{ github.repository }}/commits/$SHA/status \
             | jq -r .state)
+
+          # Check specific contexts - get detailed status for agent-e2e and lint-only
+          AGENT_E2E_STATE=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/${{ github.repository }}/commits/$SHA/statuses \
+            | jq -r '.[] | select(.context | contains("agent-e2e")) | .state' | head -1)
+
+          LINT_ONLY_STATE=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/${{ github.repository }}/commits/$SHA/statuses \
+            | jq -r '.[] | select(.context | contains("lint-only")) | .state' | head -1)
+
+          echo "::notice::Combined status: $STATE"
+          echo "::notice::Agent E2E status: $AGENT_E2E_STATE"
+          echo "::notice::Lint-only status: $LINT_ONLY_STATE"
+
           if [[ "$STATE" != "success" ]]; then
             echo "::error::Merged while CI=$STATE – revert!"
             exit 1
           fi
+
+          # Check critical contexts individually
+          if [[ "$AGENT_E2E_STATE" != "success" && -n "$AGENT_E2E_STATE" ]]; then
+            echo "::error::Agent E2E context failed: $AGENT_E2E_STATE"
+            exit 1
+          fi
+
+          if [[ "$LINT_ONLY_STATE" != "success" && -n "$LINT_ONLY_STATE" ]]; then
+            echo "::error::Lint-only context failed: $LINT_ONLY_STATE"
+            exit 1
+          fi
+
+          echo "::notice::✅ All critical CI contexts passed"
