@@ -137,6 +137,7 @@ google-api-core[grpc]==2.25.1
     #   google-api-python-client
     #   google-cloud-core
     #   google-cloud-firestore
+    #   google-cloud-secret-manager
     #   google-cloud-storage
 google-api-python-client==2.176.0
     # via
@@ -150,6 +151,7 @@ google-auth==2.40.3
     #   google-auth-httplib2
     #   google-cloud-core
     #   google-cloud-firestore
+    #   google-cloud-secret-manager
     #   google-cloud-storage
     #   google-genai
 google-auth-httplib2==0.2.0
@@ -159,6 +161,8 @@ google-cloud-core==2.4.3
     #   google-cloud-firestore
     #   google-cloud-storage
 google-cloud-firestore==2.21.0
+    # via agent-data-langroid (pyproject.toml)
+google-cloud-secret-manager==2.24.0
     # via agent-data-langroid (pyproject.toml)
 google-cloud-storage==3.2.0
     # via agent-data-langroid (pyproject.toml)
@@ -170,15 +174,20 @@ google-genai==1.26.0
     # via langroid
 google-resumable-media==2.7.2
     # via google-cloud-storage
-googleapis-common-protos==1.70.0
+googleapis-common-protos[grpc]==1.70.0
     # via
     #   google-api-core
+    #   grpc-google-iam-v1
     #   grpcio-status
 groq==0.30.0
     # via langroid
+grpc-google-iam-v1==0.14.2
+    # via google-cloud-secret-manager
 grpcio==1.73.1
     # via
     #   google-api-core
+    #   googleapis-common-protos
+    #   grpc-google-iam-v1
     #   grpcio-status
     #   langroid
     #   qdrant-client
@@ -327,11 +336,14 @@ proto-plus==1.26.1
     # via
     #   google-api-core
     #   google-cloud-firestore
+    #   google-cloud-secret-manager
 protobuf==6.31.1
     # via
     #   google-api-core
     #   google-cloud-firestore
+    #   google-cloud-secret-manager
     #   googleapis-common-protos
+    #   grpc-google-iam-v1
     #   grpcio-status
     #   onnxruntime
     #   proto-plus

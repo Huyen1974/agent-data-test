@@ -57,7 +57,12 @@ def real_langroid_docchat_agent(query: str) -> dict[str, Any]:
         ) from e
 
     # Check required environment variables
-    required_env_vars = ["OPENAI_API_KEY", "QDRANT_CLUSTER1_ID", "QDRANT_CLUSTER1_KEY"]
+    required_env_vars = [
+        "OPENAI_API_KEY",
+        "QDRANT_CLUSTER1_ID",
+        "QDRANT_CLUSTER1_KEY",
+        "QDRANT_API_KEY",
+    ]
 
     missing_vars = [var for var in required_env_vars if not os.getenv(var)]
     if missing_vars:
