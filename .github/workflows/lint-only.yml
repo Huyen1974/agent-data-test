@@ -198,7 +198,7 @@ jobs:
       TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
       TF_VAR_qdrant_api_key: ${{ secrets.QDRANT_CLUSTER1_KEY }}
       TF_VAR_qdrant_cluster_id: ${{ secrets.QDRANT_CLUSTER1_ID }}
-      TF_VAR_qdrant_region: "asia-southeast1"
+      TF_VAR_qdrant_region: "us-east4"
       SKIP_IMPORT: 'true'
     steps:
       - uses: actions/checkout@v4
@@ -264,12 +264,7 @@ jobs:
 
       - name: Terraform init
         working-directory: terraform
-        run: |
-          terraform init \
-            -backend-config="bucket=huyen1974-agent-data-tfstate-test" \
-            -backend-config="prefix=terraform/state" \
-            -backend-config="skip_bucket_root_access=true" \
-            -input=false
+        run: terraform init -input=false -no-color
 
       - name: Terraform validate
         working-directory: terraform
