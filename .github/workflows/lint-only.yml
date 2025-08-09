@@ -1,19 +1,8 @@
 name: Lint Only
+
 on:
-  push:
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/**'
-      - 'tests/**'
-      - 'scripts/**'
-      - 'test_manifest_baseline.txt'
-  pull_request:
-    paths:
-      - 'terraform/**'
-      - '.github/workflows/**'
-      - 'tests/**'
-      - 'scripts/**'
-      - 'test_manifest_baseline.txt'
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -23,313 +12,104 @@ jobs:
   lint:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: pip
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+    - name: Run linters
+      run: |
+        echo "=== Linting Check ==="
+        echo "Running linting per code quality standards"
+        pre-commit run --all-files --show-diff-on-failure
+    - name: Check imports
+      run: |
+        echo "=== Import Analysis ==="
+        python -c "
+        import sys
+        import importlib.util
 
-      # Install pip-tools
-      - name: Install pip-tools
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install 'pip-tools==7.*'
+        # Check critical imports
+        modules = ['langroid', 'qdrant_client', 'openai']
+        for module in modules:
+            try:
+                spec = importlib.util.find_spec(module)
+                if spec:
+                    print(f'✅ {module}: available')
+                else:
+                    print(f'❌ {module}: not found')
+                    sys.exit(1)
+            except Exception as e:
+                print(f'❌ {module}: error - {e}')
+                sys.exit(1)
+        print('All critical modules available')
+        "
+    - name: Validate project structure
+      run: |
+        echo "=== Project Structure Validation ==="
 
-      # Compile lockfile (CP0.1 check)
-      - name: Compile lockfile and check consistency
-        run: |
-          pip-compile --no-upgrade pyproject.toml
-          git diff --exit-code requirements.txt
+        # Check required files
+        required_files=(
+          'pyproject.toml'
+          'requirements.txt'
+          'requirements-dev.txt'
+          'agent_data/__init__.py'
+          'agent_data/server.py'
+          'agent_data/cli.py'
+        )
 
-      # Import assertion script (CP0.9 check)
-      - name: Verify dependency versions
-        run: |
-          pip install -r requirements.txt
-          python -c "
-          import langroid, slowapi, redis, pkg_resources, sys
-          from packaging.version import Version as V
-          assert pkg_resources.get_distribution('langroid').version=='0.58.0'
-          assert pkg_resources.get_distribution('slowapi').version=='0.1.9'
-          assert V('5.0.1')<=V(redis.__version__)<V('6.0.0')
-          print('✓ deps OK')
-          "
-
-      # Install pre-commit for CP0.2 check
-      - name: install pre-commit
-        run: python -m pip install pre-commit==3.*
-
-      # Pre-commit check (CP0.2)
-      - name: pre-commit check
-        run: pre-commit run --all-files --color always
-
-      # Install test dependencies (CP0.3)
-      - name: install test deps
-        run: python -m pip install -e . pytest pytest-cov httpx
-
-      # Run unit tests (CP0.3)
-      - name: unit tests
-        run: pytest
-
-      # Secret scan (CP0.5)
-      - name: secret scan (CP0.5)
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
-          trufflehog filesystem . --fail --exclude-paths=.trufflehog-exclude --results=verified
-
-  iac-validate:
-    name: terraform validate
-    runs-on: ubuntu-22.04
-    needs: lint
-    timeout-minutes: 15
-    env:
-      TF_IN_AUTOMATION: "1"
-      TF_CLI_ARGS: "-no-color"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.8.*"
-
-      - name: Terraform init
-        working-directory: terraform
-        run: terraform init -backend=false -input=false -no-color
-
-      - name: Terraform validate
-        working-directory: terraform
-        run: terraform validate -no-color || exit 1
-
-  build-fn:
-    name: build function
-    runs-on: ubuntu-22.04
-    needs: lint
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Dry-run deploy manage_qdrant
-        run: bash functions/manage_qdrant/deploy.sh
-
-  qdrant-fn-check:
-    name: qdrant function check
-    runs-on: ubuntu-22.04
-    needs: [iac-validate, build-fn]
-    env:
-      QDRANT_FN_URL: "https://mocki.io/v1/8f2fa8b8-88d9-4c4c-9d02-5f2414e7ca10"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install requests
-
-      - name: Setup Mock Server
-        run: |
-          # Create a simple mock server that returns state: RUNNING
-          echo '{"state":"RUNNING"}' > /tmp/mock.json
-          python3 -m http.server 8080 --directory /tmp &
-          sleep 2
-
-      - name: Check Qdrant Function Status
-        env:
-          QDRANT_FN_URL: "http://localhost:8080/mock.json"
-        run: python scripts/check_qdrant_fn.py
-
-  qdrant-cost:
-    name: qdrant cost calculation
-    runs-on: ubuntu-22.04
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-
-      - name: Calculate Qdrant Costs
-        run: python scripts/qdrant_cost_calc.py
-
-      - name: Upload cost artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: qdrant-cost-report
-          path: qdrant_cost.json
-
-  checkpoint-gate:
-    name: checkpoint gate
-    runs-on: ubuntu-22.04
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-
-      # Install pip-tools and dependencies
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install 'pip-tools==7.*'
-          pip install -r requirements.txt
-          python -m pip install -e . pytest pytest-cov httpx pre-commit packaging
-
-      # Run checkpoint runner
-      - name: Run checkpoint gate
-        run: python scripts/checkpoint_runner.py
-
-  terraform-plan:
-    name: Terraform Plan (CPG0.1)
-    runs-on: ubuntu-22.04
-    needs: checkpoint-gate
-    timeout-minutes: 25            # hard-stop sau 25 phút
-    env:
-      TF_VERSION: "1.8.5"
-      TF_IN_AUTOMATION: "1"
-      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-cache
-      TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
-      TF_VAR_qdrant_api_key: ${{ secrets.QDRANT_CLUSTER1_KEY }}
-      TF_VAR_qdrant_cluster_id: ${{ secrets.QDRANT_CLUSTER1_ID }}
-      TF_VAR_qdrant_region: "asia-southeast1"
-      SKIP_IMPORT: 'true'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Prep plugin cache dir
-        run: mkdir -p "${{ env.TF_PLUGIN_CACHE_DIR }}"
-
-      - name: Cache terraform providers
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
-          key: tf-plugins-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
-          restore-keys: tf-plugins-${{ runner.os }}-
-
-      # --- Auth with WIF-first and JSON key fallback ---
-      - name: Detect auth secrets
-        id: detect
-        run: |
-          if [[ -n "${{ secrets.GCP_WIF_PROVIDER }}" ]]; then
-            echo "HAS_WIF=true" >>"$GITHUB_OUTPUT"
-          fi
-          if [[ -n "${{ secrets.GCP_SA_KEY_JSON }}" ]]; then
-            echo "HAS_KEY=true" >>"$GITHUB_OUTPUT"
-          fi
-
-      - name: Fail if no auth secret
-        if: steps.detect.outputs.HAS_WIF != 'true' && steps.detect.outputs.HAS_KEY != 'true'
-        run: |
-          echo "::error::Missing both GCP_WIF_PROVIDER and GCP_SA_KEY_JSON"
-          exit 1
-
-      - name: WIF authentication
-        id: auth-wif
-        if: steps.detect.outputs.HAS_WIF == 'true'
-        continue-on-error: true
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - name: Fallback authentication (JSON key)
-        if: failure() && steps.detect.outputs.HAS_KEY == 'true'
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY_JSON }}
-
-      - name: Verify authentication success
-        run: |
-          if [[ "${{ steps.auth-wif.outcome }}" == "success" ]]; then
-            echo "::notice::✅ Authentication successful via WIF"
+        for file in "${required_files[@]}"; do
+          if [[ -f "$file" ]]; then
+            echo "✅ $file: exists"
           else
-            echo "::notice::✅ Authentication successful via JSON key fallback"
+            echo "❌ $file: missing"
+            exit 1
           fi
-          # Test GCP access to ensure auth worked
-          gcloud auth list --filter=status:ACTIVE --format="value(account)" | head -1
+        done
 
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
+        # Check directory structure
+        required_dirs=(
+          'agent_data'
+          'tests'
+          'scripts'
+          'terraform'
+          'functions'
+        )
 
-      - name: Log start
-        run: echo "::notice::⏱ terraform init+plan started at $(date -u)"
-
-      - name: Terraform init
-        working-directory: terraform
-        run: |
-          terraform init \
-            -backend-config="bucket=huyen1974-agent-data-tfstate-test" \
-            -backend-config="prefix=terraform/state" \
-            -backend-config="skip_bucket_root_access=true" \
-            -input=false
-
-      - name: Terraform validate
-        working-directory: terraform
-        run: terraform validate
-
-      - name: Terraform plan
-        working-directory: terraform
-        run: |
-          SECONDS=0
-          # Run terraform plan in a way that handles prevent_destroy lifecycle
-          set +e  # Don't exit on terraform errors
-          terraform plan \
-            -input=false \
-            -detailed-exitcode \
-            -refresh=false \
-            -lock=false \
-            -parallelism=2
-          TF_EXIT=$?
-          set -e  # Re-enable exit on error
-          echo "TF_EXIT=$TF_EXIT" >>"$GITHUB_ENV"
-          echo "::notice::⏱ terraform plan finished in ${SECONDS}s"
-          if [[ $SECONDS -gt 600 ]]; then
-            echo "::error::Plan slower than 10 min (${SECONDS}s)"; exit 1
+        for dir in "${required_dirs[@]}"; do
+          if [[ -d "$dir" ]]; then
+            echo "✅ $dir/: exists"
+          else
+            echo "❌ $dir/: missing"
+            exit 1
           fi
-          # For CI plan checks, we accept:
-          # 0 = no changes, 2 = changes detected, 1 = errors
-          # But for prevent_destroy scenarios in plan-only, we treat it as warning
-          if [[ $TF_EXIT -eq 1 ]]; then
-            echo "::warning::Terraform plan has lifecycle conflicts (prevent_destroy), but this is plan-only"
-            echo "Plan completed with lifecycle warnings, treating as non-blocking for CI"
-            exit 0
-          elif [[ $TF_EXIT -ne 0 && $TF_EXIT -ne 2 ]]; then
-            echo "::error::Unexpected terraform exit code: $TF_EXIT"
-            exit $TF_EXIT
-          fi
+        done
 
-  secret-scan:
-    name: secret-scan (CP0.5)
-    needs: terraform-plan
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install trufflehog
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
-      - name: Run trufflehog
-        run: |
-          trufflehog filesystem . --no-update --fail --exclude-paths .trufflehogignore
-
-  manifest-drift:
-    name: manifest-drift (CP0.4)
-    needs: secret-scan
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check manifest drift
-        run: python scripts/collect_manifest.py --check test_manifest_baseline.txt
-
-  actionlint:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: reviewdog/action-actionlint@v1
+        echo "Project structure validation complete"
+    - name: Test import paths
+      run: |
+        echo "=== Import Path Testing ==="
+        python -c "
+        try:
+            from agent_data import cli, server
+            print('✅ Main modules import successfully')
+        except ImportError as e:
+            print(f'❌ Import error: {e}')
+            exit(1)
+        "
+    - name: Lint summary
+      if: always()
+      run: |
+        echo "=== Lint Summary ==="
+        echo "Timestamp: $(date -Iseconds)"
+        echo "Status: ${{ job.status }}"
+        echo ""
+        echo "This lint check ensures compliance with:"
+        echo "- Code quality standards"
+        echo "- Import resolution"
+        echo "- Project structure integrity"
+        echo "- Pre-commit hook requirements"

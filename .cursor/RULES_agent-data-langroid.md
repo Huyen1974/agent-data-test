@@ -1,176 +1,361 @@
-📂 Final: .cursor/RULES_agent-data-langroid.md (Cập nhật 30.07.2025)
+**📜 File Quy tắc Dự án: RULES_agent-data-langroid.md (Version 1.2)**
 
-# ⛔ CURSOR RULES – Agent Data Langroid (critical)
+**Cập nhật:** August 07, 2025 (Phiên bản tuân thủ Hiến pháp v1.11e và các Luật liên quan)
 
-## 1. Project root (edit‑allowed ONLY)
-/Users/nmhuyen/Documents/Manual Deploy/agent-data-langroid
-✅ Mọi thao tác phải nằm trong thư mục này.
-⛔ Không được đọc/ghi/sửa ngoài path.
+**⛔ QUY TẮC CURSOR - DỰ ÁN AGENT DATA LANGROID (Bản Hoàn Chỉnh)**
 
----
+*Tài liệu này là nguồn chân lý duy nhất cho mọi hoạt động của bạn. Mọi hành động phải tuân thủ nghiêm ngặt các quy tắc dưới đây.*
 
-## 2. GitHub repositories
-Bạn đang làm việc với đúng 2 repo:
-- `agent-data-test`
-- `agent-data-production`
+**1. Bối cảnh & Phạm vi Vận hành**
 
-⛔ Không được thao tác với bất kỳ repo nào khác.
+Bạn chỉ làm việc trong các bối cảnh đã được định nghĩa dưới đây.
 
----
+- **Đường dẫn Dự án Duy nhất:**
 
-## 3. Artifact Registry
-Mỗi repo sẽ có Artifact Registry riêng tương ứng:
-- `agent-data-test`
-- `agent-data-production`
+- /Users/nmhuyen/Documents/Manual Deploy/agent-data-langroid
 
-☑️ Lưu Docker, Cloud Functions, Cloud Run... Không tách nhỏ.
+- **Project Google Cloud Duy nhất:**
 
----
+- github-chatgpt-ggcloud
 
-## 4. CI/CD – Kỷ luật tuyệt đối
-✅ Mỗi thay đổi phải đảm bảo CI xanh toàn phần: Cloud Function, Cloud Run, Workflow YAML.
+- **Service Account Duy nhất:**
 
-⛔ Không được merge khi CI còn đỏ dù chỉ 1 bước.
-⛔ Không dùng `continue-on-error: true` trong mọi bước test hoặc validate.
+- chatgpt-deployer@github-chatgpt-ggcloud.iam.gserviceaccount.com
 
----
+- **Các Repository trong Phạm vi:**
 
-## 5. Terraform buckets (do Terraform quản lý)
+- agent-data-test (Repo phát triển & kiểm thử)
 
-| Bucket Name                                           | Repo        |
-|------------------------------------------------------|-------------|
-| huyen1974-agent-data-artifacts-test                  | test        |
-| huyen1974-agent-data-artifacts-production            | production  |
-| huyen1974-agent-data-knowledge-test                  | test        |
-| huyen1974-agent-data-knowledge-production            | production  |
-| huyen1974-agent-data-logs-test                       | test        |
-| huyen1974-agent-data-logs-production                 | production  |
-| huyen1974-agent-data-qdrant-snapshots-test           | test        |
-| huyen1974-agent-data-qdrant-snapshots-production     | production  |
-| huyen1974-agent-data-source-test                     | test        |
-| huyen1974-agent-data-source-production               | production  |
-| huyen1974-agent-data-tfstate-test                    | test        |
-| huyen1974-agent-data-tfstate-production              | production  |
+- agent-data-production (Repo sản phẩm)
 
-➡️ Terraform phải giữ quyền trên các bucket này theo đúng repo tương ứng.
+- chatgpt-githubnew (Repo trung tâm quản lý secrets)
 
----
+- **Kiểm tra nhanh WIF:** Trước khi đẩy các thay đổi liên quan đến quyền hạn, bạn nên chạy lệnh sau trên máy cục bộ để mô phỏng và kiểm tra các điều kiện WIF: gcloud auth application-default login --impersonate-service-account=\$GCP_SERVICE_ACCOUNT
 
-## 6. 🔐 SECRETS & IAM (baseline chuẩn nhất)
+**2. Quy tắc Quản lý Hạ tầng (Terraform)**
 
-| Purpose                  | GitHub secret              | Example / Note                             |
-|--------------------------|----------------------------|---------------------------------------------|
-| GCP project ID           | `GCP_PROJECT_ID`           | `github-chatgpt-ggcloud`                    |
-| Deployer SA              | `GCP_SERVICE_ACCOUNT`      | `chatgpt-deployer@...`                      |
-| WIF provider             | `GCP_WIF_PROVIDER`         | `projects/.../providers/...`                |
-| WIF pool ID              | `GCP_WIF_POOL`             | e.g. `gha-pool`                             |
-| SA fallback key (base64) | `GCP_SA_KEY_JSON`          | Dùng nếu WIF lỗi                            |
-| OpenAI Key               | `OPENAI_API_KEY`           | runtime                                     |
-| Lark app secret          | `LARK_APP_SECRET`          | runtime                                     |
-| Qdrant mgmt key          | `QDRANT_CLOUD_MGMT_KEY`    | cho tạo/xoá cluster                         |
-| Qdrant cluster 1 ID      | `QDRANT_CLUSTER1_ID`       | e.g. `N1D8R2vC0_5`                           |
-| Qdrant cluster 1 key     | `QDRANT_CLUSTER1_KEY`      | auth key cụ thể cho cluster trên            |
+**2.1 Quy ước đặt tên Bucket**
 
-> Quy ước thêm: `QDRANT_CLUSTER{N}_KEY` / `QDRANT_CLUSTER{N}_ID`
+- Mọi bucket do Terraform quản lý hoặc khởi tạo mới **BẮT BUỘC** tuân thủ định dạng:
 
-🌐 GCP secrets lưu tại `github-chatgpt-ggcloud` → Secret Manager
-🔐 GitHub Secrets lưu tại `agent-data-test` / `agent-data-production`
+> \<standard-prefix\>-agent-data-\<purpose\>-\<env\>
 
----
+- **standard-prefix**: cố định là huyen1974.
 
-## 7. IAM roles (đã phân quyền)
+- **Ký tự**: bắt buộc dùng dấu gạch ngang (-), **cấm tuyệt đối** dấu gạch dưới (\_).
 
-✅ Bắt buộc giữ:
-- `roles/viewer`, `roles/cloudasset.viewer`, `roles/artifactregistry.writer`
-- `roles/cloudfunctions.developer`, `roles/iam.serviceAccountUser`
-- `roles/run.admin`, `roles/logging.logWriter`, `roles/secretmanager.secretAccessor`
-- `roles/serviceusage.serviceUsageAdmin`, `roles/storage.admin`
+- **purpose**: mô tả mục đích bucket (ví dụ: tfstate, artifacts, backup).
 
-⛔ Cấm gán thêm:
-- `roles/secretmanager.admin`, `roles/iam.serviceAccountAdmin`
-- `roles/cloudscheduler.admin`, `roles/cloudsql.*`, `roles/pubsub.publisher`
-- `roles/cloudbuild.builds.editor`, `roles/run.invoker`, `roles/workflows.admin`
+- **env**: môi trường áp dụng (dev, test, prod).
 
----
+**
+2.2 Danh sách bucket cụ thể**
 
-## 8. Kiểm soát CI & test count
-### CI Verification Rules
-- Mọi commit phải pass CI với `conclusion == success`
-- Dùng các lệnh kiểm tra:
-```bash
-gh run view --log
-gh run list -L1
-gh run watch --exit-status --interval 15 --timeout 900
-```
-- Terraform: TF_EXIT phải là 0 hoặc 2
-- ⛔ Cấm tuyệt đối dùng continue-on-error trong bất kỳ job test/lint/validate
+| Tên Bucket | Mục đích (\<purpose\>) | Môi trường (\<env\>) |
+|----|----|----|
+| huyen1974-agent-data-artifacts-test | artifacts | test |
+| huyen1974-agent-data-artifacts-production | artifacts | production |
+| huyen1974-agent-data-knowledge-test | knowledge | test |
+| huyen1974-agent-data-knowledge-production | knowledge | production |
+| huyen1974-agent-data-logs-test | logs | test |
+| huyen1974-agent-data-logs-production | logs | production |
+| huyen1974-agent-data-qdrant-snapshots-test | qdrant-snapshots | test |
+| huyen1974-agent-data-qdrant-snapshots-production | qdrant-snapshots | production |
+| huyen1974-agent-data-source-test | source | test |
+| huyen1974-agent-data-source-production | source | production |
+| huyen1974-agent-data-tfstate-test | tfstate | test |
+| huyen1974-agent-data-tfstate-production | tfstate | production |
+| huyen1974-agent-data-backup-test | backup | test |
+| huyen1974-agent-data-backup-production | backup | production |
 
-### Test Count Rules (Manifest Drift & Baseline)
-Nguyên tắc: Mọi thay đổi về số lượng file trong thư mục tests/ phải được kiểm soát chặt chẽ thông qua cơ chế "Manifest Drift" (CP0.4).
-- ✅ Cơ chế kiểm soát: CI sẽ chạy lệnh: `python scripts/check_manifest.py`
-  Lệnh này sẽ so sánh số lượng file trong thư mục tests/ với số lượng đã chốt trong file test_manifest_baseline.txt
-- ❌ CI sẽ thất bại nếu số lượng file không khớp (Manifest drift ≠ 0)
+**
+2.3 Quy định về bảo mật & truy cập**
 
-### Quy trình cập nhật baseline hợp lệ:
-1. Viết file test mới ➜ commit trước đó phải CI xanh
-2. Chạy lệnh: `python scripts/collect_manifest.py > test_manifest_baseline.txt`
-3. Commit cùng lúc:
-   - Các file test mới
-   - File test_manifest_baseline.txt cập nhật
-4. Mô tả commit phải ghi rõ lý do thay đổi số lượng test
-5. CI sau commit phải xanh
+- **Uniform Bucket-Level Access (UBLA)**: tất cả bucket mới **BẮT BUỘC** bật UBLA để tuân thủ **Hiến pháp (HP-02)** và **TF-LAW (§4.3)**.
 
-⛔ Cursor không được chỉnh sửa test mà không cập nhật manifest. Không được tự thêm test nếu chưa pass đủ CI + update manifest.
-📌 Đây là cơ chế bắt buộc để giữ số lượng test ổn định, tránh báo cáo ảo hoặc CI rác.
+- **Legacy bucket**: các bucket được tạo trước khi Hiến pháp có hiệu lực nhưng chưa bật UBLA được xếp loại “legacy” và sẽ được xử lý theo nợ kỹ thuật **TD-TF-01**.
 
----
+**2.4 Lưu ý về cập nhật & bảo trì**
 
-## 9. Báo cáo & tự sửa lỗi (strict)
-Cursor không được báo "PASS" nếu chưa verify bằng log CI.
+- Khi bổ sung hoặc thay đổi bucket, **bắt buộc** cập nhật bảng danh sách ở mục 2.2 để đảm bảo Terraform state và tài liệu luôn đồng bộ.
 
-Nếu CI đỏ, phải:
-1. Kiểm tra log `gh run view`
-2. Tự sửa lỗi và push lại cùng branch
-3. Lặp lại tối đa 3 lần, nếu vẫn fail mới được báo lỗi
+- Mọi thay đổi liên quan đến bucket phải được commit kèm lý do và liên kết tới issue hoặc ticket kỹ thuật liên quan.
 
----
+**3. Quản lý Artifacts & Docker Images**
 
-## 10. E2E Tests (CPG1.1, CPG1.2) - Kiểm soát chặt chẽ
+- **Nơi lưu trữ:** Mọi Docker images, Cloud Functions và các artifact khác phải được lưu trữ trên **Google Artifact Registry**.
 
-### Quy tắc E2E Tests
-- E2E tests (CPG1.1 Qdrant connectivity, CPG1.2 OpenAI connectivity) chỉ được chạy khi:
-  - Pull request có label `e2e` được gán thủ công
-  - Workflow dispatch được kích hoạt thủ công với input `e2e: true`
-- ⛔ **TUYỆT ĐỐI KHÔNG** chạy E2E tests trong normal PR hoặc push để giữ CI nhanh
+- **Phân tách môi trường:** Sẽ có các repository riêng biệt trong Artifact Registry cho mỗi môi trường: agent-data-test và agent-data-production .
 
-### Cấu hình E2E Tests
-- **Workflow**: `.github/workflows/agent-e2e.yml`
-- **Dependencies**: `langroid==0.58.0`, `pytest`
-- **Environment**: `OPENAI_API_KEY`, `QDRANT_CLUSTER1_KEY`, `QDRANT_CLUSTER1_ID`
-- **Collection**: `test_documents` (cleaned before each run)
-- **Embedding**: `text-embedding-3-small` (OpenAI)
-- **Region**: `asia-southeast1`
+- **Chính sách Lưu giữ (Retention):** Việc lưu giữ artifact BẮT BUỘC phải tuân thủ quy trình 2 giai đoạn:
 
-### Validation Requirements
-- **CPG1.1**: Response metadata phải cite `test_documents` collection (Qdrant connectivity)
-- **CPG1.2**: Real responses generated với `mock_data: false` (OpenAI connectivity)
-- **Collection Info**: Đúng embedding model và distance metric
-- **Regional Config**: Đúng asia-southeast1 region
+- **14 ngày:** Các artifact sẽ được tự động đánh dấu là "stale" (cũ) để cảnh báo sớm.
 
-### Command Sequence
-```bash
-python scripts/gen_fixtures.py --no-mock
-pytest tests/test_fixture_pipeline.py -m fixture --disable-warnings
-```
+- **30 ngày:** Một quy trình tự động sẽ tạo GitHub Issue \[CLEANUP\] để yêu cầu phê duyệt dọn dẹp. Việc xóa bỏ chỉ được thực hiện thủ công sau khi Issue được đóng lại.
 
----
+- Báo cáo và Cảnh báo: Một báo cáo tự động hàng tuần qua Slack sẽ tổng hợp số lượng artifact đang được đánh dấu "stale". Báo cáo này BẮT BUỘC phải được cấu hình với một ngưỡng cảnh báo (ví dụ: stale_count \< 5) và sẽ gửi một cảnh báo đặc biệt nếu số lượng vượt ngưỡng này.
 
-## 11. Bảo vệ RULES – Không được xóa
-- Khi cập nhật RULES, Cursor tuyệt đối không được xoá bất kỳ nội dung nào nếu Prompt không cho phép rõ ràng.
-- Chỉ được thêm phần mới nếu Prompt không nói về xoá.
-- Tất cả cập nhật rules phải commit cùng commit logic.
-- Khi remove workflow, dùng `git rm`, không dùng `rm -f`
+### **4. Quản lý Dữ liệu (Firestore & Metadata) 4.1. Quy tắc Quản lý Qdrant**
 
-✅ Đây là quy tắc chuẩn cứng Agent Data Langroid – Cursor phải luôn tuân thủ tuyệt đối.
+- **Tên Cluster:** Cluster bạn làm việc có tên là agent-data-vector-dev-useast4.
 
-🕘 Cập nhật: 2025-07-30
+- **Tên Collection:** Tên collection BẮT BUỘC phải theo định dạng \<env\>\_documents (ví dụ: test_documents, production_documents).
+
+- **Vận Quản lý Trạng thái Cluster:** Mọi tác vụ vận hành (ví dụ: tạm dừng cluster để tiết kiệm chi phí) BẮT BUỘC phải được thực hiện thông qua Cloud Function manage_qdrant. Cụ thể, khi cần tạm dừng cluster, bạn phải gọi đến action stop, vì action này đã bao gồm bước tạo snapshot an toàn theo yêu_cầu của **QD-LAW §4.2**.
+
+<!-- -->
+
+- **Vai trò của Firestore:** Firestore được sử dụng cho hai mục đích chính:
+
+1.  Lưu trữ
+
+> **Session Memory** cho Agent.
+
+2.  Lưu trữ
+
+> **Metadata** cho các vector trong Qdrant.
+
+- **Nguyên tắc Đồng bộ Bất biến:** Mọi thao tác ghi hoặc cập nhật vector vào Qdrant BẮT BUỘC phải được thực hiện song song với việc ghi hoặc cập nhật metadata tương ứng vào Firestore .
+
+- Trong trường-hợp quy trình đồng bộ này gặp lỗi, hệ thống phải có cơ chế gửi cảnh báo ngay lập tức cho Owner (ví dụ: qua Slack) để xử lý thủ công.
+
+- **Cấu trúc Metadata:** Cấu trúc chi tiết của metadata và các nhãn sẽ được định nghĩa trong các tài liệu thiết kế chuyên sâu. Nhiệm vụ của bạn là tuân thủ các cấu trúc đã được định nghĩa trong mã nguồn (ví dụ: Pydantic models).
+
+- **Chính sách Skip Hợp lệ:** Trong trường hợp cluster Qdrant được tạm dừng (trạng thái SUSPENDED), các job CI/CD phụ thuộc vào Qdrant được phép bỏ qua (skip). Ngoại lệ này chỉ hợp lệ nếu Pull Request **KHÔNG** chứa thay đổi trong các đường dẫn file "liên quan đến Qdrant" (tham chiếu GLOBAL RULES - mục 2.3). Trước khi thực thi các tác vụ yêu cầu Qdrant, Owner phải có trách nhiệm kích hoạt lại cluster.
+
+### **5. Quy tắc CI/CD & GitHub**
+
+**5.1 Kiểm soát Lockfile**
+
+- Lockfile (requirements.txt) **BẮT BUỘC** được tạo bằng:
+
+> pip-compile --no-upgrade
+
+- CI sẽ kiểm tra bằng:
+
+> git diff --exit-code requirements.txt
+>
+> để đảm bảo file không bị chỉnh sửa thủ công.
+
+**5.2 Pre-commit Hooks**
+
+- Mọi commit **BẮT BUỘC** phải vượt qua các hook đã được định nghĩa trong .pre-commit-config.yaml, bao gồm:
+
+- black, ruff, trufflehog, manifest-drift.
+
+**5.3 Quy định về Workflow Tổng hợp (Pass Gate)**
+
+- Repository chỉ được phép có duy nhất một workflow được trigger trực tiếp là: .github/workflows/pass-gate.yml
+
+- Các workflow khác (lint-only.yml, terraform-plan.yml, secret-scan.yml, manifest-drift.yml, agent-e2e.yml) **BẮT BUỘC** phải được cấu hình với on: workflow_call và chỉ được kích hoạt bởi pass-gate.yml.
+
+- Các workflow được gọi qua on: workflow_call **CẤM TUYỆT ĐỐI** sử dụng secrets: inherit. Workflow pass-gate.yml chỉ được phép truyền các giá trị đầu vào (inputs) hoặc biến môi trường (env) tối thiểu cần thiết, và không được truyền secrets cho các job được kích hoạt bởi PR từ fork.
+
+**5.4 Branch Protection & Status Check**
+
+- Chỉ thiết lập duy nhất 1 status check Required: **Pass Gate**
+
+- Không để nhiều check riêng lẻ nhằm tránh đánh giá sai trạng thái tổng thể.
+
+- **Ghi chú:** Tên status check "Pass Gate" là cố định. Mọi thay đổi đối với tên job hoặc context trong workflow pass-gate.yml **BẮT BUỘC** phải được cập nhật đồng bộ trong cài đặt Branch Protection để tránh tình trạng merge bị chặn hoặc "xanh giả".
+
+**5.5 Chi tiết Job Gate** và Xử lý ngữ cảnh
+
+- Job tổng hợp trong pass-gate.yml **PHẢI** chạy với điều kiện: if: \${{ always() }}.
+
+<!-- -->
+
+- **Khái niệm REQUIRED_JOBS:** Một danh sách các job con bắt buộc phải thành công được xác định dựa trên ngữ cảnh của Pull Request:
+
+- **PR từ nhánh nội bộ:** Yêu cầu tất cả các job chính (lint, secret-scan, manifest-drift, terraform-plan, agent-e2e).
+
+- **PR từ fork:** Không yêu cầu các job cần secrets/WIF (terraform-plan, agent-e2e).
+
+<!-- -->
+
+- Job gate **PHẢI FAIL** nếu bất kỳ job nào trong danh sách REQUIRED_JOBS có conclusion khác success. Các job skipped không thuộc REQUIRED_JOBS (ví dụ: do PR từ fork) sẽ được bỏ qua.
+
+- **Ghi chú triển khai:** Việc xác định PR từ fork trong workflow có thể được thực hiện bằng điều kiện sau: if: \${{ github.event.pull_request.head.repo.fork == true }}. Dựa vào điều kiện này, danh sách REQUIRED_JOBS sẽ được điều chỉnh để loại bỏ các job cần secrets/WIF.
+
+**5.6 Cấu hình Concurrency và Quy tắc Xác minh**
+
+- File pass-gate.yml **BẮT BUỘC** phải có đoạn sau để hủy các lần chạy CI cũ khi có commit mới, tránh lãng phí tài nguyên và tình trạng đua trạng thái:
+
+> concurrency:
+>
+> group: pass-gate-\${{ github.ref }}
+>
+> cancel-in-progress: true
+
+- **Ghi chú Quan trọng:** Do có thiết lập cancel-in-progress: true, có thể có nhiều CI run được tạo ra rồi bị hủy cho cùng một commit. Vì vậy, bạn **BẮT BUỘC** phải tuân thủ nguyên văn quy trình **Post-push CI Verification** (GLOBAL RULES - mục 2.1): tìm đúng RUN_ID của commit SHA cuối cùng và chỉ theo dõi run đó để tránh đọc nhầm kết quả từ một run đã bị hủy.
+
+**5.7 Terraform Init Chuẩn**
+
+- Trong job plan:
+
+> terraform init -reconfigure -backend-config=terraform/backend.hcl
+
+- Trong job lint-only:
+
+> terraform init -backend=false && terraform validate -no-color
+
+- Cấm mọi backend auto để tránh lỗi “bucket not set”.
+
+**5.8 Quy tắc về Shell an toàn & continue-on-error**
+
+- Tuân thủ nguyên văn **GLOBAL RULES - mục 2.2**. Cấm tuyệt đối continue-on-error (ngoại trừ bước “auth fallback” nếu có), bắt buộc sử dụng shell: bash -euo pipefail {0} cho tất cả các bước run:.
+
+> **5.8.1 Policy Guard cho Trigger và Cấu hình Job**
+>
+> Workflow pass-gate.yml **BẮT BUỘC** phải có một job workflow-policy-guard chạy đầu tiên. Job này có các trách nhiệm sau:
+
+- Sử dụng các công cụ như actionlint hoặc grep để kiểm tra và **làm thất bại (fail)** workflow nếu phát hiện bất kỳ file workflow nào khác (ngoài pass-gate.yml) có chứa trigger on: push hoặc on: pull_request.
+
+- Kiểm tra và làm thất bại workflow nếu phát hiện bất kỳ job nào trong danh sách REQUIRED_JOBS (định nghĩa tại mục 5.5) có sử dụng các điều kiện paths:, paths-ignore:, hoặc if: có khả năng làm job đó bị bỏ qua (skip) một cách không hợp lệ.
+
+- Kiểm tra và làm thất bại workflow nếu phát hiện bất kỳ job nào trong danh sách REQUIRED_JOBS có chứa continue-on-error: true (ngoại trừ các bước "auth fallback" đã được cho phép).
+
+> **5.8.2 File backend.hcl Bắt buộc**
+>
+> Mã nguồn Terraform **BẮT BUỘC** phải có file terraform/backend.hcl được commit vào repository. File này định nghĩa cấu hình backend chuẩn và là nguồn chân lý duy nhất cho việc khởi tạo Terraform.
+>
+> **5.8.3 Khóa cứng Permissions của Workflow**
+>
+> Mọi workflow **BẮT BUỘC** phải được cấu hình với quyền hạn ở mức tối thiểu:
+>
+> permissions: { contents: read }
+>
+> Chỉ những job thực sự cần OIDC mới được cấp thêm id-token: write. Cấm tuyệt đối sử dụng pull_request_target trong các repo con.
+>
+> **5.9 Post-push CI Verification (Chuẩn hóa Log và Artifact)**
+>
+> Quy trình này tuân thủ nguyên văn GLOBAL RULES - mục 2.1, với các chi tiết kỹ thuật được làm rõ như sau:
+
+- **Xác định Lỗi:** Sau mỗi lần push/PR, CI sẽ kiểm tra các run có headSha trùng với commit hiện tại. Nếu có run thất bại (failure, cancelled, timed_out), quy trình tự sửa lỗi sẽ được kích hoạt.
+
+- **Lưu và Trình bày Log:**
+
+- Khi một vòng sửa lỗi bắt đầu, log của job thất bại **BẮT BUỘC** phải được lưu vào một file theo định dạng: .ci/\${SHA}.autofix\<N\>.log (với N là 1 hoặc 2).
+
+- File log này **BẮT BUỘC** phải được tải lên (upload) làm **artifact** của CI run đó.
+
+- **CẤM TUYỆT ĐỐI** commit các file log vào repository. Thư mục .ci/ phải được thêm vào file .gitignore.
+
+- **Quy trình Tự sửa lỗi (Auto-fix):**
+
+- **Vòng 1:** Commit bản sửa lỗi với message bắt đầu bằng \[AUTOFIX-1\] \<root-cause\>.
+
+- **Vòng 2:** Nếu vẫn thất bại, lặp lại quy trình với commit message \[AUTOFIX-2\] \<root-cause\>.
+
+- Sau 2 vòng nếu vẫn thất bại, Cursor phải dừng lại và tạo issue với tiêu đề: 🛑 CI still failing after 2 auto-fixes. Nội dung issue phải đính kèm link đến CI run thất bại cuối cùng.
+
+**5.10 Pass-gate Merge Policy**
+
+- Pull Request **chỉ được merge** khi workflow pass-gate.yml **XANH HOÀN TOÀN**.
+
+**5.11 Tag cho Production Release**
+
+- Tag **PHẢI** theo định dạng:
+
+> vX.Y.Z (ví dụ: v1.2.3)
+
+**5.12 Cảnh báo Nợ Kỹ thuật (tạm thời)**
+
+- Cho đến khi dashboard agent-data-ops hoàn thiện (HP-OBS-01), các CI chính **PHẢI in ra**:
+
+> ::warning:: Giám sát chưa hoàn chỉnh - vui lòng theo dõi thủ công.
+
+**5.13 Chuẩn hoá Múi giờ CI/CD (UTC)**
+
+- Mọi kiểm tra CI/CD, xác thực trạng thái pass-gate, phân tích lịch sử push/pull request BẮT BUỘC phải được thực hiện theo chuẩn múi giờ UTC.
+
+- Quy định này nhằm tránh sự sai lệch giữa thời gian ghi nhận của GitHub Actions runner và các lệnh kiểm tra bằng CLI như gh run view, gh run list.
+
+- Nội dung kế thừa từ tài liệu chính thức: PLAN MERGE TO LAW 1.12 (Mục 4.1 và 4.2).
+
+**6. Quản lý Secrets (CỰC KỲ QUAN TRỌNG)**
+
+- **Nguồn Chân lý:** **Google Secret Manager** là nguồn duy nhất cho giá trị của secrets.
+
+- **Cơ chế Đồng bộ:** Secrets trên GitHub được quản lý **TẬP TRUNG**. Một workflow
+
+> sync-secrets.yml tại repo chatgpt-githubnew là quy trình **DUY NHẤT** được phép ghi (secrets:write) secrets lên các repo agent-data-test và agent-data-production .
+
+- <span class="mark">**Nhiệm vụ của Cursor:** Bạn **KHÔNG ĐƯỢC PHÉP** tạo, sửa, hoặc xóa secrets trực tiếp trên agent-data-test hoặc agent-data-production.</span> Quy trình Xử lý Sự cố (Fallback)**:** Trong trường hợp workflow sync-secrets.yml gặp sự cố kéo dài (\>24h), việc cập nhật thủ công sẽ được thực hiện theo quy trình fallback đã quy định tại GH-LAW §5.5.
+
+- **Danh sách Secrets:** Dưới đây là danh sách các secret bạn sẽ làm việc.
+
+| Mục đích | Tên Secret trên GitHub | Ghi chú |
+|----|----|----|
+| GCP Project ID | GCP_PROJECT_ID | Giá trị: github-chatgpt-ggcloud |
+| Deployer SA | GCP_SERVICE_ACCOUNT | Giá trị: chatgpt-deployer@... |
+| WIF Provider | GCP_WIF_PROVIDER | projects/.../providers/github-provider |
+| WIF Pool | GCP_WIF_POOL | projects/.../workloadIdentityPools/agent-data-pool |
+| SA Fallback Key | GCP_SA_KEY_JSON | Dùng khi WIF lỗi |
+| OpenAI Key | OPENAI_API_KEY | Secret cho runtime |
+| Lark App Secret | LARK_APP_SECRET | Secret cho runtime |
+| Qdrant Mgmt Key | QDRANT_CLOUD_MGMT_KEY | Key quản lý Qdrant Cloud |
+| Qdrant Cluster Key | QDRANT_CLUSTER1_KEY | Key truy cập cluster |
+| Qdrant Cluster ID | QDRANT_CLUSTER1_ID | ID của cluster |
+
+- \*\*Chính sách Luân chuyển:\*\* Các secret quan trọng (ví dụ: QDRANT_CLUSTER1_KEY, OPENAI_API_KEY) phải được luân chuyển định kỳ: 90 ngày cho môi trường production và 120 ngày cho môi trường test.
+
+- **Cảnh báo Luân chuyển:** Một workflow giám sát (secrets-audit.yml) BẮT BUỘC phải được thiết lập để chạy hàng ngày. Workflow này phải có khả năng gửi cảnh báo qua Slack khi một secret quan trọng còn **dưới 15 ngày** là đến hạn luân chuyển.
+
+**7. Quản lý Truy cập (IAM)**
+
+- **Các quyền được phép cấp cho Service Account (chatgpt-deployer@...):**
+
+- roles/artifactregistry.writer
+
+- roles/cloudfunctions.developer
+
+- roles/run.admin
+
+- roles/secretmanager.secretAccessor
+
+- roles/storage.admin
+
+- roles/iam.serviceAccountUser
+
+- roles/viewer
+
+- roles/logging.logWriter
+
+- roles/serviceusage.serviceUsageAdmin
+
+- **Các quyền bị cấm tuyệt đối:**
+
+- roles/secretmanager.admin
+
+- roles/iam.serviceAccountAdmin
+
+- roles/cloudscheduler.admin
+
+- roles/pubsub.publisher
+
+**8. Quy tắc Vận hành & Tự sửa lỗi**
+
+Tất cả quy tắc liên quan đến:
+
+- Giới hạn retry khi CI thất bại
+
+- Quy tắc commit message \[AUTOFIX-x\] kèm mô tả root-cause
+
+- Kiểm soát số lượng test (Manifest Drift) và quy trình cập nhật test_manifest_baseline.txt
+
+- Thời gian chờ tối thiểu giữa các lần retry
+
+- Yêu cầu xác minh CI trước khi báo cáo DONE
+
+- Việc bắt buộc chạy verify_setup.sh (nếu tồn tại trong repo)
+
+- **Quy trình Cập nhật Baseline Hợp lệ:** Khi cần thay đổi (thêm/bớt) file test, Pull Request **BẮT BUỘC** phải có một commit riêng biệt với commit message bắt đầu bằng \[baseline-update\]. Commit này chỉ được chứa thay đổi của các file test và file test_manifest_baseline.txt. Workflow pass-gate sẽ kiểm tra và thất bại nếu số lượng test thay đổi mà không có commit tuân thủ quy trình này.
+
+**→ Được áp dụng nguyên văn từ tài liệu “BNEW GLOBAL RULES CURSOR 1.2”, mục 2.1 và §8.**
+
+Project Rules **không lặp lại chi tiết** để tránh sai lệch. Mọi thay đổi đối với các quy tắc này **phải được cập nhật tại Global Rules**, sau đó Project Rules sẽ mặc định kế thừa.
+
+**9. Quy tắc Bảo vệ RULES**
+
+- Bạn tuyệt đối không được xóa bất kỳ nội dung nào trong file RULES này nếu không được yêu cầu rõ ràng.

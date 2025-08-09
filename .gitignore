@@ -239,3 +239,6 @@ docker-compose.override.yml
 !/.cursor/**
 __pycache__/
 *.py[cod]
+
+# ignore workflow backups
+.github/workflows/*.bak

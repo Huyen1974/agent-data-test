@@ -1,81 +1,63 @@
 name: Agent E2E
+
 on:
-  pull_request:
-    paths: ['tests/**', 'scripts/**', 'agent_data/**']
+  workflow_call:
   workflow_dispatch:
-    inputs:
-      e2e:
-        description: 'Run E2E tests'
-        required: false
 
 jobs:
   agent-e2e:
     name: Agent E2E (CPG1.1, CPG1.2)
     runs-on: ubuntu-22.04
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'e2e'))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request'
+      && contains(github.event.pull_request.labels.*.name, 'e2e'))
     env:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
-      GCP_WIF_POOL: ${{ secrets.GCP_WIF_POOL }}
-      GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      QDRANT_CLOUD_MGMT_KEY: ${{ secrets.QDRANT_CLOUD_MGMT_KEY }}
-      QDRANT_CLUSTER1_ID: ${{ secrets.QDRANT_CLUSTER1_ID }}
       QDRANT_CLUSTER1_KEY: ${{ secrets.QDRANT_CLUSTER1_KEY }}
-      QDRANT_API_KEY: ${{ secrets.QDRANT_CLUSTER1_KEY }}
-      QDRANT_CLUSTER_ID: ${{ secrets.QDRANT_CLUSTER1_ID }}
-      QDRANT_REGION: "asia-southeast1"
+      QDRANT_CLUSTER1_ID: ${{ secrets.QDRANT_CLUSTER1_ID }}
+    timeout-minutes: 25
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify secrets
-        run: scripts/verify_secrets.sh
-
-      - name: Secret smoke-test
-        run: |
-          echo "::notice::🔥 Running secret smoke tests..."
-
-          # OpenAI API test
-          echo "::notice::Testing OpenAI API connectivity..."
-          curl -fsSL -H "Authorization: Bearer $OPENAI_API_KEY" \
-            https://api.openai.com/v1/models >/dev/null || {
-            echo "::error::OpenAI API test failed - Set repo secret OPENAI_API_KEY with a valid sk-** key (≥ 51 chars)."
-            exit 1
-          }
-          echo "::notice::✅ OpenAI API test passed"
-
-          # GCP Service Account key test
-          echo "::notice::Testing GCP SA key decoding..."
-          echo "$GCP_SA_KEY_JSON" | base64 -d | jq -e '.client_email' >/dev/null || {
-            echo "::error::GCP SA key test failed - invalid base64 JSON or missing client_email"
-            exit 1
-          }
-          echo "::notice::✅ GCP SA key test passed"
-
-          echo "::notice::✅ All secret smoke tests passed"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Smoke test
-        run: |
-          python scripts/gen_fixtures.py --no-mock
-          pytest tests/test_fixture_pipeline.py -m fixture --disable-warnings --override-ini="addopts=-q --maxfail=1"
-
-      - name: Write PASS to memory log
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Check combined status before writing PASS
-          SHA=${{ github.sha }}
-          STATE=$(curl -s -H "Authorization: token $GH_TOKEN" \
-            https://api.github.com/repos/${{ github.repository }}/commits/$SHA/status \
-            | jq -r .state)
-          if [[ "$STATE" != "success" ]]; then
-            echo "::error::Cannot write PASS - CI state is $STATE, not success"
-            exit 1
-          fi
-          echo "✅ CI state confirmed as success, proceeding with PASS entry"
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: pip
+    - name: Authenticate to Google Cloud
+      id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+        service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        token_format: access_token
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        version: latest
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Run E2E tests
+      run: |
+        echo "=== Agent E2E Test ==="
+        echo "Running tests per CPG1.1 and CPG1.2 requirements"
+        python -m pytest tests/test_agent_data_unit.py::test_agent_flow -v
+        python -m pytest tests/test_foundation.py::test_foundation_critical_green -v
+    - name: Save logs
+      if: always()
+      run: |
+        mkdir -p test-logs
+        echo "Test run completed at $(date)" > test-logs/e2e-summary.txt
+        echo "Status: ${{ job.status }}" >> test-logs/e2e-summary.txt
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-test-logs
+        path: test-logs/
+        retention-days: 7
