@@ -1,0 +1,271 @@
+name: Security Verify
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+env:
+  PROJ: github-chatgpt-ggcloud
+  PN: 812872501910
+  WIF_POOL: agent-data-pool
+  WIF_PROVIDER_NAME: github-provider
+
+jobs:
+  security-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: chatgpt-deployer@github-chatgpt-ggcloud.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Retrieve PAT from GSM
+        run: |
+          gcloud secrets versions access latest --secret="gh_pat_sync_secrets" > pat.txt
+
+      - name: Verify WIF Attributes
+        id: wif_verify
+        run: |
+          echo "Running WIF attributes verification..."
+          bash scripts/verify_wif_attr.sh | tee wif_verify.json
+          echo "wif_completed=true" >> $GITHUB_OUTPUT
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip requests
+
+      - name: Validate Secrets
+        id: secrets_validate
+        run: |
+          echo "Running secrets validation..."
+          python scripts/validate_secrets_m2.py \
+            --central Huyen1974/chatgpt-githubnew \
+            --child Huyen1974/agent-data-test \
+            --pat-file pat.txt | tee secrets_verify.json
+          echo "secrets_completed=true" >> $GITHUB_OUTPUT
+
+      - name: Fail-fast Gate
+        id: fail_fast
+        run: |
+          echo "Running fail-fast gate validation..."
+
+          # Check WIF verification results
+          wif_includes_central=$(jq -r '.includes.central' wif_verify.json)
+          wif_includes_test=$(jq -r '.includes.test' wif_verify.json)
+          wif_includes_production=$(jq -r '.includes.production' wif_verify.json)
+          wif_mapping_repository=$(jq -r '.mapping.has_repository' wif_verify.json)
+          wif_mapping_ref=$(jq -r '.mapping.has_ref' wif_verify.json)
+          wif_mapping_actor=$(jq -r '.mapping.has_actor' wif_verify.json)
+          wif_sa_central=$(jq -r '.sa_binding.central' wif_verify.json)
+          wif_sa_test=$(jq -r '.sa_binding.test' wif_verify.json)
+          wif_sa_production=$(jq -r '.sa_binding.production' wif_verify.json)
+
+          # Check secrets validation results
+          secrets_central_ok=$(jq -r '.central_min_ok' secrets_verify.json)
+          secrets_child_ok=$(jq -r '.child_min_ok' secrets_verify.json)
+          secrets_pat_ok=$(jq -r '.pat_http_200' secrets_verify.json)
+          secrets_forbidden=$(jq -r '.forbidden_pat_present' secrets_verify.json)
+
+          # Validate all booleans
+          exit_code=0
+
+          # WIF validation
+          if [[ "$wif_includes_central" != "true" ]]; then
+            echo "❌ FAIL: WIF includes central repository"
+            exit_code=1
+          fi
+          if [[ "$wif_includes_test" != "true" ]]; then
+            echo "❌ FAIL: WIF includes test repository"
+            exit_code=1
+          fi
+          if [[ "$wif_includes_production" != "true" ]]; then
+            echo "❌ FAIL: WIF includes production repository"
+            exit_code=1
+          fi
+          if [[ "$wif_mapping_repository" != "true" ]]; then
+            echo "❌ FAIL: WIF mapping has repository attribute"
+            exit_code=1
+          fi
+          if [[ "$wif_mapping_ref" != "true" ]]; then
+            echo "❌ FAIL: WIF mapping has ref attribute"
+            exit_code=1
+          fi
+          if [[ "$wif_mapping_actor" != "true" ]]; then
+            echo "❌ FAIL: WIF mapping has actor attribute"
+            exit_code=1
+          fi
+          if [[ "$wif_sa_central" != "true" ]]; then
+            echo "❌ FAIL: WIF SA binding for central repository"
+            exit_code=1
+          fi
+          if [[ "$wif_sa_test" != "true" ]]; then
+            echo "❌ FAIL: WIF SA binding for test repository"
+            exit_code=1
+          fi
+          if [[ "$wif_sa_production" != "true" ]]; then
+            echo "❌ FAIL: WIF SA binding for production repository"
+            exit_code=1
+          fi
+
+          # Secrets validation
+          if [[ "$secrets_central_ok" != "true" ]]; then
+            echo "❌ FAIL: Central repository secrets validation"
+            exit_code=1
+          fi
+          if [[ "$secrets_child_ok" != "true" ]]; then
+            echo "❌ FAIL: Child repository secrets validation"
+            exit_code=1
+          fi
+          if [[ "$secrets_pat_ok" != "true" ]]; then
+            echo "❌ FAIL: PAT authentication"
+            exit_code=1
+          fi
+          if [[ "$secrets_forbidden" == "true" ]]; then
+            echo "❌ FAIL: Forbidden PAT secrets found"
+            exit_code=1
+          fi
+
+          if [[ $exit_code -eq 0 ]]; then
+            echo "✅ All security validations passed"
+          else
+            echo "🚨 Security validation failed"
+          fi
+
+          echo "gate_result=$exit_code" >> $GITHUB_OUTPUT
+          exit $exit_code
+
+      - name: Generate Checksums & Provenance
+        if: always()
+        run: |
+          echo "Generating checksums and provenance..."
+
+          # Generate checksums
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum wif_verify.json secrets_verify.json > checksums.txt
+          else
+            shasum -a 256 wif_verify.json secrets_verify.json > checksums.txt
+          fi
+
+          # Generate provenance
+          cat > provenance.json <<EOF
+          {
+            "run_id": "${{ github.run_id }}",
+            "commit_sha": "${{ github.sha }}",
+            "prov": "projects/${PN}/locations/global/workloadIdentityPools/${WIF_POOL}/providers/${WIF_PROVIDER_NAME}",
+            "timestamp_iso8601": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+            "workflow": "security-verify",
+            "repository": "${{ github.repository }}",
+            "actor": "${{ github.actor }}"
+          }
+          EOF
+
+      - name: Generate Job Summary
+        if: always()
+        run: |
+          echo "# 🔐 Security Verify Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "**Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # WIF Verification Results
+          echo "## WIF Verification" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f wif_verify.json ]; then
+            wif_includes_central=$(jq -r '.includes.central' wif_verify.json)
+            wif_includes_test=$(jq -r '.includes.test' wif_verify.json)
+            wif_includes_production=$(jq -r '.includes.production' wif_verify.json)
+            wif_mapping_repository=$(jq -r '.mapping.has_repository' wif_verify.json)
+            wif_mapping_ref=$(jq -r '.mapping.has_ref' wif_verify.json)
+            wif_mapping_actor=$(jq -r '.mapping.has_actor' wif_verify.json)
+            wif_sa_central=$(jq -r '.sa_binding.central' wif_verify.json)
+            wif_sa_test=$(jq -r '.sa_binding.test' wif_verify.json)
+            wif_sa_production=$(jq -r '.sa_binding.production' wif_verify.json)
+
+            echo "| Includes Central | $([[ $wif_includes_central == 'true' ]] && echo '✅' || echo '❌') $wif_includes_central |" >> $GITHUB_STEP_SUMMARY
+            echo "| Includes Test | $([[ $wif_includes_test == 'true' ]] && echo '✅' || echo '❌') $wif_includes_test |" >> $GITHUB_STEP_SUMMARY
+            echo "| Includes Production | $([[ $wif_includes_production == 'true' ]] && echo '✅' || echo '❌') $wif_includes_production |" >> $GITHUB_STEP_SUMMARY
+            echo "| Mapping Repository | $([[ $wif_mapping_repository == 'true' ]] && echo '✅' || echo '❌') $wif_mapping_repository |" >> $GITHUB_STEP_SUMMARY
+            echo "| Mapping Ref | $([[ $wif_mapping_ref == 'true' ]] && echo '✅' || echo '❌') $wif_mapping_ref |" >> $GITHUB_STEP_SUMMARY
+            echo "| Mapping Actor | $([[ $wif_mapping_actor == 'true' ]] && echo '✅' || echo '❌') $wif_mapping_actor |" >> $GITHUB_STEP_SUMMARY
+            echo "| SA Binding Central | $([[ $wif_sa_central == 'true' ]] && echo '✅' || echo '❌') $wif_sa_central |" >> $GITHUB_STEP_SUMMARY
+            echo "| SA Binding Test | $([[ $wif_sa_test == 'true' ]] && echo '✅' || echo '❌') $wif_sa_test |" >> $GITHUB_STEP_SUMMARY
+            echo "| SA Binding Production | $([[ $wif_sa_production == 'true' ]] && echo '✅' || echo '❌') $wif_sa_production |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| WIF Verification | ❌ Failed to generate results |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Secrets Validation Results
+          echo "## Secrets Validation" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f secrets_verify.json ]; then
+            secrets_central_ok=$(jq -r '.central_min_ok' secrets_verify.json)
+            secrets_child_ok=$(jq -r '.child_min_ok' secrets_verify.json)
+            secrets_pat_ok=$(jq -r '.pat_http_200' secrets_verify.json)
+            secrets_forbidden=$(jq -r '.forbidden_pat_present' secrets_verify.json)
+
+            echo "| Central Min OK | $([[ $secrets_central_ok == 'true' ]] && echo '✅' || echo '❌') $secrets_central_ok |" >> $GITHUB_STEP_SUMMARY
+            echo "| Child Min OK | $([[ $secrets_child_ok == 'true' ]] && echo '✅' || echo '❌') $secrets_child_ok |" >> $GITHUB_STEP_SUMMARY
+            echo "| PAT HTTP 200 | $([[ $secrets_pat_ok == 'true' ]] && echo '✅' || echo '❌') $secrets_pat_ok |" >> $GITHUB_STEP_SUMMARY
+            echo "| Forbidden PAT Present | $([[ $secrets_forbidden == 'false' ]] && echo '✅' || echo '❌') $secrets_forbidden |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Secrets Validation | ❌ Failed to generate results |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Checksums
+          echo "## Checksums" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          if [ -f checksums.txt ]; then
+            cat checksums.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Failed to generate checksums" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          # Overall Result
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Overall Result" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.fail_fast.outputs.gate_result }}" == "0" ]]; then
+            echo "🎉 **All security validations passed successfully!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "🚨 **Security validation failed - review results above**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Security Verify Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-verify
+          path: |
+            wif_verify.json
+            secrets_verify.json
+            checksums.txt
+            provenance.json
+          retention-days: 30
