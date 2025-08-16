@@ -18,10 +18,9 @@ resource "google_storage_bucket" "huyen1974_agent_data_artifacts_test" {
   location      = "ASIA-SOUTHEAST1"
   storage_class = "STANDARD"
   force_destroy = false
-  iam_configuration {
-    uniform_bucket_level_access = true
-  }
-  public_access_prevention = "inherited"
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "inherited"
 
   versioning {
     enabled = true
@@ -45,10 +44,9 @@ resource "google_storage_bucket" "huyen1974_agent_data_knowledge_test" {
   location      = "ASIA-SOUTHEAST1"
   storage_class = "STANDARD"
   force_destroy = false
-  iam_configuration {
-    uniform_bucket_level_access = true
-  }
-  public_access_prevention = "inherited"
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "inherited"
 
   versioning {
     enabled = true
@@ -72,10 +70,9 @@ resource "google_storage_bucket" "huyen1974_agent_data_logs_test" {
   location      = "ASIA-SOUTHEAST1"
   storage_class = "STANDARD"
   force_destroy = false
-  iam_configuration {
-    uniform_bucket_level_access = true
-  }
-  public_access_prevention = "inherited"
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "inherited"
 
   versioning {
     enabled = true
@@ -99,10 +96,9 @@ resource "google_storage_bucket" "huyen1974_agent_data_qdrant_snapshots_test" {
   location      = "ASIA-SOUTHEAST1"
   storage_class = "STANDARD"
   force_destroy = false
-  iam_configuration {
-    uniform_bucket_level_access = true
-  }
-  public_access_prevention = "inherited"
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "inherited"
 
   versioning {
     enabled = true
@@ -126,10 +122,9 @@ resource "google_storage_bucket" "huyen1974_agent_data_source_test" {
   location      = "ASIA-SOUTHEAST1"
   storage_class = "STANDARD"
   force_destroy = false
-  iam_configuration {
-    uniform_bucket_level_access = true
-  }
-  public_access_prevention = "inherited"
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "inherited"
 
   versioning {
     enabled = true
@@ -153,10 +148,9 @@ resource "google_storage_bucket" "huyen1974_agent_data_tfstate_test" {
   location      = "ASIA-SOUTHEAST1"
   storage_class = "STANDARD"
   force_destroy = false
-  iam_configuration {
-    uniform_bucket_level_access = true
-  }
-  public_access_prevention = "inherited"
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "inherited"
 
   versioning {
     enabled = true
