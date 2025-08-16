@@ -8,16 +8,16 @@
 - Generated: 20250815T091653Z
 
 ## Required Jobs (all success)
-- actionlint	success: 
-- lint	success: 
-- checkpoint gate	success: 
-- qdrant cost calculation	success: 
-- terraform validate	success: 
-- build function	success: 
-- qdrant function check	success: 
-- Terraform Plan (CPG0.1)	success: 
-- secret-scan (CP0.5)	success: 
-- manifest-drift (CP0.4)	success: 
+- actionlint	success:
+- lint	success:
+- checkpoint gate	success:
+- qdrant cost calculation	success:
+- terraform validate	success:
+- build function	success:
+- qdrant function check	success:
+- Terraform Plan (CPG0.1)	success:
+- secret-scan (CP0.5)	success:
+- manifest-drift (CP0.4)	success:
 
 ## Notes
 - Auth path: WIF (no JSON-key fallback used).
