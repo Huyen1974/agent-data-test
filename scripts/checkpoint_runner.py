@@ -9,9 +9,73 @@ checkpoint is not green.
 Reuses C1 pattern: clear error messages, proper exit codes, and verification logic.
 """
 
+import os
+
+# --- begin: robust trufflehog installer for CP0.5 ---
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+
+def ensure_trufflehog(bin_dir="/tmp", max_attempts=4, curl_timeout=180):
+    """
+    Ensure trufflehog binary is present and runnable.
+    Strategy:
+      1) If `trufflehog` already in PATH -> return that.
+      2) Download via official install.sh with curl retries and longer timeout.
+      3) Verify with `--version` and return absolute path.
+    Raise RuntimeError if all attempts fail.
+    """
+    # 1) Already available?
+    existing = shutil.which("trufflehog")
+    if existing:
+        return existing
+
+    os.makedirs(bin_dir, exist_ok=True)
+    installer = "https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh"
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            # Download installer script to local file to avoid pipe timeout quirks
+            subprocess.run(
+                [
+                    "curl",
+                    "-fsSLo",
+                    f"{bin_dir}/th_install.sh",
+                    installer,
+                    "--retry",
+                    "5",
+                    "--retry-delay",
+                    "2",
+                    "--retry-all-errors",
+                    "--max-time",
+                    str(curl_timeout),
+                ],
+                check=True,
+                timeout=curl_timeout + 30,
+            )
+            # Run installer to put binary into bin_dir
+            subprocess.run(
+                ["bash", f"{bin_dir}/th_install.sh", "-b", bin_dir],
+                check=True,
+                timeout=curl_timeout + 30,
+            )
+            # Path after install
+            th_path = os.path.join(bin_dir, "trufflehog")
+            # Verify
+            subprocess.run([th_path, "--version"], check=True, timeout=20)
+            return th_path
+        except subprocess.SubprocessError as e:
+            if attempt == max_attempts:
+                raise RuntimeError(
+                    f"trufflehog install failed after {max_attempts} attempts: {e}"
+                ) from e
+            time.sleep(2 * attempt)  # backoff and retry
+
+
+# --- end: robust trufflehog installer for CP0.5 ---
 
 
 def check_lockfile_consistency():
@@ -113,29 +177,13 @@ def check_manifest_drift():
 def check_secret_scan():
     """Check CP0.5: Secret scan 0 findings."""
     try:
-        # Check if trufflehog is available
-        result = subprocess.run(
-            ["which", "trufflehog"],
-            capture_output=True,
-            text=True,
-        )
-
-        if result.returncode != 0:
-            # Install trufflehog temporarily for CI
-            install_cmd = [
-                "bash",
-                "-c",
-                "curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /tmp",
-            ]
-            subprocess.run(install_cmd, check=True, timeout=60)
-            trufflehog_path = "/tmp/trufflehog"
-        else:
-            trufflehog_path = "trufflehog"
+        # Use robust trufflehog installer
+        th = ensure_trufflehog()
 
         # Run trufflehog scan
         scan_result = subprocess.run(
             [
-                trufflehog_path,
+                th,
                 "filesystem",
                 ".",
                 "--fail",
