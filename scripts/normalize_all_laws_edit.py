@@ -39,8 +39,8 @@ def normalize_filename(path):
 
 
 def first_nonempty_idx(lines):
-    for i, l in enumerate(lines):
-        if l.strip():
+    for i, line in enumerate(lines):
+        if line.strip():
             return i
     return None
 
@@ -97,13 +97,13 @@ def transform(md_text):
         lines[idx] = "# " + lines[idx].strip()
 
     # 2) Promote "Điều …" lines to H2 (add "## " only)
-    for i, l in enumerate(lines):
-        if is_dieu_heading(l) and not l.startswith("#"):
-            lines[i] = "## " + l.strip()
+    for i, line in enumerate(lines):
+        if is_dieu_heading(line) and not line.startswith("#"):
+            lines[i] = "## " + line.strip()
 
     # 3) Bullets that start with "•" become real list items by adding "- " before the existing bullet
-    for i, l in enumerate(lines):
-        s = l.lstrip()
+    for i, line in enumerate(lines):
+        s = line.lstrip()
         if s.startswith("•"):
             prefix = ""  # we don't want to indent-change user content
             lines[i] = prefix + "- " + s  # keep the original "•" and text as-is
