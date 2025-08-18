@@ -122,7 +122,6 @@ def transform(md: str) -> str:
         det = detect_2col_table(lines, i)
         if det:
             a, b, block = det
-            header = parse_cells(block[0])
             body = block[2:]
             # bullet-as-table case: every body row has first cell exactly "- •"
             bullets = []
@@ -253,7 +252,7 @@ def main():
     print("🎉 DONE — structure fixed for LLM understanding, text meaning preserved.")
     print("Edit file:", target)
     print("Backup   :", bak)
-    print("Checks   : strict_ok=%s, soft_ok=%s" % (strict_ok, soft_ok))
+    print(f"Checks   : strict_ok={strict_ok}, soft_ok={soft_ok}")
 
 
 if __name__ == "__main__":
