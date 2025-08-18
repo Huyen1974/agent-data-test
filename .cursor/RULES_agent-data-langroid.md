@@ -6,17 +6,48 @@
 /Users/nmhuyen/Documents/Manual Deploy/agent-data-langroid
 ✅ Mọi thao tác phải nằm trong thư mục này.
 ⛔ Không được đọc/ghi/sửa ngoài path.
-### GH Auth Bootstrap (bắt buộc trước khi dùng `gh`)
-- **Project GSM**: `github-chatgpt-ggcloud`
-- **Service Account điều hành**: `chatgpt-deployer@github-chatgpt-ggcloud.iam.gserviceaccount.com`
-- **Secret**: `gh_pat_sync_secrets` (PAT có scopes: repo, workflow)
+### GH Auth Bootstrap — Canonical Rule (không tự tạo)
+#### Mục đích
+Bảo đảm `gh` đã đăng nhập bằng PAT từ Google Secret Manager trước khi chạy bất kỳ lệnh GitHub nào (`gh run`, `gh pr`, `gh api`…).
 
-**Cách chạy:**
+#### Nguồn chuẩn (không tạo lại)
+- **Script chính thức**: `scripts/bootstrap_gh.sh` (được duy trì bởi Maintainers).
+- **Checksum khóa**: `.ci/bootstrap_gh.sha256` (để phát hiện mọi thay đổi trái phép).
+- **GSM Project**: `github-chatgpt-ggcloud`
+- **Secret (PAT)**: `gh_pat_sync_secrets` (phải có scopes: `repo`, `workflow`)
+- **Service Account điều hành**: `chatgpt-deployer@github-chatgpt-ggcloud.iam.gserviceaccount.com`
+
+#### QUY TẮC BẮT BUỘC
+- **Tuyệt đối KHÔNG** tạo mới hay sửa file `scripts/bootstrap_gh.sh`. Nếu file bị mất hoặc sai checksum, phải dừng ngay và yêu cầu Maintainers khôi phục.
+- Mọi CLI chỉ được phép sử dụng bootstrap theo 2 chế độ: `verify` (đọc PAT và không ghi cấu hình) và `apply` (đăng nhập vào keychain cục bộ nếu cần).
+- Nếu phát hiện logic bootstrap *inline* trong các script cũ (ví dụ `M5.1_cli01_verify.sh`), chúng được xem là **LEGACY**: được phép chạy để kiểm tra, nhưng không được dùng để tạo/sao chép/ghi đè nội dung bootstrap.
+
+#### Cách dùng bắt buộc trong mọi CLI trước khi gọi `gh ...`
 ```bash
-# Xác thực và đăng nhập (nếu cần)
-PROJECT="github-chatgpt-ggcloud" SECRET_NAME="gh_pat_sync_secrets" scripts/bootstrap_gh.sh apply
-# Kiểm tra trạng thái đăng nhập
-gh auth status -h github.com
+# B1: KIỂM TRA TÍNH TOÀN VẸN CỦA BOOTSTRAP
+# Phải tồn tại cả script và file checksum của nó.
+test -f scripts/bootstrap_gh.sh || { echo "❌ Missing scripts/bootstrap_gh.sh — Abort"; exit 1; }
+test -f .ci/bootstrap_gh.sha256 || { echo "❌ Missing .ci/bootstrap_gh.sha256 — Abort"; exit 1; }
+
+# So sánh checksum hiện tại với checksum đã khóa để chống sửa đổi.
+sha_now="$(shasum -a 256 scripts/bootstrap_gh.sh | awk '{print $1}')" && \
+sha_ref="$(cat .ci/bootstrap_gh.sha256 | tr -d '\r\n')" && \
+[ "$sha_now" = "$sha_ref" ] || { echo "❌ Bootstrap checksum mismatch — Abort"; exit 1; }
+
+# B2: THỰC THI XÁC THỰC
+# Luôn thử 'verify' trước. Nếu chưa đăng nhập, mới chạy 'apply'.
+PROJECT="github-chatgpt-ggcloud" SECRET_NAME="gh_pat_sync_secrets" scripts/bootstrap_gh.sh verify || true
+gh auth status -h github.com >/dev/null 2>&1 || \
+  PROJECT="github-chatgpt-ggcloud" SECRET_NAME="gh_pat_sync_secrets" scripts/bootstrap_gh.sh apply
+
+# B3: KIỂM TRA KẾT QUẢ SAU CÙNG
+# Phải đăng nhập thành công và có đủ scopes 'repo', 'workflow'.
+gh auth status -h github.com >/dev/null 2>&1 || { echo "❌ gh not authenticated after bootstrap"; exit 1; }
+scopes="$(gh api -i /user | awk -F': ' 'tolower($1)~/^x-oauth-scopes/ {print $2}')" && \
+  echo "$scopes" | tr ',' '\n' | tr -d ' ' | grep -qi '^repo$'     || { echo "❌ Missing scope: repo"; exit 1; } && \
+  echo "$scopes" | tr ',' '\n' | tr -d ' ' | grep -qi '^workflow$' || { echo "❌ Missing scope: workflow"; exit 1; }
+
+echo "✅ GH Bootstrap successful."
 
 ---
 
