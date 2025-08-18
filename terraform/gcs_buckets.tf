@@ -19,7 +19,7 @@ resource "google_storage_bucket" "huyen1974_agent_data_artifacts_test" {
   storage_class = "STANDARD"
   force_destroy = false
 
-  uniform_bucket_level_access = false
+  uniform_bucket_level_access = true
   public_access_prevention    = "inherited"
 
   versioning {
@@ -45,7 +45,7 @@ resource "google_storage_bucket" "huyen1974_agent_data_knowledge_test" {
   storage_class = "STANDARD"
   force_destroy = false
 
-  uniform_bucket_level_access = false
+  uniform_bucket_level_access = true
   public_access_prevention    = "inherited"
 
   versioning {
@@ -71,7 +71,7 @@ resource "google_storage_bucket" "huyen1974_agent_data_logs_test" {
   storage_class = "STANDARD"
   force_destroy = false
 
-  uniform_bucket_level_access = false
+  uniform_bucket_level_access = true
   public_access_prevention    = "inherited"
 
   versioning {
@@ -97,7 +97,7 @@ resource "google_storage_bucket" "huyen1974_agent_data_qdrant_snapshots_test" {
   storage_class = "STANDARD"
   force_destroy = false
 
-  uniform_bucket_level_access = false
+  uniform_bucket_level_access = true
   public_access_prevention    = "inherited"
 
   versioning {
@@ -123,7 +123,7 @@ resource "google_storage_bucket" "huyen1974_agent_data_source_test" {
   storage_class = "STANDARD"
   force_destroy = false
 
-  uniform_bucket_level_access = false
+  uniform_bucket_level_access = true
   public_access_prevention    = "inherited"
 
   versioning {
@@ -149,7 +149,7 @@ resource "google_storage_bucket" "huyen1974_agent_data_tfstate_test" {
   storage_class = "STANDARD"
   force_destroy = false
 
-  uniform_bucket_level_access = false
+  uniform_bucket_level_access = true
   public_access_prevention    = "inherited"
 
   versioning {

@@ -1,0 +1,19 @@
+# M5-APPLY-GATE (do not remove) — manual apply gate; safe stub (no real apply)
+name: Terraform Apply (GATED)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type APPLY to confirm the manual gate"
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  noop:
+    if: ${{ inputs.confirm == APPLY }}
+    runs-on: ubuntu-22.04
+    steps:
+      - run: echo "Gate acknowledged. Apply steps are intentionally disabled in this stub."

@@ -232,7 +232,7 @@ jobs:
 
       - name: WIF authentication
         id: auth-wif
-        if: steps.detect.outputs.HAS_WIF == 'true'
+        if: ${{ github.event_name != 'pull_request' && steps.detect.outputs.HAS_WIF == 'true' }}
         continue-on-error: true
         uses: google-github-actions/auth@v2
         with:
@@ -240,10 +240,12 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Fallback authentication (JSON key)
-        if: failure() && steps.detect.outputs.HAS_KEY == 'true'
+        if: ${{ steps.auth-wif.outcome != 'success' || github.event_name == 'pull_request' }}
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY_JSON }}
+          create_credentials_file: true
+          export_environment_variables: true
 
       - name: Verify authentication success
         run: |

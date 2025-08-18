@@ -1,0 +1,98 @@
+# M5-APPLY-GATE (do not remove) — manual gate
+# PLAN: safe plan-only (no backend, no apply) ⇒ artifact tfplan.txt for review
+# APPLY: still stub (disabled)
+name: Terraform Apply (GATED)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PLAN to run safe plan-only, or APPLY to acknowledge the apply gate (still disabled)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan-only:
+    if: ${{ github.event.inputs.confirm == 'PLAN' }}
+    name: plan-only (no-backend/no-apply)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      TF_IN_AUTOMATION: "1"
+      TF_CLI_ARGS: "-no-color"
+      # ===== add required TF vars (mirror main pipeline) =====
+      TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+      TF_VAR_qdrant_api_key: ${{ secrets.QDRANT_CLUSTER1_KEY }}
+      TF_VAR_qdrant_cluster_id: ${{ secrets.QDRANT_CLUSTER1_ID }}
+      TF_VAR_qdrant_region: "asia-southeast1"
+      SKIP_IMPORT: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect auth secrets
+        id: detect
+        run: |
+          if [[ -n "${{ secrets.GCP_WIF_PROVIDER }}" ]]; then echo "HAS_WIF=true" >>"$GITHUB_OUTPUT"; fi
+          if [[ -n "${{ secrets.GCP_SA_KEY_JSON }}" ]]; then echo "HAS_KEY=true" >>"$GITHUB_OUTPUT"; fi
+
+      - name: Fail if no auth secret
+        if: steps.detect.outputs.HAS_WIF != 'true' && steps.detect.outputs.HAS_KEY != 'true'
+        run: |
+          echo "::error::Missing both GCP_WIF_PROVIDER and GCP_SA_KEY_JSON"
+          exit 1
+
+      - name: WIF authentication
+        id: auth-wif
+        if: steps.detect.outputs.HAS_WIF == 'true'
+        continue-on-error: true
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Fallback authentication (JSON key)
+        if: failure() && steps.detect.outputs.HAS_KEY == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_JSON }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.*"
+
+      - name: Terraform init (no backend)
+        working-directory: terraform
+        run: terraform init -backend=false -input=false -no-color
+
+      - name: Terraform validate
+        working-directory: terraform
+        run: terraform validate -no-color
+
+      - name: Terraform plan (no refresh, no lock) → tfplan.txt
+        working-directory: terraform
+        run: |
+          set +e
+          terraform plan -input=false -refresh=false -lock=false -no-color | tee "$GITHUB_WORKSPACE/tfplan.txt"
+          TF_EXIT=${PIPESTATUS[0]}
+          echo "TF_EXIT=$TF_EXIT"
+          set -e
+          if [[ "$TF_EXIT" -ne 0 && "$TF_EXIT" -ne 2 ]]; then
+            echo "::error::Unexpected terraform exit code: $TF_EXIT"
+            exit "$TF_EXIT"
+          fi
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-text
+          path: tfplan.txt
+
+  noop:
+    if: ${{ github.event.inputs.confirm == 'APPLY' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - run: echo "Gate acknowledged. Apply steps remain disabled in this stub."

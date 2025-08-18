@@ -1,0 +1,171 @@
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+  ~ update in-place
+
+Terraform will perform the following actions:
+
+  # google_artifact_registry_repository.agent_data_docker_repo will be created
+  + resource "google_artifact_registry_repository" "agent_data_docker_repo" {
+      + create_time   = (known after apply)
+      + description   = "Agent Data Test Docker Repository"
+      + format        = "DOCKER"
+      + id            = (known after apply)
+      + labels        = {
+          + "environment" = "test"
+          + "managed_by"  = "terraform"
+          + "project"     = "agent-data-langroid"
+        }
+      + location      = "asia-southeast1"
+      + name          = (known after apply)
+      + project       = "github-chatgpt-ggcloud"
+      + repository_id = "agent-data-test"
+      + update_time   = (known after apply)
+    }
+
+  # google_secret_manager_secret.qdrant_api will be updated in-place
+  ~ resource "google_secret_manager_secret" "qdrant_api" {
+        id          = "projects/github-chatgpt-ggcloud/secrets/Qdrant_agent_data_N1D8R2vC0_5"
+      ~ labels      = {
+          + "environment" = "test"
+          + "managed_by"  = "terraform"
+          + "project"     = "agent-data-langroid"
+        }
+        name        = "projects/812872501910/secrets/Qdrant_agent_data_N1D8R2vC0_5"
+        # (4 unchanged attributes hidden)
+
+      - timeouts {}
+
+        # (1 unchanged block hidden)
+    }
+
+  # google_secret_manager_secret_version.qdrant_api_v1 will be created
+  + resource "google_secret_manager_secret_version" "qdrant_api_v1" {
+      + create_time  = (known after apply)
+      + destroy_time = (known after apply)
+      + enabled      = true
+      + id           = (known after apply)
+      + name         = (known after apply)
+      + secret       = "projects/github-chatgpt-ggcloud/secrets/Qdrant_agent_data_N1D8R2vC0_5"
+      + secret_data  = (sensitive value)
+      + version      = (known after apply)
+    }
+
+  # google_storage_bucket.huyen1974_agent_data_artifacts_test will be updated in-place
+  ~ resource "google_storage_bucket" "huyen1974_agent_data_artifacts_test" {
+        id                          = "huyen1974-agent-data-artifacts-test"
+      ~ labels                      = {
+          + "bucket_type" = "artifacts"
+          + "environment" = "test"
+          + "managed_by"  = "terraform"
+          + "project"     = "agent-data-langroid"
+        }
+        name                        = "huyen1974-agent-data-artifacts-test"
+      ~ uniform_bucket_level_access = true -> false
+        # (9 unchanged attributes hidden)
+
+      - timeouts {}
+
+        # (1 unchanged block hidden)
+    }
+
+  # google_storage_bucket.huyen1974_agent_data_knowledge_test will be updated in-place
+  ~ resource "google_storage_bucket" "huyen1974_agent_data_knowledge_test" {
+        id                          = "huyen1974-agent-data-knowledge-test"
+      ~ labels                      = {
+          + "bucket_type" = "knowledge"
+          + "environment" = "test"
+          + "managed_by"  = "terraform"
+          + "project"     = "agent-data-langroid"
+        }
+        name                        = "huyen1974-agent-data-knowledge-test"
+      ~ uniform_bucket_level_access = true -> false
+        # (9 unchanged attributes hidden)
+
+      - timeouts {}
+
+        # (1 unchanged block hidden)
+    }
+
+  # google_storage_bucket.huyen1974_agent_data_logs_test will be updated in-place
+  ~ resource "google_storage_bucket" "huyen1974_agent_data_logs_test" {
+        id                          = "huyen1974-agent-data-logs-test"
+      ~ labels                      = {
+          + "bucket_type" = "logs"
+          + "environment" = "test"
+          + "managed_by"  = "terraform"
+          + "project"     = "agent-data-langroid"
+        }
+        name                        = "huyen1974-agent-data-logs-test"
+      ~ uniform_bucket_level_access = true -> false
+        # (9 unchanged attributes hidden)
+
+      - timeouts {}
+
+        # (1 unchanged block hidden)
+    }
+
+  # google_storage_bucket.huyen1974_agent_data_qdrant_snapshots_test will be updated in-place
+  ~ resource "google_storage_bucket" "huyen1974_agent_data_qdrant_snapshots_test" {
+        id                          = "huyen1974-agent-data-qdrant-snapshots-test"
+      ~ labels                      = {
+          + "bucket_type" = "qdrant-snapshots"
+          + "environment" = "test"
+          + "managed_by"  = "terraform"
+          + "project"     = "agent-data-langroid"
+        }
+        name                        = "huyen1974-agent-data-qdrant-snapshots-test"
+      ~ uniform_bucket_level_access = true -> false
+        # (9 unchanged attributes hidden)
+
+      - timeouts {}
+
+        # (1 unchanged block hidden)
+    }
+
+  # google_storage_bucket.huyen1974_agent_data_source_test will be updated in-place
+  ~ resource "google_storage_bucket" "huyen1974_agent_data_source_test" {
+        id                          = "huyen1974-agent-data-source-test"
+      ~ labels                      = {
+          + "bucket_type" = "source"
+          + "environment" = "test"
+          + "managed_by"  = "terraform"
+          + "project"     = "agent-data-langroid"
+        }
+        name                        = "huyen1974-agent-data-source-test"
+      ~ uniform_bucket_level_access = true -> false
+        # (9 unchanged attributes hidden)
+
+      - timeouts {}
+
+        # (1 unchanged block hidden)
+    }
+
+  # google_storage_bucket.huyen1974_agent_data_tfstate_test will be updated in-place
+  ~ resource "google_storage_bucket" "huyen1974_agent_data_tfstate_test" {
+        id                          = "huyen1974-agent-data-tfstate-test"
+      ~ labels                      = {
+          + "bucket_type" = "tfstate"
+          + "environment" = "test"
+          + "managed_by"  = "terraform"
+          + "project"     = "agent-data-langroid"
+        }
+        name                        = "huyen1974-agent-data-tfstate-test"
+      ~ uniform_bucket_level_access = true -> false
+        # (9 unchanged attributes hidden)
+
+      - timeouts {}
+
+        # (1 unchanged block hidden)
+    }
+
+Plan: 2 to add, 7 to change, 0 to destroy.
+
+Changes to Outputs:
+  ~ artifact_registry_repository = {
+      ~ id       = null -> "agent-data-test"
+      ~ location = null -> "asia-southeast1"
+      + name     = (known after apply)
+    }
+  ~ qdrant_endpoint              = "https://your-cluster-id.qdrant.tech" -> "https://529a17a6-01b8-4304-bc5c-b936aec8fca9.qdrant.tech"
