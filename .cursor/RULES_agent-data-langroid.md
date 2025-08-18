@@ -6,6 +6,17 @@
 /Users/nmhuyen/Documents/Manual Deploy/agent-data-langroid
 ✅ Mọi thao tác phải nằm trong thư mục này.
 ⛔ Không được đọc/ghi/sửa ngoài path.
+### GH Auth Bootstrap (bắt buộc trước khi dùng `gh`)
+- **Project GSM**: `github-chatgpt-ggcloud`
+- **Service Account điều hành**: `chatgpt-deployer@github-chatgpt-ggcloud.iam.gserviceaccount.com`
+- **Secret**: `gh_pat_sync_secrets` (PAT có scopes: repo, workflow)
+
+**Cách chạy:**
+```bash
+# Xác thực và đăng nhập (nếu cần)
+PROJECT="github-chatgpt-ggcloud" SECRET_NAME="gh_pat_sync_secrets" scripts/bootstrap_gh.sh apply
+# Kiểm tra trạng thái đăng nhập
+gh auth status -h github.com
 
 ---
 

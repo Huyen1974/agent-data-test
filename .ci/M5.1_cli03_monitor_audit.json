@@ -1,0 +1,31 @@
+{
+  "artifact_audit": {
+    "exists": false,
+    "has_cron": false,
+    "has_slack_step": false,
+    "has_timezone_hint": false,
+    "path": ".github/workflows/artifact-audit.yml",
+    "required_cron": "0 2 * * *",
+    "workflow": "artifact-audit.yml"
+  },
+  "cli_id": "M5.1-CLI-03",
+  "github": {
+    "token_scopes": "admin:enterprise, admin:gpg_key, admin:org, admin:org_hook, admin:public_key, admin:repo_hook, admin:ssh_signing_key, audit_log, codespace, copilot, delete:packages, gist, notifications, project, repo, user, workflow, write:discussion, write:network_configurations, write:packages"
+  },
+  "repo": "Huyen1974/agent-data-test",
+  "secrets_audit": {
+    "exists": false,
+    "has_cron": false,
+    "has_slack_step": false,
+    "has_timezone_hint": false,
+    "path": ".github/workflows/secrets-audit.yml",
+    "required_cron": "0 3 * * *",
+    "workflow": "secrets-audit.yml"
+  },
+  "summary": {
+    "all_pass": false,
+    "artifact_pass": false,
+    "secrets_pass": false
+  },
+  "timestamp_utc": "2025-08-18T05:29:00Z"
+}

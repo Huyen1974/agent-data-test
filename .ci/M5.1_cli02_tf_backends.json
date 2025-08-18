@@ -1,0 +1,20 @@
+{
+  "backends": [
+    {
+      "bucket": null,
+      "encryption": null,
+      "file": "terraform/backend.tf",
+      "prefix": null
+    }
+  ],
+  "summary": {
+    "bucket_parity": false,
+    "encryption_parity": true,
+    "has_any": true,
+    "issues": [
+      "bucket_mismatch_or_missing",
+      "prefix_mismatch_or_missing"
+    ],
+    "prefix_parity": false
+  }
+}

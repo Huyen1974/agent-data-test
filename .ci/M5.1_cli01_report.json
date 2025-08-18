@@ -1,0 +1,26 @@
+{
+  "cli_id": "M5.1-CLI-01",
+  "docs": {
+    "all_docs_present": false,
+    "missing": [
+      "GCS-BACKEND-PARITY-v2_cursor_update_github_actions_for_gcs_ba.md",
+      "GCS-BACKEND-PARITY-v2_cursor_verify_gcs_backend_parity_pull_r.md",
+      "GCS-BACKEND-PARITY-v2_cursor_post_merge_validation_for_gcs_ba.md"
+    ]
+  },
+  "gh_project": "github-chatgpt-ggcloud",
+  "gh_secret": "gh_pat_sync_secrets",
+  "github": {
+    "authenticated": true,
+    "missing_scopes": [],
+    "token_scopes": "admin:enterprise  admin:gpg_key  admin:org  admin:org_hook  admin:public_key  admin:repo_hook  admin:ssh_signing_key  audit_log  codespace  copilot  delete:packages  gist  notifications  project  repo  user  workflow  write:discussion  write:network_configurations  write:packages"
+  },
+  "terraform_backend": {
+    "bucket_parity": true,
+    "encryption_parity": true,
+    "has_any": true,
+    "issues": [],
+    "prefix_parity": true
+  },
+  "timestamp_utc": "2025-08-18T04:46:34Z"
+}
