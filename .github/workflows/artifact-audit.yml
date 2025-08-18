@@ -1,0 +1,27 @@
+name: Artifact Audit
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Runs at 02:00 UTC daily
+
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan artifacts (placeholder)
+        id: scan
+        run: |
+          echo "Scanning artifacts via GitHub API (placeholder)."
+          echo "found=0" >> "$GITHUB_OUTPUT"
+
+      - name: Slack notify (if configured)
+        if: ${{ secrets.SLACK_WEBHOOK != '' }}
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        run: |
+          payload='{"text":"[artifact-audit] Completed. found=${{ steps.scan.outputs.found }}"}'
+          curl -X POST -H "Content-type: application/json" --data "$payload" "$SLACK_WEBHOOK"
