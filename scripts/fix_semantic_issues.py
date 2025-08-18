@@ -138,7 +138,7 @@ def main():
 
     # A) Fix bullet-as-table rows
     original_count = len(
-        [l for l in lines if re.match(r"^\|\s*-\s*•\s*\|\s*.*\s*\|$", l)]
+        [line for line in lines if re.match(r"^\|\s*-\s*•\s*\|\s*.*\s*\|$", line)]
     )
     lines = fix_bullet_tables(lines)
     print(f"   ✓ Converted {original_count} bullet-as-table rows to list items")
@@ -201,7 +201,6 @@ def main():
     # Extract content for comparison
     content_orig = extract_content_words(plain_orig)
     content_temp = extract_content_words(plain_temp)
-    content_canon = extract_content_words(plain_canon)
 
     # Check if the actual text content is preserved
     content_preserved = content_orig == content_temp
