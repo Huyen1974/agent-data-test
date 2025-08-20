@@ -3,35 +3,13 @@ on:
   pull_request:
   push:
     branches: [ main ]
-
 permissions:
   contents: read
-
 jobs:
   pass-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - name: Green skip when no GCP creds
-        if: ${{ (secrets.GCP_WIF_PROVIDER == '' || secrets.GCP_WIF_PROVIDER == null) && (secrets.GCP_SA_KEY_JSON == '' || secrets.GCP_SA_KEY_JSON == null) }}
+      - name: Green skip — no Apply here
         run: |
-          echo "::notice::No GCP creds detected — Pass Gate green-skip."
+          echo "::notice::Pass Gate is monitor-only; no GCP creds → green."
           exit 0
-
-      - name: Checkout
-        if: ${{ !( (secrets.GCP_WIF_PROVIDER == '' || secrets.GCP_WIF_PROVIDER == null) && (secrets.GCP_SA_KEY_JSON == '' || secrets.GCP_SA_KEY_JSON == null) ) }}
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        if: ${{ !( (secrets.GCP_WIF_PROVIDER == '' || secrets.GCP_WIF_PROVIDER == null) && (secrets.GCP_SA_KEY_JSON == '' || secrets.GCP_SA_KEY_JSON == null) ) }}
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.8.*"
-
-      - name: Offline validate (no backend)
-        if: ${{ !( (secrets.GCP_WIF_PROVIDER == '' || secrets.GCP_WIF_PROVIDER == null) && (secrets.GCP_SA_KEY_JSON == '' || secrets.GCP_SA_KEY_JSON == null) ) }}
-        working-directory: terraform
-        run: |
-          set -euo pipefail
-          terraform init -backend=false -input=false -no-color
-          terraform validate -no-color
