@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   skip-when-no-creds:
-    if: ${{ !(secrets.GCP_WIF_PROVIDER != '' || secrets.GCP_SA_KEY_JSON != ''') }}
+    if: ${{ !(secrets.GCP_WIF_PROVIDER != '' || secrets.GCP_SA_KEY_JSON != '') }}
     runs-on: ubuntu-latest
     steps:
       - name: No creds → green skip
