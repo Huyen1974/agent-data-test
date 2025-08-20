@@ -8,29 +8,41 @@ permissions:
   contents: read
 
 jobs:
-  skip-when-no-creds:
-    if: ${{ !(secrets.GCP_WIF_PROVIDER != '' || secrets.GCP_SA_KEY_JSON != '') }}
+  pass-gate-check:
     runs-on: ubuntu-latest
     steps:
-      - name: No creds → green skip
+      - name: Check GCP credentials
         run: |
-          echo "::notice::No GCP creds (GCP_WIF_PROVIDER/GCP_SA_KEY_JSON) -> skipping Pass Gate by policy."
-          exit 0
+          if [ -z "${{ secrets.GCP_WIF_PROVIDER }}" ] && [ -z "${{ secrets.GCP_SA_KEY_JSON }}" ]; then
+            echo "::notice::No GCP creds (GCP_WIF_PROVIDER/GCP_SA_KEY_JSON) -> skipping Pass Gate by policy."
+            echo "SKIP_TERRAFORM=true" >> $GITHUB_ENV
+          else
+            echo "GCP credentials found, will run terraform"
+            echo "SKIP_TERRAFORM=false" >> $GITHUB_ENV
+          fi
 
-  plan:
-    if: ${{ secrets.GCP_WIF_PROVIDER != '' || secrets.GCP_SA_KEY_JSON != '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        if: env.SKIP_TERRAFORM == 'false'
+        uses: actions/checkout@v4
+
       - name: Setup Terraform
+        if: env.SKIP_TERRAFORM == 'false'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.8.*"
+
       - name: Terraform init
+        if: env.SKIP_TERRAFORM == 'false'
         working-directory: terraform
         run: terraform init -input=false -no-color
+
       - name: Terraform plan
+        if: env.SKIP_TERRAFORM == 'false'
         working-directory: terraform
         env:
           TF_INPUT: "false"
         run: terraform plan -input=false -no-color
+
+      - name: Success skip
+        if: env.SKIP_TERRAFORM == 'true'
+        run: echo "Pass Gate completed successfully (skipped due to missing credentials)"
