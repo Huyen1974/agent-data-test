@@ -23,7 +23,7 @@ jobs:
   lint:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -85,7 +85,7 @@ jobs:
       TF_IN_AUTOMATION: "1"
       TF_CLI_ARGS: "-no-color"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.8.*"
@@ -104,7 +104,7 @@ jobs:
     needs: lint
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Dry-run deploy manage_qdrant
         run: bash functions/manage_qdrant/deploy.sh
@@ -116,7 +116,7 @@ jobs:
     env:
       QDRANT_FN_URL: "https://mocki.io/v1/8f2fa8b8-88d9-4c4c-9d02-5f2414e7ca10"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -168,7 +168,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -201,7 +201,7 @@ jobs:
       TF_VAR_qdrant_region: "us-east4"
       SKIP_IMPORT: 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Prep plugin cache dir
         run: mkdir -p "${{ env.TF_PLUGIN_CACHE_DIR }}"
@@ -312,7 +312,7 @@ jobs:
     needs: terraform-plan
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install trufflehog
         run: |
           curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
@@ -325,12 +325,12 @@ jobs:
     needs: secret-scan
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check manifest drift
         run: python scripts/collect_manifest.py --check test_manifest_baseline.txt
 
   actionlint:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: reviewdog/action-actionlint@v1
