@@ -1,0 +1,58 @@
+name: Cloud Run Deploy (Manual)
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Tag to deploy
+        default: "latest"
+      allow_unauthenticated:
+        description: Make service public
+        type: boolean
+        default: false
+      service:
+        description: Cloud Run service name
+        default: "agent-data-test"
+concurrency:
+  group: cloudrun-deploy-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  id-token: write
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ secrets.GCP_REGION }}
+  AR_REPO: agent-data
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Deploy
+        shell: bash
+        run: |
+          SERVICE="${{ inputs.service }}"
+          TAG="${{ inputs.image_tag }}"
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${TAG}"
+          if [[ "${{ inputs.allow_unauthenticated }}" == "true" ]]; then
+            AUTH_FLAG="--allow-unauthenticated"
+          else
+            AUTH_FLAG="--no-allow-unauthenticated"
+          fi
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --platform managed \
+            $AUTH_FLAG \
+            --quiet
