@@ -1,58 +1,77 @@
 name: Cloud Run Deploy (Manual)
+
 on:
   workflow_dispatch:
     inputs:
+      service:
+        description: "Cloud Run service name"
+        required: true
+        default: "agent-data-test"
       image_tag:
-        description: Tag to deploy
+        description: "Image tag to deploy (e.g. HEAD_SHA)"
+        required: true
         default: "latest"
       allow_unauthenticated:
-        description: Make service public
+        description: "Allow unauthenticated"
+        required: true
+        default: "false"
+      health_timeout:
+        description: "Health-check timeout seconds (informational)"
+        required: true
+        default: "120"
+      dry_run:
+        description: "Dry-run deploy (no live changes)"
+        required: false
+        default: "true"
         type: boolean
-        default: false
-      service:
-        description: Cloud Run service name
-        default: "agent-data-test"
-concurrency:
-  group: cloudrun-deploy-${{ github.ref }}
-  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
+
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ secrets.GCP_REGION }}
   AR_REPO: agent-data
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Auth to GCP (WIF)
+      - id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      - name: Deploy
+      - name: Deploy to Cloud Run
         shell: bash
         run: |
-          SERVICE="${{ inputs.service }}"
-          TAG="${{ inputs.image_tag }}"
-          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${TAG}"
-          if [[ "${{ inputs.allow_unauthenticated }}" == "true" ]]; then
-            AUTH_FLAG="--allow-unauthenticated"
-          else
-            AUTH_FLAG="--no-allow-unauthenticated"
-          fi
+          set -euo pipefail
+          SERVICE="${{ github.event.inputs.service }}"
+          TAG="${{ github.event.inputs.image_tag }}"
+          ALLOW="${{ github.event.inputs.allow_unauthenticated }}"
+          HT="${{ github.event.inputs.health_timeout }}"
+          IMG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${SERVICE}:${TAG}"
+          echo "Deploying image: $IMG"
+          AUTH_FLAG="--no-allow-unauthenticated"
+          if [ "$ALLOW" = "true" ]; then AUTH_FLAG="--allow-unauthenticated"; fi
+
           gcloud run deploy "$SERVICE" \
-            --image "$IMAGE" \
-            --region "$REGION" \
+            --image "$IMG" \
+            --region "${{ env.REGION }}" \
             --platform managed \
             $AUTH_FLAG \
+            --timeout 300 \
+            --execution-environment gen2 \
+            --port 8080 \
+            
             --quiet
+
+          echo "health_timeout(input)=$HT (informational only)"
