@@ -31,14 +31,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Auth (ID token via WIF)
+      - name: Auth (WIF credentials)
         id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SA_EMAIL }}
-          token_format: 'id_token'
-          audience: ${{ inputs.url }}
+          create_credentials_file: true
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
 
       - name: Probe with ID token
         id: probe
@@ -48,9 +50,9 @@ jobs:
           SAMPLES: ${{ inputs.samples }}
           OK_MIN: ${{ inputs.ok_min }}
           P95_MAX_MS: ${{ inputs.p95_max_ms }}
-          ID_TOKEN: ${{ steps.auth.outputs.id_token }}
         run: |
           set -euo pipefail
+          ID_TOKEN="$(gcloud auth print-identity-token --audiences="${URL}" || true)"
           if [ -z "${ID_TOKEN:-}" ]; then
             echo "id_token empty ⇒ missing WIF secrets or auth failure" >&2
             echo "M6_PROBE_SUMMARY={\"pass\":false,\"reason\":\"missing_wif_secrets\"}" >> $GITHUB_STEP_SUMMARY
