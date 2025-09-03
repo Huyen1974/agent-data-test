@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# GUARD (versioned): protect bootstrap/bin/*
+set -euo pipefail
+[ "${ALLOW_BOOTSTRAP_SOT_CHANGE:-0}" = "1" ] && exit 0
+BAD="$(git diff --cached --name-status | awk '($2 ~ /^bootstrap\/bin\//) && ($1=="D"||$1=="M"||$1=="R") {print}')"
+if [ -n "$BAD" ]; then
+  echo "ERROR: Protected files under bootstrap/bin/ changed:"; echo "$BAD"
+  echo "Set ALLOW_BOOTSTRAP_SOT_CHANGE=1 to override intentionally."; exit 1
+fi
+exit 0

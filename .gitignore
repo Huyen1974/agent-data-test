@@ -198,6 +198,7 @@ Thumbs.db:encryptable
 ehthumbs.db
 ehthumbs_vista.db
 *.stackdump
+.ci/
 Desktop.ini
 $RECYCLE.BIN/
 *.cab
@@ -239,3 +240,4 @@ docker-compose.override.yml
 !/.cursor/**
 __pycache__/
 *.py[cod]
+backup/

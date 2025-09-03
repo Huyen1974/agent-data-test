@@ -1,0 +1,36 @@
+name: Cloud Run Probe (G4)
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Cloud Run URL"
+        required: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth via WIF (no audience)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+          create_credentials_file: true
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Probe with ID token
+        shell: bash
+        run: |
+          URL="${{ inputs.url }}"
+          # 2-step: mint ID token with proper audience
+          ID_TOKEN=$(gcloud auth print-identity-token --audiences="$URL")
+          curl -H "Authorization: Bearer $ID_TOKEN" "$URL"
