@@ -8,7 +8,7 @@ import os
 from datetime import UTC
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Path
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import Counter, Histogram
 from pydantic import BaseModel
@@ -104,11 +104,36 @@ class MessageResponse(BaseModel):
     session_id: str | None = None
 
 
+class DocumentCreate(BaseModel):
+    content: str
+    metadata: dict | None = None
+
+
+class DocumentUpdate(BaseModel):
+    content: str
+    metadata: dict | None = None
+
+
+class DocumentResponse(BaseModel):
+    id: str
+    status: str
+
+
 # Initialize a single AgentData instance (reuse across requests)
 agent_config = AgentDataConfig()
 # Avoid external vector store dependencies in default server runtime
 agent_config.vecdb = None
 agent = AgentData(agent_config)
+
+
+# ---- Simple API-key auth dependency ----
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    expected = os.getenv("API_KEY")
+    if not expected:
+        # If API key not configured, deny modifying actions by default
+        raise HTTPException(status_code=403, detail="API key is not configured")
+    if x_api_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
 
 @app.get("/", response_model=HealthResponse)
@@ -324,6 +349,81 @@ async def info():
     except Exception as e:
         logger.error(f"Info endpoint failed: {e}")
         raise HTTPException(status_code=500, detail="Unable to get system info") from e
+
+
+# ---------------- Knowledge Base CRUD (secured) ----------------
+KB_COLLECTION = os.getenv("KB_COLLECTION", "kb_documents")
+
+
+def _firestore():
+    db = getattr(agent, "db", None)
+    if db is None:
+        raise HTTPException(status_code=500, detail="Firestore client not initialized")
+    return db
+
+
+@app.post("/documents", response_model=DocumentResponse)
+async def create_document(payload: DocumentCreate, _=Depends(require_api_key)):
+    try:
+        db = _firestore()
+        doc_id = str(uuid4())
+        now = __import__("datetime").datetime.now(UTC).isoformat()
+        data = {
+            "content": payload.content,
+            "metadata": payload.metadata or {},
+            "created_at": now,
+            "updated_at": now,
+            "deleted_at": None,
+            "vector_status": "skipped",  # placeholder unless vec store configured
+        }
+        db.collection(KB_COLLECTION).document(doc_id).set(data)
+        return DocumentResponse(id=doc_id, status="created")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Create document failed: {e}")
+        raise HTTPException(status_code=500, detail="Create document failed") from e
+
+
+@app.put("/documents/{doc_id}", response_model=DocumentResponse)
+async def update_document(
+    doc_id: str = Path(..., min_length=1),
+    payload: DocumentUpdate = None,
+    _=Depends(require_api_key),
+):
+    try:
+        db = _firestore()
+        now = __import__("datetime").datetime.now(UTC).isoformat()
+        updates: dict = {"updated_at": now, "vector_status": "replaced"}
+        if payload and payload.content is not None:
+            updates["content"] = payload.content
+        if payload and payload.metadata is not None:
+            updates["metadata"] = payload.metadata
+        db.collection(KB_COLLECTION).document(doc_id).update(updates)
+        return DocumentResponse(id=doc_id, status="updated")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update document failed: {e}")
+        raise HTTPException(status_code=500, detail="Update document failed") from e
+
+
+@app.delete("/documents/{doc_id}", response_model=DocumentResponse)
+async def delete_document(
+    doc_id: str = Path(..., min_length=1), _=Depends(require_api_key)
+):
+    try:
+        db = _firestore()
+        now = __import__("datetime").datetime.now(UTC).isoformat()
+        db.collection(KB_COLLECTION).document(doc_id).update(
+            {"deleted_at": now, "vector_status": "deleted"}
+        )
+        return DocumentResponse(id=doc_id, status="deleted")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete document failed: {e}")
+        raise HTTPException(status_code=500, detail="Delete document failed") from e
 
 
 if __name__ == "__main__":
