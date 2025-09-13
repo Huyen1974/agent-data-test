@@ -1,0 +1,63 @@
+
+===============QUY TRÌNH TẠO NHÓM CHAT VỚI BOT=====================
+
+🧾 Các bước cụ thể
+🔹 Bước 1: Lấy Token mới từ Cloud Function
+bash
+Sao chép
+Chỉnh sửa
+curl -X GET "https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/check_lark_token" \
+-H "Content-Type: application/json"
+→ Kết quả trả về JSON có token ở trường "token".
+
+🔹 Bước 2: Tạo nhóm mới
+Dùng token vừa lấy được ở bước 1 để tạo nhóm tên "Command Handle Report":
+
+bash
+Sao chép
+Chỉnh sửa
+curl -X POST "https://open.larksuite.com/open-apis/im/v1/chats" \
+-H "Authorization: Bearer <TOKEN_LARK>" \
+-H "Content-Type: application/json" \
+-d '{
+  "name": "Command Handle Report",
+  "description": "Nhóm trao đổi kết quả xử lý CLI",
+  "user_id_type": "open_id",
+  "user_id_list": ["ou_79d3bad812371c7e41d8d356e3b5fab9"],
+  "chat_type": "private"
+}'
+📌 Thay <TOKEN_LARK> bằng token bạn vừa lấy từ bước 1.
+
+🔹 Bước 3: Gửi tin nhắn vào nhóm
+Khi đã có chat_id, có thể gửi tin nhắn bằng API sau:
+
+bash
+Sao chép
+Chỉnh sửa
+curl -X POST "https://open.larksuite.com/open-apis/im/v1/messages" \
+-H "Authorization: Bearer <TOKEN_LARK>" \
+-H "Content-Type: application/json" \
+-d '{
+  "receive_id": "oc_dcd85e56db925ca90869180b4747f419",
+  "content": "{\"text\":\"Xin chào! Đây là nhóm Command Handle Report.\"}",
+  "msg_type": "text",
+  "receive_id_type": "chat_id"
+}'
+✅ Ghi chú sử dụng sau này:
+Chỉ cần lấy lại token mới → Gọi lại Bước 2 là có thể tạo nhóm khác ngay
+
+open_id của user là cố định, không cần lấy lại
+
+chat_id chỉ cần nhớ nếu muốn gửi tin nhắn vào nhóm đã tạo sẵn
+
+
+Nhóm 2: Command Handle Report
+
+🧩 Thông tin cố định cần nhớ:
+Thành phần	Giá trị
+User email	nguyenquangnghiem27@gmail.com
+User open_id	ou_79d3bad812371c7e41d8d356e3b5fab9
+App ID	cli_a785d634437a502f
+Cloud Function check token	https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/check_lark_token
+chat_id nhóm Command Handle Report	oc_dcd85e56db925ca90869180b4747f419
+

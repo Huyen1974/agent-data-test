@@ -1,0 +1,22 @@
+{
+  "Envelope": {
+    "total": 4,
+    "covered": 4,
+    "pct": 100.0
+  },
+  "Artifact": {
+    "total": 2,
+    "covered": 2,
+    "pct": 100.0
+  },
+  "Async & State": {
+    "total": 1,
+    "covered": 1,
+    "pct": 100.0
+  },
+  "Registry/Versioning": {
+    "total": 2,
+    "covered": 2,
+    "pct": 100.0
+  }
+}

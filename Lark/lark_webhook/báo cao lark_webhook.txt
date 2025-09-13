@@ -1,0 +1,145 @@
+1. Báo cáo ngắn gọn về lark_webhook (dành cho người mới)
+Tổng quan về lark_webhook:
+
+Chức năng chính: lark_webhook là một Cloud Function (Google Cloud Functions v2, Python 3.10) nhận tin nhắn từ webhook của nhóm chat Lark, xử lý yêu cầu qua OpenAI GPT-4, lưu lịch sử hội thoại vào Firestore, và gửi phản hồi về nhóm chat.
+Hạ tầng:
+Project: chatgpt-db-project, region asia-southeast1.
+Lark Chat ID: oc_028305c6332e7eca363c9b707d07b3e5.
+Firestore: Database test-default, collection conversations.
+Secret Manager: github-chatgpt-ggcloud (secrets: lark-openai-key-sg).
+Quy trình hoạt động:
+
+Nhận tin nhắn từ Lark:
+Nhận webhook từ nhóm chat oc_028305c6332e7eca363c9b707d07b3e5 qua API https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/lark_webhook.
+Trích xuất nội dung tin nhắn (chỉ xử lý tin nhắn dạng text).
+Lấy token:
+Gọi check_lark_token URL (https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/check_lark_token) để lấy token gửi tin nhắn về Lark.
+Token được lấy từ Secret Manager (lark-access-token-sg) bởi check_lark_token.
+Lưu vào Firestore:
+Database: test-default, collection: conversations.
+Mỗi conversation là một document với các trường: conversationId, chat_id, message_id, user_message, bot_response, timestamp, requestCount, responseCount, labels (DataSource: "LarkRequest", Purpose: "Processing", Status: "Active" | "Completed" | "Pending"), vectorStatus, vectorId.
+Gửi yêu cầu đến OpenAI GPT-4:
+Dùng API key từ secret lark-openai-key-sg.
+System prompt: "Bạn là trợ lý thông minh xử lý các yêu cầu bảng, cột, công thức. Hãy hỏi lại nếu thiếu thông tin. Tối đa 3 lần hỏi.".
+Xử lý vòng lặp xác nhận: hỏi lại tối đa 3 lần, xác nhận bằng từ khóa tiếng Việt (ok, đồng ý, v.v.).
+Xử lý sau xác nhận:
+Gọi handle_command(parsed_command) với parsed_command là nội dung từ OpenAI.
+handle_command gọi function_comment(parsed_command) (hiện chỉ log).
+Gửi phản hồi về Lark:
+Dùng API https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=chat_id.
+Cách liên lạc với lark_webhook từ bên ngoài:
+
+Gửi tin nhắn: Gửi POST request đến https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/lark_webhook với payload JSON:
+json
+
+Thu gọn
+
+Bọc lại
+
+Sao chép
+{
+  "schema": "2.0",
+  "header": {"event_type": "im.message.receive_v1"},
+  "event": {
+    "sender": {"sender_id": {"open_id": "ou_test_user"}},
+    "message": {
+      "chat_id": "oc_028305c6332e7eca363c9b707d07b3e5",
+      "message_id": "om_test_xxx",
+      "message_type": "text",
+      "content": "{\"text\":\"<nội dung tin nhắn>\"}"
+    }
+  }
+}
+Phản hồi: Nhận HTTP 200 với body OK (thành công) hoặc JSON error (thất bại).
+Lưu ý:
+
+handle_command và function_comment hiện chỉ log, chưa xử lý logic thực tế.
+Chưa tích hợp Faiss (các trường vectorStatus, vectorId để trống).
+2. Báo cáo chi tiết về lark_webhook
+Mục tiêu ban đầu:
+
+Xây dựng Cloud Function lark_webhook để:
+Nhận tin nhắn từ webhook của nhóm chat Lark (oc_028305c6332e7eca363c9b707d07b3e5).
+Trích xuất nội dung tin nhắn (chỉ xử lý tin nhắn dạng text).
+Lưu lịch sử hội thoại vào Firestore (database test-default, collection conversations).
+Lấy token từ check_lark_token URL (https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/check_lark_token).
+Gửi yêu cầu đến OpenAI GPT-4 (dùng secret lark-openai-key-sg).
+Xử lý vòng lặp xác nhận (hỏi lại tối đa 3 lần, xác nhận bằng từ khóa tiếng Việt: ["ok", "oke", "okee", "đồng ý", "dong y", "yes", "y", "ukm", "uh", "ừ"]).
+Gọi handle_command và function_comment sau khi xác nhận.
+Hạ tầng và cấu hình:
+
+Project: chatgpt-db-project, region asia-southeast1.
+Lark:
+Chat ID: oc_028305c6332e7eca363c9b707d07b3e5.
+Send Message API: https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=chat_id.
+Token Retrieval: https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/check_lark_token.
+Secret Manager: github-chatgpt-ggcloud.
+Secrets: lark-openai-key-sg (OpenAI API key).
+Firestore:
+Database: test-default.
+Collection: conversations.
+Document Fields:
+conversationId: Unique ID (format: conv_YYYYMMDD_HHMMSS_random).
+chat_id: oc_028305c6332e7eca363c9b707d07b3e5.
+message_id: Message ID from Lark webhook (nullable).
+user_message: User message content.
+bot_response: ChatGPT response (default empty).
+timestamp: Server timestamp (firestore.SERVER_TIMESTAMP).
+requestCount: Number of requests (default 1, increments on clarification).
+responseCount: Number of responses (default 0, increments on confirmation).
+labels: Map with:
+DataSource: "LarkRequest".
+Purpose: "Processing".
+Status: "Active" | "Completed" | "Pending".
+vectorStatus: "pending" (for future Faiss sync).
+vectorId: Empty (for future Faiss sync).
+OpenAI:
+API: https://api.openai.com/v1/chat/completions.
+Model: gpt-4.
+System Prompt: "Bạn là trợ lý thông minh xử lý các yêu cầu bảng, cột, công thức. Hãy hỏi lại nếu thiếu thông tin. Tối đa 3 lần hỏi.".
+Secret: lark-openai-key-sg.
+Quá trình phát triển:
+
+Khởi tạo và cấu hình ban đầu:
+Tạo mã nguồn main.py với các thư viện: requests, google-cloud-secret-manager, functions-framework, google-cloud-firestore.
+Cấu hình Firestore: database test-default, collection conversations với các trường theo yêu cầu.
+Ban đầu lấy token từ Secret Manager (lark-access-token-sg), sau đó sửa để lấy từ check_lark_token URL (CLI 39).
+Thêm trường user_message vào Firestore document (CLI 39).
+Cấu hình vòng lặp xác nhận với từ khóa tiếng Việt (CLI 39).
+Xử lý lỗi và cải thiện:
+Lỗi Firestore 403 (CLI 32): Sửa bằng cách dùng đúng service account (gemini-service-account@chatgpt-db-project.iam.gserviceaccount.com) với quyền roles/datastore.owner.
+Lỗi Firestore 400 (missing index, CLI 35): Tạo composite index cho truy vấn get_pending_conversation (fields: chat_id, labels.Status, timestamp).
+Lỗi timeout khi gọi check_lark_token (CLI 44): Tăng timeout từ 10 giây lên 30 giây (CLI 46).
+Lỗi logging (CLI 59): Logging không ghi lại chi tiết, thay logging.info() và logging.debug() bằng print() (CLI 63).
+Thêm logging cho handle_command và function_comment (CLI 68): Ghi lại chi tiết xử lý command.
+Kiểm tra và xác nhận:
+Tạo conversation:
+CLI 69: Gửi om_test_015 để tạo conversation conv_20250403_113432_8nvin3.
+CLI 74: Gửi om_test_018 (log không đầy đủ, có thể bị gián đoạn).
+CLI 80: Gửi om_test_021 để tạo conversation conv_20250404_014204_lwja2y (4 cột, 6 hàng, dữ liệu cột A).
+Xác nhận:
+CLI 70: Gửi om_test_016 (xác nhận ok cho conv_20250403_113432_8nvin3).
+CLI 82: Gửi om_test_022 (xác nhận ok cho conv_20250404_014204_lwja2y).
+Logging: Đã ghi lại chi tiết các bước: lấy token, gọi OpenAI, lưu Firestore, gửi tin nhắn, xử lý command.
+Kết quả đạt được:
+
+lark_webhook hoạt động đúng:
+Nhận tin nhắn từ Lark webhook.
+Trích xuất nội dung và lưu vào Firestore.
+Lấy token từ check_lark_token.
+Gọi OpenAI API và xử lý vòng lặp xác nhận (hỏi lại tối đa 3 lần, xác nhận bằng từ khóa tiếng Việt).
+Gọi handle_command và function_comment sau khi xác nhận.
+Logging hoạt động tốt, ghi lại chi tiết các bước.
+Firestore lưu trữ đúng các trường: conversationId, chat_id, message_id, user_message, bot_response, timestamp, requestCount, responseCount, labels, vectorStatus, vectorId.
+Hạn chế hiện tại:
+
+handle_command và function_comment chỉ ghi log, chưa xử lý logic thực tế (chưa tích hợp Cloud Workflows hoặc AI Agent).
+Chưa tích hợp Faiss cho vector sync (vectorStatus và vectorId đang để trống).
+Một số request (như om_test_020) không ghi log đầy đủ, có thể do gián đoạn hoặc lỗi không được ghi nhận.
+Các request đã kiểm tra:
+
+om_test_015 (CLI 69): Tạo conversation conv_20250403_113432_8nvin3.
+om_test_016 (CLI 70): Xác nhận conv_20250403_113432_8nvin3.
+om_test_018 (CLI 74): Tạo conversation mới (log không đầy đủ).
+om_test_021 (CLI 80): Tạo conversation conv_20250404_014204_lwja2y.
+om_test_022 (CLI 82): Xác nhận conv_20250404_014204_lwja2y.

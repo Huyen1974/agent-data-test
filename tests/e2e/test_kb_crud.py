@@ -88,4 +88,3 @@ def test_kb_crud_endpoints(monkeypatch):
     r3 = client.delete(f"/documents/{doc_id}", headers={"x-api-key": "test-key"})
     assert r3.status_code == 200
     assert r3.json()["status"] == "deleted"
-

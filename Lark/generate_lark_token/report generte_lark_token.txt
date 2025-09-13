@@ -1,0 +1,101 @@
+# Kiểm tra project
+gcloud config get-value project
+
+# Kiểm tra token mới nhất và lịch sử phiên bản trong Secret Manager
+gcloud secrets versions access latest --secret=lark-access-token-sg --project=github-chatgpt-ggcloud
+gcloud secrets versions list lark-access-token-sg --project=github-chatgpt-ggcloud
+
+# Tạo file báo cáo
+cat << 'EOF' > "/Users/nmhuyen/Documents/Manual Deploy/generate_lark_token/report.md"
+# Báo cáo triển khai function generate_lark_token
+
+## Thông tin chung
+- Tên function: generate_lark_token
+- Mục đích: Tạo và lưu token mới của Lark vào Secret Manager (lark-access-token-sg), tự động xóa các phiên bản token cũ và chỉ giữ lại phiên bản mới nhất.
+- Trigger: HTTP Trigger
+- Project Test: chatgpt-db-project
+- Project Production: github-chatgpt-ggcloud
+- Ngày triển khai: 2025-03-31
+- Triển khai: Thủ công (manual deploy), không qua CI/CD
+- Service Account Test: gemini-service-account@chatgpt-db-project.iam.gserviceaccount.com
+- Service Account Production: chatgpt-deployer@github-chatgpt-ggcloud.iam.gserviceaccount.com
+- Region: asia-southeast1
+- Runtime: Python 3.10
+- Environment: Google Cloud Functions Gen 2
+- Đường dẫn mã nguồn: /Users/nmhuyen/Documents/Manual Deploy/generate_lark_token/
+
+## Kết quả triển khai trên Test (chatgpt-db-project)
+- URL: https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/generate_lark_token
+- Cách gọi:
+  curl -X GET "https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/generate_lark_token" -H "Content-Type: application/json"
+- Dữ liệu đầu vào: Không cần truyền tham số.
+- Dữ liệu đầu ra: 
+  {"status": "OK", "message": "Tạo và lưu token mới thành công"}
+- Log (lần gọi gần nhất - 2025-03-31 08:10:27):
+  2025-03-31 08:10:27 - main - INFO - Tạo và lưu token mới thành công
+  2025-03-31 08:10:27 - main - INFO - Đã xóa phiên bản cũ: projects/812872501910/secrets/lark-access-token-sg/versions/97
+  2025-03-31 08:10:27 - main - INFO - Đã lưu phiên bản mới: projects/812872501910/secrets/lark-access-token-sg/versions/98
+- Trạng thái Secret Manager (sau lần gọi gần nhất):
+  NAME  STATE      CREATED              DESTROYED
+  98    enabled    2025-03-31T08:10:27  -
+  97    destroyed  2025-03-31T08:04:02  2025-03-31T08:10:29
+- Ghi chú:
+  - Hàm hoạt động ổn định trên project test.
+  - Tạo token mới (versions/98) và xóa token cũ (versions/97) thành công.
+  - Sẵn sàng triển khai lên Production.
+
+## Kết quả triển khai trên Production (github-chatgpt-ggcloud)
+- URL: https://asia-southeast1-github-chatgpt-ggcloud.cloudfunctions.net/generate_lark_token
+- Cách gọi:
+  curl -X GET "https://asia-southeast1-github-chatgpt-ggcloud.cloudfunctions.net/generate_lark_token" -H "Content-Type: application/json"
+- Dữ liệu đầu vào: Không cần truyền tham số.
+- Dữ liệu đầu ra:
+  {"status": "OK", "message": "Tạo và lưu token mới thành công"}
+- Log (lần gọi gần nhất - 2025-03-31 08:42:35):
+  2025-03-31 08:42:35,355 - main - INFO - Tạo và lưu token mới thành công
+  2025-03-31 08:42:35,353 - main - INFO - Đã xóa phiên bản cũ: projects/812872501910/secrets/lark-access-token-sg/versions/98
+  2025-03-31 08:42:33,536 - main - INFO - Đã lưu phiên bản mới: projects/812872501910/secrets/lark-access-token-sg/versions/99
+- Trạng thái Secret Manager (sau lần gọi gần nhất):
+  NAME  STATE      CREATED              DESTROYED
+  99    enabled    2025-03-31T08:42:33  -
+  98    destroyed  2025-03-31T08:10:27  2025-03-31T08:42:35
+- Ghi chú:
+  - Hàm hoạt động ổn định trên project Production.
+  - Tạo token mới (versions/99) và xóa token cũ (versions/98) thành công.
+  - So sánh với Test: Logic hoạt động nhất quán, không có sự khác biệt bất thường.
+
+## Cách kiểm tra trạng thái function
+- Kiểm tra thông tin function:
+  - Test:
+    gcloud functions describe generate_lark_token --project=chatgpt-db-project --region=asia-southeast1
+  - Production:
+    gcloud functions describe generate_lark_token --project=github-chatgpt-ggcloud --region=asia-southeast1
+- Kiểm tra log runtime:
+  - Test:
+    gcloud functions logs read generate_lark_token --project=chatgpt-db-project --region=asia-southeast1 --limit=50
+  - Production:
+    gcloud functions logs read generate_lark_token --project=github-chatgpt-ggcloud --region=asia-southeast1 --limit=50
+- Kiểm tra token mới nhất:
+  gcloud secrets versions access latest --secret=lark-access-token-sg --project=github-chatgpt-ggcloud
+- Kiểm tra lịch sử phiên bản token:
+  gcloud secrets versions list lark-access-token-sg --project=github-chatgpt-ggcloud
+
+## Ghi chú quan trọng
+- Triển khai thủ công: Function được triển khai thủ công để kiểm soát chặt chẽ và tránh xung đột với CI/CD.
+- Secret Manager:
+  - Secret: lark-access-token-sg (trên project github-chatgpt-ggcloud).
+  - Cả hai hàm trên Test và Production cùng ghi/xóa trên cùng secret, không gây xung đột nghiêm trọng (Secret Manager xử lý atomic operations).
+  - Có khả năng race condition nhỏ khi xóa token cũ nếu hai hàm chạy đồng thời, nhưng không ảnh hưởng đến tính năng chính (phiên bản mới nhất luôn được giữ lại).
+- Hàm liên quan:
+  - Hàm check_lark_token (trên github-chatgpt-ggcloud) sử dụng token từ lark-access-token-sg. Nên gọi generate_lark_token trước để đảm bảo token hợp lệ.
+  - Hàm lark_webhook (trên cả chatgpt-db-project và github-chatgpt-ggcloud) có thể cần token để giao tiếp với Lark, cũng nên gọi generate_lark_token trước nếu cần.
+- Khuyến nghị:
+  - Theo dõi log trên cả hai project để đảm bảo hàm chạy ổn định.
+  - Nếu không cần thiết, có thể xóa hàm trên project test:
+    gcloud functions delete generate_lark_token --project=chatgpt-db-project --region=asia-southeast1
+
+## BÁO CÁO HOÀN THÀNH! 🚀
+EOF
+
+# Kiểm tra file báo cáo
+cat "/Users/nmhuyen/Documents/Manual Deploy/generate_lark_token/report.md"
