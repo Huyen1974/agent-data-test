@@ -1,12 +1,12 @@
 [
   {
-    "id": "REQ.ORPH",
-    "title": "Missing doc cite",
-    "doc_cite": null,
     "acceptance": [
       "tests/test_server.py"
     ],
+    "doc_cite": null,
+    "id": "REQ.ORPH",
+    "path": "/private/var/folders/z3/_hp1c7kn24nd1vt3jp7yhlh40000gn/T/pytest-of-nmhuyen/pytest-5/test_orphan_missing_doc_cite_f0/specs/orphan.a2a-spec.yml",
     "refs": [],
-    "path": "/private/var/folders/z3/_hp1c7kn24nd1vt3jp7yhlh40000gn/T/pytest-of-nmhuyen/pytest-5/test_orphan_missing_doc_cite_f0/specs/orphan.a2a-spec.yml"
+    "title": "Missing doc cite"
   }
 ]

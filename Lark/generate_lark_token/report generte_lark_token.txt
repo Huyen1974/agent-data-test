@@ -29,7 +29,7 @@ cat << 'EOF' > "/Users/nmhuyen/Documents/Manual Deploy/generate_lark_token/repor
 - Cách gọi:
   curl -X GET "https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/generate_lark_token" -H "Content-Type: application/json"
 - Dữ liệu đầu vào: Không cần truyền tham số.
-- Dữ liệu đầu ra: 
+- Dữ liệu đầu ra:
   {"status": "OK", "message": "Tạo và lưu token mới thành công"}
 - Log (lần gọi gần nhất - 2025-03-31 08:10:27):
   2025-03-31 08:10:27 - main - INFO - Tạo và lưu token mới thành công

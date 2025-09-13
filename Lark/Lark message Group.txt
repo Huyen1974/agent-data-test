@@ -60,4 +60,3 @@ User open_id	ou_79d3bad812371c7e41d8d356e3b5fab9
 App ID	cli_a785d634437a502f
 Cloud Function check token	https://asia-southeast1-chatgpt-db-project.cloudfunctions.net/check_lark_token
 chat_id nhóm Command Handle Report	oc_dcd85e56db925ca90869180b4747f419
-
