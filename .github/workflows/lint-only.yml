@@ -72,15 +72,12 @@ jobs:
         run: pytest
 
       # Standard-as-Code: SpecRunner gate (CP0.6)
-      - name: SpecRunner (Standard-as-Code)
-        if: ${{ github.ref == 'refs/heads/main' }}
+
         run: |
           # Build grouped specs (PF/RO/SG/INF)
           python tools/build_group_specs.py
           python tools/specrunner/main.py --config tools/specrunner/specrunner.yml --strict
 
-      - name: Upload SpecRunner artifacts
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: specrunner-artifacts
@@ -93,13 +90,10 @@ jobs:
             artifacts/coverage_by_group.json
 
       # Coverage-only verification (Doc → Spec = 100%)
-      - name: SpecRunner (Coverage-only)
-        if: ${{ github.ref == 'refs/heads/main' }}
+
         run: |
           python tools/specrunner/main.py --config tools/specrunner/specrunner.yml --coverage-only
 
-      - name: SpecLint (advanced checks)
-        if: ${{ github.ref == 'refs/heads/main' }}
         run: |
           python tools/speclint.py
 
