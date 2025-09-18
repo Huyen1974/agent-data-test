@@ -163,12 +163,17 @@
         try {
           treeLoadError.value = '';
           isLoadingTree.value = true;
+          console.log('Đang chuẩn bị gọi API...');
           const response = await fetch(`${API_BASE_URL}/api/v1/knowledge-tree`);
+          console.log('Đã nhận được phản hồi từ API:', response);
           if (!response.ok) {
             throw new Error(`Fetch failed with status ${response.status}`);
           }
           const payload = await response.json();
-          treeItems.value = normaliseTree(payload.tree || []);
+          console.log('Dữ liệu sau khi parse JSON:', payload);
+          const rawTree = Array.isArray(payload?.tree) ? payload.tree : [];
+          treeItems.value = normaliseTree(rawTree);
+          console.log('Dữ liệu cuối cùng được gán cho Tree View:', treeItems.value);
         } catch (error) {
           console.error('Failed to load knowledge tree', error);
           treeLoadError.value = 'Không thể tải dữ liệu cây tri thức. Vui lòng thử lại sau.';
