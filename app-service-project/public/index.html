@@ -171,7 +171,8 @@
           }
           const payload = await response.json();
           console.log('Dữ liệu sau khi parse JSON:', payload);
-          const rawTree = Array.isArray(payload?.tree) ? payload.tree : [];
+          const treeData = payload?.tree ?? payload?.data?.tree ?? [];
+          const rawTree = Array.isArray(treeData) ? treeData : [];
           treeItems.value = normaliseTree(rawTree);
           console.log('Dữ liệu cuối cùng được gán cho Tree View:', treeItems.value);
         } catch (error) {
