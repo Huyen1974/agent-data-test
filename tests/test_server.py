@@ -336,6 +336,57 @@ def test_update_document_syncs_vector(
 
 @pytest.mark.unit
 @patch("agent_data.server._firestore")
+def test_update_document_replaces_content_body(
+    mock_fs: MagicMock,
+    stub_vector_store: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    stub_vector_store.upsert_document.return_value = VectorSyncResult(status="ready")
+
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = True
+    doc_snapshot.to_dict.return_value = {
+        "revision": 4,
+        "content": {"mime_type": "text/markdown", "body": "Old body"},
+        "metadata": {"title": "Old"},
+        "is_human_readable": True,
+        "parent_id": "root",
+    }
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    payload = {
+        "document_id": "doc-abc",
+        "patch": {
+            "content": {"mime_type": "text/markdown", "body": "Updated body"},
+            "metadata": {"title": "Updated"},
+        },
+        "update_mask": ["content", "metadata"],
+        "last_known_revision": 4,
+    }
+
+    resp = client.put(
+        "/documents/doc-abc",
+        json=payload,
+        headers={"x-api-key": "secret"},
+    )
+
+    assert resp.status_code == 200
+    doc_ref.update.assert_called()
+    first_update = doc_ref.update.call_args_list[0][0][0]
+    assert first_update["content"]["body"] == "Updated body"
+    assert first_update["metadata"]["title"] == "Updated"
+    stub_vector_store.upsert_document.assert_called_once()
+    vector_kwargs = stub_vector_store.upsert_document.call_args.kwargs
+    assert vector_kwargs["content"] == "Updated body"
+
+
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
 def test_move_document_updates_parent(
     mock_fs: MagicMock,
     stub_vector_store: MagicMock,

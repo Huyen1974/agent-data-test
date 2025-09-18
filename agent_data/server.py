@@ -808,48 +808,57 @@ async def update_document(
             )
 
         now_iso = datetime.now(UTC).isoformat()
-        updates: dict = {"updated_at": now_iso, "revision": current_revision + 1}
+        update_mask = set(payload.update_mask or [])
+
+        def should_update(field: str) -> bool:
+            return not update_mask or field in update_mask
+
+        current_content = (
+            current.get("content") if isinstance(current.get("content"), dict) else {}
+        )
+        current_metadata = (
+            current.get("metadata") if isinstance(current.get("metadata"), dict) else {}
+        )
+
+        new_content = current_content
+        new_metadata = current_metadata
+        new_is_hr = current.get("is_human_readable", False)
+
+        updates: dict[str, Any] = {
+            "updated_at": now_iso,
+            "revision": current_revision + 1,
+        }
         fields_updated: set[str] = set()
 
-        if payload.update_mask:
-            for field in payload.update_mask:
-                if field == "content" and payload.patch.content is not None:
-                    updates["content"] = payload.patch.content.model_dump()
-                    fields_updated.add("content")
-                elif field == "metadata" and payload.patch.metadata is not None:
-                    updates["metadata"] = payload.patch.metadata.model_dump(
-                        exclude_none=True
-                    )
-                    fields_updated.add("metadata")
-                elif (
-                    field == "is_human_readable"
-                    and payload.patch.is_human_readable is not None
-                ):
-                    updates["is_human_readable"] = payload.patch.is_human_readable
-                    fields_updated.add("is_human_readable")
-        else:
-            if payload.patch.content is not None:
-                updates["content"] = payload.patch.content.model_dump()
-                fields_updated.add("content")
-            if payload.patch.metadata is not None:
-                updates["metadata"] = payload.patch.metadata.model_dump(
-                    exclude_none=True
-                )
-                fields_updated.add("metadata")
-            if payload.patch.is_human_readable is not None:
-                updates["is_human_readable"] = payload.patch.is_human_readable
-                fields_updated.add("is_human_readable")
+        if should_update("content") and payload.patch.content is not None:
+            new_content = payload.patch.content.model_dump()
+            updates["content"] = new_content
+            fields_updated.add("content")
+
+        if should_update("metadata") and payload.patch.metadata is not None:
+            new_metadata = payload.patch.metadata.model_dump(exclude_none=True)
+            updates["metadata"] = new_metadata
+            fields_updated.add("metadata")
+
+        if (
+            should_update("is_human_readable")
+            and payload.patch.is_human_readable is not None
+        ):
+            new_is_hr = payload.patch.is_human_readable
+            updates["is_human_readable"] = new_is_hr
+            fields_updated.add("is_human_readable")
 
         if not fields_updated:
             raise _error(400, "INVALID_ARGUMENT", "update_mask empty or patch missing")
 
         doc_ref.update(updates)
-        merged_content = updates.get("content") or current.get("content") or {}
-        merged_metadata = updates.get("metadata") or current.get("metadata") or {}
+        current["content"] = new_content
+        current["metadata"] = new_metadata
+        current["is_human_readable"] = new_is_hr
+        merged_content = new_content
+        merged_metadata = new_metadata
         merged_parent = updates.get("parent_id", current.get("parent_id"))
-        merged_hr = updates.get(
-            "is_human_readable", current.get("is_human_readable", False)
-        )
+        merged_hr = new_is_hr
 
         try:
             _sync_vector_entry(
