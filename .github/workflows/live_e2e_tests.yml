@@ -43,7 +43,7 @@ jobs:
             openai_api_key:projects/${{ env.GCP_PROJECT_ID }}/secrets/OPENAI_API_KEY
 
       - name: Setup gcloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       - name: Setup Python
         uses: actions/setup-python@v5
