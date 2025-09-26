@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """Debug script to investigate E2E test failures."""
 
-import os
-import sys
 import json
-import time
 import logging
+import sys
+import time
+
 import requests
 from google.cloud import secretmanager
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 logger.addHandler(handler)
 
 PROJECT_ID = "github-chatgpt-ggcloud"
 TARGET_SECRET_ID = "lark-access-token-sg"
 LARK_API_BASE = "https://open.larksuite.com/open-apis"
+
 
 def debug_lark_api_endpoints():
     """Debug Lark API endpoints to find the correct one."""
@@ -28,7 +29,7 @@ def debug_lark_api_endpoints():
         "/auth/v3/user/info",
         "/auth/v3/user/me",
         "/auth/v3/tenant/info",
-        "/bot/v3/info"
+        "/bot/v3/info",
     ]
 
     # Get current token for testing
@@ -42,10 +43,7 @@ def debug_lark_api_endpoints():
         print(f"❌ Cannot get token: {e}")
         return
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     for endpoint in endpoints:
         url = f"{LARK_API_BASE}{endpoint}"
@@ -58,7 +56,7 @@ def debug_lark_api_endpoints():
                     data = response.json()
                     print(f"   ✅ SUCCESS: {json.dumps(data, indent=2)}")
                     return endpoint
-                except:
+                except Exception:
                     print(f"   ✅ SUCCESS: {response.text[:200]}...")
                     return endpoint
             else:
@@ -68,6 +66,7 @@ def debug_lark_api_endpoints():
 
     print("❌ No working endpoint found")
     return None
+
 
 def debug_cleanup_issue():
     """Debug the cleanup issue - why there are 2 enabled versions."""
@@ -87,10 +86,10 @@ def debug_cleanup_issue():
 
         for version in versions:
             version_info = {
-                'name': version.name,
-                'state': version.state,
-                'create_time': version.create_time,
-                'enabled': version.state == secretmanager.SecretVersion.State.ENABLED
+                "name": version.name,
+                "state": version.state,
+                "create_time": version.create_time,
+                "enabled": version.state == secretmanager.SecretVersion.State.ENABLED,
             }
 
             if version.state == secretmanager.SecretVersion.State.ENABLED:
@@ -111,7 +110,7 @@ def debug_cleanup_issue():
         if len(enabled_versions) > 1:
             print("   ❌ Multiple enabled versions found - cleanup failed")
             # Sort by creation time
-            enabled_versions.sort(key=lambda x: x['create_time'])
+            enabled_versions.sort(key=lambda x: x["create_time"])
             print(f"   📅 Oldest enabled: {enabled_versions[0]['name']}")
             print(f"   📅 Latest enabled: {enabled_versions[-1]['name']}")
         else:
@@ -120,7 +119,9 @@ def debug_cleanup_issue():
     except Exception as e:
         print(f"❌ Error debugging cleanup: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 def debug_token_generation():
     """Debug token generation process."""
@@ -129,7 +130,9 @@ def debug_token_generation():
     try:
         # Read app secret
         client = secretmanager.SecretManagerServiceClient()
-        app_secret_path = client.secret_version_path(PROJECT_ID, "lark-app-secret-sg", "latest")
+        app_secret_path = client.secret_version_path(
+            PROJECT_ID, "lark-app-secret-sg", "latest"
+        )
         response = client.access_secret_version(request={"name": app_secret_path})
         app_secret = response.payload.data.decode("UTF-8")
 
@@ -140,10 +143,7 @@ def debug_token_generation():
 
         url = "https://open.larksuite.com/open-apis/auth/v3/app_access_token/internal/"
         headers = {"Content-Type": "application/json"}
-        payload = {
-            "app_id": "cli_a785d634437a502f",
-            "app_secret": app_secret
-        }
+        payload = {"app_id": "cli_a785d634437a502f", "app_secret": app_secret}
 
         print("🔄 Attempting manual token generation...")
         response = requests.post(url, json=payload, headers=headers, timeout=10)
@@ -160,8 +160,10 @@ def debug_token_generation():
     except Exception as e:
         print(f"❌ Error in token generation debug: {e}")
         import traceback
+
         traceback.print_exc()
         return None
+
 
 def debug_function_response():
     """Debug the Cloud Function response in detail."""
@@ -189,10 +191,11 @@ def debug_function_response():
     except Exception as e:
         print(f"❌ Error testing function: {e}")
 
+
 def main():
     """Main debug function."""
     print("🔍 E2E TEST FAILURE DEBUGGING TOOL")
-    print("="*50)
+    print("=" * 50)
 
     # Debug 1: Lark API endpoints
     working_endpoint = debug_lark_api_endpoints()
@@ -206,9 +209,9 @@ def main():
     # Debug 4: Function response
     debug_function_response()
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("📋 DEBUG SUMMARY")
-    print("="*50)
+    print("=" * 50)
 
     print("🔍 Key Findings:")
     if working_endpoint:
@@ -226,6 +229,7 @@ def main():
     print("   3. Monitor Secret Manager versions and costs")
 
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

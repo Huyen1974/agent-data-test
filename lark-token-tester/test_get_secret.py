@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Test script for reading Lark app secret from Secret Manager."""
 
+import logging
 import os
 import sys
-import logging
-from unittest.mock import Mock, patch, MagicMock
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Copy the logic from the original function
 PROJECT_ID = "github-chatgpt-ggcloud"
@@ -16,8 +15,9 @@ APP_SECRET_ID = "lark-app-secret-sg"
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 logger.addHandler(handler)
+
 
 def _read_secret_mock(secret_id: str, project_id: str) -> str:
     """Mock version of secret reading logic for testing."""
@@ -25,12 +25,14 @@ def _read_secret_mock(secret_id: str, project_id: str) -> str:
     try:
         # This is the logic we want to test - reading from Secret Manager
         from google.cloud import secretmanager
+
         client = secretmanager.SecretManagerServiceClient()
         response = client.access_secret_version(request={"name": name})
         return response.payload.data.decode("UTF-8")
     except Exception as exc:
         logger.error("Failed to read secret %s: %s", secret_id, exc)
         return None
+
 
 def test_get_secret():
     """Test reading the Lark app secret."""
@@ -51,6 +53,7 @@ def test_get_secret():
         print(f"❌ FAIL: Exception occurred: {e}")
         return False
 
+
 def test_get_secret_with_invalid_project():
     """Test reading secret with invalid project ID."""
     print("Test 2: Reading secret with invalid project ID...")
@@ -65,6 +68,7 @@ def test_get_secret_with_invalid_project():
     except Exception as e:
         print(f"✅ PASS: Correctly raised exception for invalid project: {e}")
         return True
+
 
 def test_get_secret_with_invalid_secret_id():
     """Test reading secret with invalid secret ID."""
@@ -81,6 +85,7 @@ def test_get_secret_with_invalid_secret_id():
         print(f"✅ PASS: Correctly raised exception for invalid secret: {e}")
         return True
 
+
 if __name__ == "__main__":
     print("Starting Lark Secret Reading Tests...\n")
 
@@ -89,7 +94,7 @@ if __name__ == "__main__":
     results.append(test_get_secret_with_invalid_project())
     results.append(test_get_secret_with_invalid_secret_id())
 
-    print(f"\n=== Summary ===")
+    print("\n=== Summary ===")
     print(f"Tests passed: {sum(results)}/{len(results)}")
 
     if all(results):

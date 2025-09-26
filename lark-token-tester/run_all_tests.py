@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """Runner script to execute all Lark token generator tests."""
 
-import os
-import sys
-import subprocess
 import logging
-from typing import List, Tuple
+import os
+import subprocess
+import sys
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 logger.addHandler(handler)
 
 TEST_SCRIPTS = [
     "test_get_secret.py",
     "test_generate_token.py",
     "test_save_token.py",
-    "test_cleanup.py"
+    "test_cleanup.py",
 ]
 
-def run_test_script(script_name: str) -> Tuple[str, int, str]:
+
+def run_test_script(script_name: str) -> tuple[str, int, str]:
     """Run a single test script and return (name, exit_code, output)."""
     script_path = os.path.join(os.path.dirname(__file__), script_name)
 
@@ -29,7 +29,7 @@ def run_test_script(script_name: str) -> Tuple[str, int, str]:
             [sys.executable, script_path],
             capture_output=True,
             text=True,
-            timeout=300  # 5 minute timeout
+            timeout=300,  # 5 minute timeout
         )
         return script_name, result.returncode, result.stdout + result.stderr
     except subprocess.TimeoutExpired:
@@ -37,11 +37,12 @@ def run_test_script(script_name: str) -> Tuple[str, int, str]:
     except Exception as e:
         return script_name, -2, f"ERROR: {e}"
 
+
 def print_test_result(script_name: str, exit_code: int, output: str):
     """Print formatted test result."""
     print(f"\n{'='*60}")
     print(f"TEST: {script_name}")
-    print('='*60)
+    print("=" * 60)
 
     if exit_code == 0:
         print("✅ RESULT: PASS")
@@ -61,6 +62,7 @@ def print_test_result(script_name: str, exit_code: int, output: str):
         print("(No output)")
     print("-" * 60)
 
+
 def main():
     """Main function to run all tests and report results."""
     print("🚀 Starting Lark Token Generator Test Suite")
@@ -78,9 +80,9 @@ def main():
         print_test_result(script_name, exit_code, output)
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("📊 FINAL SUMMARY")
-    print("="*60)
+    print("=" * 60)
 
     total_tests = len(test_results)
     passed_tests = sum(1 for _, code, _ in test_results if code == 0)
@@ -95,7 +97,7 @@ def main():
         status = "✅ PASS" if exit_code == 0 else "❌ FAIL"
         print(f"  - {script_name}: {status}")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
 
     if failed_tests == 0:
         print("🎉 ALL TESTS PASSED! 🎉")
@@ -103,6 +105,7 @@ def main():
     else:
         print(f"⚠️  {failed_tests} TEST(S) FAILED!")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

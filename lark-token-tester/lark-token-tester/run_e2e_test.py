@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """End-to-End integration test for Lark Token workflow."""
 
-import os
-import sys
-import json
-import time
 import logging
+import sys
+import time
+
 import requests
-from typing import Optional, Dict, Any
 from google.cloud import secretmanager
 
 # Setup logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 logger.addHandler(handler)
 
 # Configuration
@@ -24,7 +22,9 @@ LARK_API_BASE = "https://open.larksuite.com/open-apis"
 
 APP_SECRET_ID = "lark-app-secret-sg"
 APP_ID = "cli_a785d634437a502f"
-LARK_TOKEN_URL = "https://open.larksuite.com/open-apis/auth/v3/app_access_token/internal/"
+LARK_TOKEN_URL = (
+    "https://open.larksuite.com/open-apis/auth/v3/app_access_token/internal/"
+)
 
 # Cloud Function URL
 FUNCTION_URL = "https://generate-lark-token-pfne2mqwja-as.a.run.app"
@@ -42,9 +42,7 @@ def step_1_call_function() -> bool:
 
         # Make HTTP POST request to trigger token generation
         response = requests.post(
-            FUNCTION_URL,
-            timeout=60,
-            headers={"Content-Type": "application/json"}
+            FUNCTION_URL, timeout=60, headers={"Content-Type": "application/json"}
         )
 
         logger.info("Function response status: %d", response.status_code)
@@ -56,7 +54,9 @@ def step_1_call_function() -> bool:
                 print("✅ PASS: Cloud Function executed successfully")
                 return True
             else:
-                print(f"❌ FAIL: Function returned error: {response_data.get('message')}")
+                print(
+                    f"❌ FAIL: Function returned error: {response_data.get('message')}"
+                )
                 return False
         else:
             print(f"❌ FAIL: Function returned HTTP {response.status_code}")
@@ -70,8 +70,7 @@ def step_1_call_function() -> bool:
         return False
 
 
-
-def step_2_read_new_token() -> Optional[str]:
+def step_2_read_new_token() -> str | None:
     """Step 2: Read new token from Secret Manager."""
     print()
     print("=" * 60)
@@ -94,7 +93,9 @@ def step_2_read_new_token() -> Optional[str]:
         if token:
             print(f"✅ PASS: Successfully read new token (length: {len(token)})")
             # Mask token for security in logs
-            masked_token = token[:10] + "..." + token[-5:] if len(token) > 15 else "****"
+            masked_token = (
+                token[:10] + "..." + token[-5:] if len(token) > 15 else "****"
+            )
             print(f"🔑 Token: {masked_token}")
             return token
         else:
@@ -106,7 +107,6 @@ def step_2_read_new_token() -> Optional[str]:
         return None
 
 
-
 def step_3_validate_token(token: str) -> bool:
     """Step 3: Validate token by comparing with Lark API response."""
     print()
@@ -116,8 +116,12 @@ def step_3_validate_token(token: str) -> bool:
 
     try:
         client = secretmanager.SecretManagerServiceClient()
-        app_secret_path = client.secret_version_path(PROJECT_ID, APP_SECRET_ID, "latest")
-        app_secret = client.access_secret_version(request={"name": app_secret_path}).payload.data.decode("UTF-8")
+        app_secret_path = client.secret_version_path(
+            PROJECT_ID, APP_SECRET_ID, "latest"
+        )
+        app_secret = client.access_secret_version(
+            request={"name": app_secret_path}
+        ).payload.data.decode("UTF-8")
 
         if not app_secret:
             print("❌ FAIL: App secret is empty or missing")
@@ -127,7 +131,9 @@ def step_3_validate_token(token: str) -> bool:
         headers = {"Content-Type": "application/json"}
 
         logger.info("Calling Lark API to verify stored token")
-        response = requests.post(LARK_TOKEN_URL, json=payload, headers=headers, timeout=30)
+        response = requests.post(
+            LARK_TOKEN_URL, json=payload, headers=headers, timeout=30
+        )
         logger.info("Verification response status: %d", response.status_code)
 
         if response.status_code != 200:
@@ -156,7 +162,6 @@ def step_3_validate_token(token: str) -> bool:
         return False
 
 
-
 def step_4_check_cleanup() -> bool:
     """Step 4: Verify cleanup - only 1 version should remain."""
     print()
@@ -171,7 +176,9 @@ def step_4_check_cleanup() -> bool:
 
         # List all versions
         versions = list(client.list_secret_versions(request={"parent": secret_path}))
-        enabled_versions = [v for v in versions if v.state == secretmanager.SecretVersion.State.ENABLED]
+        enabled_versions = [
+            v for v in versions if v.state == secretmanager.SecretVersion.State.ENABLED
+        ]
 
         print(f"📊 Total versions found: {len(versions)}")
         print(f"🔓 Enabled versions: {len(enabled_versions)}")
@@ -190,7 +197,6 @@ def step_4_check_cleanup() -> bool:
     except Exception as e:
         print(f"❌ FAIL: Error checking cleanup: {e}")
         return False
-
 
 
 def main():

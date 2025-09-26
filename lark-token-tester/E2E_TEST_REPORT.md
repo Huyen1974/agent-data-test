@@ -120,7 +120,7 @@
 # Thử các endpoint khác:
 endpoints_to_test = [
     "/auth/v3/user/me",
-    "/auth/v3/tenant/info", 
+    "/auth/v3/tenant/info",
     "/bot/v3/info",
     "/auth/v3/app_access_token/info"
 ]
