@@ -1,6 +1,15 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { useDisplay } from 'vuetify';
+import {
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+} from 'firebase/auth';
+
+import { auth } from '../firebase/config';
 
 const props = defineProps({
   title: {
@@ -23,6 +32,7 @@ const props = defineProps({
   },
 });
 
+const router = useRouter();
 const display = useDisplay();
 const isMobile = computed(() => display.smAndDown.value);
 const drawer = ref(!isMobile.value);
@@ -43,6 +53,59 @@ function normalizeItems(items = []) {
 
 function toggleDrawer() {
   drawer.value = !drawer.value;
+}
+
+const user = ref(null);
+const authLoading = ref(true);
+const authError = ref('');
+
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+const stopAuthListener = onAuthStateChanged(
+  auth,
+  (currentUser) => {
+    user.value = currentUser;
+    authError.value = '';
+    authLoading.value = false;
+  },
+  (error) => {
+    user.value = null;
+    authError.value = error?.message ?? 'Không thể xác thực người dùng.';
+    authLoading.value = false;
+  }
+);
+
+onBeforeUnmount(() => {
+  stopAuthListener?.();
+});
+
+const isAuthenticated = computed(() => !!user.value);
+const userDisplayName = computed(
+  () => user.value?.displayName || user.value?.email || 'Tài khoản'
+);
+
+async function signInWithGoogle() {
+  authError.value = '';
+  try {
+    await signInWithPopup(auth, googleProvider);
+  } catch (error) {
+    authError.value =
+      error instanceof Error ? error.message : 'Đăng nhập thất bại.';
+  }
+}
+
+async function signOutUser() {
+  authError.value = '';
+  try {
+    await signOut(auth);
+    user.value = null;
+    authLoading.value = false;
+    await router.push('/');
+  } catch (error) {
+    authError.value =
+      error instanceof Error ? error.message : 'Đăng xuất thất bại.';
+  }
 }
 </script>
 
@@ -92,9 +155,57 @@ function toggleDrawer() {
         <slot name="toolbar-actions">
           <v-btn density="compact" variant="tonal">Thao tác mẫu</v-btn>
         </slot>
+        <div class="auth-controls ms-4 d-flex align-center">
+          <v-progress-circular
+            v-if="authLoading"
+            size="20"
+            width="2"
+            indeterminate
+            color="primary"
+          />
+          <template v-else>
+            <v-btn
+              v-if="!isAuthenticated"
+              color="primary"
+              prepend-icon="mdi-google"
+              variant="outlined"
+              density="compact"
+              @click="signInWithGoogle"
+            >
+              Đăng nhập bằng Google
+            </v-btn>
+            <div v-else class="d-flex align-center">
+              <v-chip
+                size="small"
+                color="primary"
+                variant="tonal"
+                class="me-2"
+              >
+                {{ userDisplayName }}
+              </v-chip>
+              <v-btn
+                variant="text"
+                density="compact"
+                color="primary"
+                @click="signOutUser"
+              >
+                Đăng xuất
+              </v-btn>
+            </div>
+          </template>
+        </div>
       </v-toolbar>
 
       <div class="workspace-wrapper">
+        <v-alert
+          v-if="authError"
+          type="error"
+          density="compact"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ authError }}
+        </v-alert>
         <slot>
           <div class="content-placeholder text-body-2 text-medium-emphasis">
             Nội dung khu vực làm việc (placeholder).
@@ -136,5 +247,9 @@ function toggleDrawer() {
   border-radius: 12px;
   padding: 32px;
   text-align: center;
+}
+
+.auth-controls {
+  gap: 8px;
 }
 </style>
