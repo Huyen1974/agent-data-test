@@ -9,6 +9,7 @@
     "vuetify": "^3.10.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.1",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/test-utils": "^2.4.0-alpha.2",
     "jsdom": "^27.0.0",

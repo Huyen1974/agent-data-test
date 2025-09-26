@@ -78,6 +78,9 @@ const stopAuthListener = onAuthStateChanged(
 
 onBeforeUnmount(() => {
   stopAuthListener?.();
+  if (typeof window !== 'undefined' && window.__AUTH_TEST_API__) {
+    delete window.__AUTH_TEST_API__;
+  }
 });
 
 const isAuthenticated = computed(() => !!user.value);
@@ -106,6 +109,20 @@ async function signOutUser() {
     authError.value =
       error instanceof Error ? error.message : 'Đăng xuất thất bại.';
   }
+}
+
+if (typeof window !== 'undefined') {
+  window.__AUTH_TEST_API__ = {
+    setUser: (value) => {
+      user.value = value;
+    },
+    setLoading: (value) => {
+      authLoading.value = value;
+    },
+    setError: (value) => {
+      authError.value = value ?? '';
+    },
+  };
 }
 </script>
 
