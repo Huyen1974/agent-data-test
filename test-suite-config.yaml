@@ -1,0 +1,20 @@
+---
+version: v2.3
+description: "Quality Gate Test Configuration"
+policy: "Blocking tests must pass for merge"
+
+checks:
+  - group: 1
+    items:
+      - id: auth-unsubscribe-listeners
+        description: "Unsubscribe listeners in onUnmounted"
+        blocking: true
+        owner: Codex
+        tool: Jest
+        evidence: "Log test pass"
+      - id: auth-guard-race
+        description: "Guard race signIn/signOut"
+        blocking: true
+        owner: Cursor
+        tool: Cypress
+        evidence: "E2E video"

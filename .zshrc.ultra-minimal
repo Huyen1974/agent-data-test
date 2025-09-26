@@ -1,0 +1,122 @@
+# =====================================================
+# ULTRA-MINIMAL .zshrc - Maximum Speed
+# =====================================================
+# This version loads ONLY the bare essentials for immediate shell startup
+# All heavy tools are lazy-loaded on first use
+
+# ----- ABSOLUTE MINIMUM PATH -----
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin"
+
+# =====================================================
+# LAZY LOADING SYSTEM
+# =====================================================
+
+# ----- Load Google Cloud SDK (Only when gcloud is called) -----
+gcloud() {
+    if [ -f '/Users/nmhuyen/google-cloud-sdk/path.zsh.inc' ]; then
+        source '/Users/nmhuyen/google-cloud-sdk/path.zsh.inc'
+        source '/Users/nmhuyen/google-cloud-sdk/completion.zsh.inc'
+    fi
+    command gcloud "$@"
+}
+
+# ----- Load Python Environments (Only when needed) -----
+python() {
+    export PYENV_ROOT="$HOME/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init -)"
+    eval "$(pyenv virtualenv-init -)"
+    command python "$@"
+}
+
+# ----- Load Conda (Only when conda is called) -----
+conda() {
+    __conda_setup="$('/Users/nmhuyen/miniconda/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+    if [ $? -eq 0 ]; then
+        eval "$__conda_setup"
+    fi
+    command conda "$@"
+}
+
+# ----- Load Other Tools (Only when needed) -----
+docker() {
+    export JAVA_HOME="/Library/Java/JavaVirtualMachines/openjdk.jdk/Contents/Home"
+    export PATH="$JAVA_HOME/bin:$PATH"
+    export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"
+    export PATH="$PATH:/Users/nmhuyen/.local/bin"
+    fpath=(/Users/nmhuyen/.docker/completions $fpath)
+    autoload -Uz compinit && compinit
+    command docker "$@"
+}
+
+# ----- API Keys with Caching -----
+export API_CACHE_DIR="${HOME}/.cache/api_keys"
+mkdir -p "$API_CACHE_DIR"
+
+get_api_key() {
+    local secret_name="$1"
+    local cache_file="$API_CACHE_DIR/${secret_name}"
+
+    # Check cache (max 1 hour old)
+    if [ -f "$cache_file" ]; then
+        local cache_age=$(($(date +%s) - $(stat -f%Sm -t %s "$cache_file" 2>/dev/null || echo 0)))
+        if [ $cache_age -lt 3600 ]; then
+            cat "$cache_file"
+            return
+        fi
+    fi
+
+    # Fetch fresh if cache miss or expired
+    if command -v gcloud >/dev/null 2>&1; then
+        local key=$(gcloud secrets versions access latest --secret="$secret_name" --project=github-chatgpt-ggcloud 2>/dev/null)
+        if [ -n "$key" ]; then
+            echo "$key" > "$cache_file"
+            echo "$key"
+        fi
+    fi
+}
+
+# ----- Environment Variables (Lazy) -----
+export OPENAI_API_KEY=$(get_api_key "openai-api-key-sg")
+export QDRANT_API_KEY=$(get_api_key "Qdrant_agent_data_N1D8R2vC0_5")
+export MGMT_KEY=$(get_api_key "Qdrant_cloud_management_key")
+
+# =====================================================
+# ESSENTIAL ALIASES
+# =====================================================
+alias codex-auto="codex --auto-edit"
+alias codex-full="codex --full-auto"
+
+# =====================================================
+# HELPER FUNCTIONS
+# =====================================================
+refresh-keys() {
+    echo "Refreshing API keys..."
+    rm -f "$API_CACHE_DIR"/*
+    export OPENAI_API_KEY=$(get_api_key "openai-api-key-sg")
+    export QDRANT_API_KEY=$(get_api_key "Qdrant_agent_data_N1D8R2vC0_5")
+    export MGMT_KEY=$(get_api_key "Qdrant_cloud_management_key")
+    echo "Done!"
+}
+
+cache-status() {
+    echo "API Key Cache Status:"
+    for f in "$API_CACHE_DIR"/*; do
+        if [ -f "$f" ]; then
+            local age=$(($(date +%s) - $(stat -f%Sm -t %s "$f" 2>/dev/null || echo 0)))
+            echo "  $(basename "$f"): ${age}s old"
+        fi
+    done
+}
+
+# =====================================================
+# PERFORMANCE NOTES
+# =====================================================
+# This file is designed for MAXIMUM startup speed:
+# - Only essential PATH is set
+# - All heavy tools are lazy-loaded
+# - API keys are cached to avoid network calls
+# - No completions loaded until needed
+#
+# Use refresh-keys() to manually refresh API keys
+# Use cache-status() to check cache age
