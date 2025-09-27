@@ -5,6 +5,8 @@ import time
 
 import requests
 
+from gcp_secrets import SecretAccessError, get_secret
+
 # Configure structured logging
 logging.basicConfig(format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -20,13 +22,49 @@ QDRANT_API_BASE = os.getenv(
 QDRANT_BACKUP_BASE = os.getenv(
     "QDRANT_BACKUP_BASE", "https://api.cloud.qdrant.io/api/cluster/backup/v1"
 )
-QDRANT_MGMT_KEY = os.getenv("QDRANT_MGMT_KEY")
+MGMT_SECRET_DEFAULT = "Qdrant_cloud_management_key"
+
+
+def _load_mgmt_key() -> str | None:
+    direct = os.getenv("QDRANT_MGMT_KEY")
+    if direct:
+        return direct
+    secret_name = os.getenv("QDRANT_MGMT_KEY_SECRET_NAME", MGMT_SECRET_DEFAULT)
+    if not secret_name:
+        return None
+    try:
+        return get_secret(secret_name)
+    except SecretAccessError as exc:  # pragma: no cover - network errors
+        logger.error(
+            json.dumps(
+                {
+                    "error": "secret_access_failed",
+                    "secret_name": secret_name,
+                    "details": str(exc),
+                }
+            )
+        )
+        return None
+
+
+QDRANT_MGMT_KEY = _load_mgmt_key()
+
+
+def _ensure_mgmt_key() -> str | None:
+    global QDRANT_MGMT_KEY
+    if not QDRANT_MGMT_KEY:
+        QDRANT_MGMT_KEY = _load_mgmt_key()
+    return QDRANT_MGMT_KEY
 
 
 def call_mgmt(method, path, **kwargs):
     """Make API call to Qdrant Management API with appropriate base URL."""
+    mgmt_key = _ensure_mgmt_key()
+    if not mgmt_key:
+        logger.error(json.dumps({"error": "missing_management_key"}))
+        return None
     headers = {
-        "Authorization": f"apikey {QDRANT_MGMT_KEY}",
+        "Authorization": f"apikey {mgmt_key}",
         "Content-Type": "application/json",
     }
 
@@ -294,20 +332,21 @@ def handle(request):
     """Cloud Function entry point."""
 
     # Debug environment variables (without exposing secrets)
+    mgmt_key = _ensure_mgmt_key()
     logger.info(
         json.dumps(
             {
                 "debug": "env_check",
                 "acc_set": bool(ACC),
                 "clus_set": bool(CLUS),
-                "mgmt_key_set": bool(QDRANT_MGMT_KEY),
-                "mgmt_key_len": len(QDRANT_MGMT_KEY) if QDRANT_MGMT_KEY else 0,
+                "mgmt_key_set": bool(mgmt_key),
+                "mgmt_key_len": len(mgmt_key) if mgmt_key else 0,
             }
         )
     )
 
     # Validate required environment variables
-    if not all([ACC, CLUS, QDRANT_MGMT_KEY]):
+    if not all([ACC, CLUS, mgmt_key]):
         error_msg = "Missing required environment variables"
         logger.error(json.dumps({"error": error_msg}))
         return {"error": error_msg}, 500

@@ -1,0 +1,32 @@
+---
+version: v2.3
+description: "Quality Gate Test Configuration"
+policy: "Blocking tests must pass for merge; non-blocking tests emit warnings"
+
+checks:
+  - group: auth-core
+    items:
+      - id: auth-unsubscribe-listeners
+        description: "Unsubscribe listeners in onUnmounted"
+        blocking: true
+        owner: Codex
+        tool: jest
+        command: "./scripts/quality-gate/run-test.sh jest auth-unsubscribe-listeners"
+        evidence: "Log test pass"
+      - id: auth-guard-race
+        description: "Guard race signIn/signOut"
+        blocking: true
+        owner: Cursor
+        tool: cypress
+        command: "./scripts/quality-gate/run-test.sh cypress auth-guard-race"
+        evidence: "E2E video"
+
+  - group: auth-enhancements
+    items:
+      - id: auth-nonblocking-docs
+        description: "Documentation lint for auth flows (non blocking)"
+        blocking: false
+        owner: Codex
+        tool: playwright
+        command: "./scripts/quality-gate/run-test.sh playwright auth-nonblocking-docs --simulate-fail"
+        evidence: "Doc lint logs"

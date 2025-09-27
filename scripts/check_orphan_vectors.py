@@ -3,7 +3,7 @@
 Detect orphan vectors between Qdrant and Firestore.
 
 Logic:
-- Read Qdrant endpoint and API key from env (QDRANT_URL, QDRANT_API_KEY).
+- Read Qdrant endpoint from env (QDRANT_URL) and API key via ADC (Secret Manager with env override).
 - Connect to Qdrant collection `test_documents` and list all point IDs.
 - Connect to Firestore collection `metadata_test` and list all document IDs.
 - For IDs present in Qdrant but missing in Firestore, print [WARNING] lines.
@@ -17,6 +17,24 @@ from __future__ import annotations
 import os
 import sys
 
+from gcp_secrets import SecretAccessError, get_secret
+
+
+def _load_qdrant_key() -> tuple[str, str]:
+    direct = os.getenv("QDRANT_API_KEY", "").strip()
+    if direct:
+        return direct, "[INFO] Using Qdrant API key from environment override"
+    secret_name = os.getenv("QDRANT_API_SECRET_NAME", "Qdrant_agent_data_N1D8R2vC0_5")
+    if not secret_name:
+        return "", "[WARNING] Qdrant secret name not configured"
+    try:
+        return (
+            get_secret(secret_name).strip(),
+            "[INFO] Qdrant API key fetched via Secret Manager",
+        )
+    except SecretAccessError as exc:  # pragma: no cover - network errors
+        return "", f"[WARNING] Failed to load Qdrant API key: {exc}"
+
 
 def _print(msg: str) -> None:
     sys.stdout.write(msg + "\n")
@@ -26,9 +44,11 @@ def _print(msg: str) -> None:
 def qdrant_ids(collection: str = "test_documents") -> tuple[set[str], str]:
     """Return (ids, note) from Qdrant, or (empty set, warning)."""
     url = os.getenv("QDRANT_URL", "").strip()
-    key = os.getenv("QDRANT_API_KEY", "").strip()
-    if not url or not key:
-        return set(), "[WARNING] Qdrant credentials not provided; skipping Qdrant scan"
+    key, note = _load_qdrant_key()
+    if not url:
+        return set(), "[WARNING] Qdrant URL not provided; skipping Qdrant scan"
+    if not key:
+        return set(), note
     try:
         from qdrant_client import QdrantClient  # type: ignore
 

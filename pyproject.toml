@@ -36,6 +36,7 @@ dependencies = [
     "google-cloud-storage>=2.10.0",
     "google-cloud-firestore>=2.13.1",
     "google-cloud-pubsub>=2.20.0",
+    "google-cloud-secret-manager>=2.20.0",
     "google-auth>=2.23.0",
     "google-api-python-client>=2.108.0",
 

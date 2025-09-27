@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent_data import vector_store
+from gcp_secrets import SecretAccessError
 
 
 @pytest.fixture(autouse=True)
@@ -13,7 +14,22 @@ def reset_vector_store():
     vector_store.get_vector_store(refresh=True)
 
 
-def test_vector_store_disabled_without_env(monkeypatch: pytest.MonkeyPatch):
+@pytest.fixture
+def mock_secrets(monkeypatch: pytest.MonkeyPatch):
+    values = {}
+
+    def fake_get_secret(name: str, **_):
+        if name in values:
+            return values[name]
+        raise SecretAccessError(f"secret {name} unavailable")
+
+    monkeypatch.setattr(vector_store, "get_secret", fake_get_secret)
+    return values
+
+
+def test_vector_store_disabled_without_env(
+    monkeypatch: pytest.MonkeyPatch, mock_secrets
+):
     for env_var in [
         "QDRANT_URL",
         "QDRANT_API_URL",
@@ -29,10 +45,10 @@ def test_vector_store_disabled_without_env(monkeypatch: pytest.MonkeyPatch):
     assert store.enabled is False
 
 
-def test_vector_store_upsert_success(monkeypatch: pytest.MonkeyPatch):
+def test_vector_store_upsert_success(monkeypatch: pytest.MonkeyPatch, mock_secrets):
     monkeypatch.setenv("QDRANT_URL", "https://example.qdrant.io")
-    monkeypatch.setenv("QDRANT_API_KEY", "qdrant-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    mock_secrets["Qdrant_agent_data_N1D8R2vC0_5"] = "qdrant-key"
+    mock_secrets["openai-api-key-sg"] = "openai-key"
     monkeypatch.setenv("APP_ENV", "test")
 
     captured: dict[str, MagicMock] = {}
@@ -80,10 +96,10 @@ def test_vector_store_upsert_success(monkeypatch: pytest.MonkeyPatch):
     assert points[0].payload["metadata"]["title"] == "Doc"
 
 
-def test_vector_store_delete(monkeypatch: pytest.MonkeyPatch):
+def test_vector_store_delete(monkeypatch: pytest.MonkeyPatch, mock_secrets):
     monkeypatch.setenv("QDRANT_URL", "https://example.qdrant.io")
-    monkeypatch.setenv("QDRANT_API_KEY", "qdrant-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    mock_secrets["Qdrant_agent_data_N1D8R2vC0_5"] = "qdrant-key"
+    mock_secrets["openai-api-key-sg"] = "openai-key"
     monkeypatch.setenv("APP_ENV", "test")
 
     class FakeOpenAI:

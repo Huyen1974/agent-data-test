@@ -1,0 +1,568 @@
+---
+version: v2.3
+description: Danh mục kiểm thử cho Codex/Cursor - Blocking 100% PASS cho gates core (fail merge), Non-blocking ≥80% PASS cho mở rộng (warning). Gates cốt lõi default blocking.
+policy: "Blocking cho CI Gates (OpenAPI/Rules/Lighthouse/axe/Visual/SW); Non cho UX/i18n nâng cao."
+gates_mapping:
+  - name: G13-auth-core-presence.snapshot
+    group: 1
+    blocking: true
+  - name: G13-auth-logout-concurrency.e2e
+    group: 1
+    blocking: true
+  - name: G13-auth-multi-tab-sync.e2e
+    group: 1
+    blocking: true
+  - name: G14-pwa-offline-read.smoke
+    group: 2
+    blocking: true
+  - name: G14-a2hs.prompt
+    group: 2
+    blocking: true
+  - name: G14-pwa-sw-update-flow.e2e
+    group: 2
+    blocking: true
+  - name: G15-chat-roundtrip-p95.slo
+    group: 6
+    blocking: true
+  - name: G16-process-e2e.happy
+    group: 8
+    blocking: false
+  - name: G17-swaudit-no-sensitive-cache.ci
+    group: 2
+    blocking: true
+  - name: RBAC-rules.ci
+    group: 4
+    blocking: true
+  - name: openapi-conformance.ci
+    group: 4
+    blocking: true
+  - name: shadow-read-baseline.slo
+    group: 5
+    blocking: true
+
+checks:
+  - group: 1
+    items:
+      - id: auth-unsubscribe-listeners
+        description: Unsubscribe mọi listener trong onUnmounted
+        blocking: true
+        owner: Codex
+        tool: Jest
+        evidence: Log test pass
+      - id: auth-guard-race
+        description: Guard race signIn/signOut, reset state
+        blocking: true
+        owner: Cursor
+        tool: Cypress
+        evidence: E2E video
+      - id: auth-no-network-invariant
+        description: Assert no API calls in onAuthStateChanged; defer nextTick
+        blocking: true
+        owner: Cursor
+        tool: Jest/Lint
+        evidence: Unit assert
+      - id: auth-concurrent-logout
+        description: Concurrent logout 5 lần → 1 hiệu lực, user=null ổn định
+        blocking: true
+        owner: Codex
+        tool: Cypress
+        evidence: E2E pass
+      - id: auth-multi-tab-sync
+        description: Multi-tab logout sync via BroadcastChannel
+        blocking: true
+        owner: Codex
+        tool: Cypress
+        evidence: E2E test pass log
+      - id: auth-snapshot-presence
+        description: Snapshot core auth presence in App.vue/WorkspaceLayout
+        blocking: true
+        owner: Cursor
+        tool: Jest
+        evidence: Snapshot match
+
+  - group: 2
+    items:
+      - id: pwa-manifest-valid
+        description: Manifest hợp lệ with maskable icons
+        blocking: true
+        owner: Codex
+        tool: Lighthouse
+        evidence: CI report ≥90
+      - id: pwa-offline-smoke
+        description: /offline smoke test pass
+        blocking: true
+        owner: Cursor
+        tool: Cypress
+        evidence: Offline mode pass
+      - id: pwa-sw-cache-rules
+        description: SW không cache 4xx/5xx/Retry-After/Authorization
+        blocking: true
+        owner: Codex
+        tool: Playwright
+        evidence: Cache match undefined
+      - id: pwa-update-prompt
+        description: Update Prompt hiển thị khi SW đổi phiên bản
+        blocking: true
+        owner: Cursor
+        tool: Cypress
+        evidence: Prompt visible
+      - id: pwa-a2hs-prompt
+        description: A2HS prompt
+        blocking: true
+        owner: Codex
+        tool: Cypress
+        evidence: Prompt event
+      - id: pwa-sw-lifecycle
+        description: SW lifecycle: Đăng ký/cập nhật/uninstall assert (headless e2e)
+        blocking: true
+        owner: Cursor
+        tool: Playwright
+        evidence: Lifecycle events pass
+      - id: pwa-offline-read-fallback
+        description: Offline read fallback (queue actions); giữ read-only
+        blocking: true
+        owner: Codex
+        tool: Cypress
+        evidence: Read pass offline
+      - id: pwa-responsive-axe
+        description: Responsive test trên 4 breakpoints với axe-core
+        blocking: true
+        owner: Cursor
+        tool: axe-core
+        evidence: 0 serious errors
+
+  - group: 3
+    items:
+      - id: a11y-lighthouse
+        description: Lighthouse ≥90 on 4 breakpoints
+        blocking: true
+        owner: Codex
+        tool: Lighthouse CI
+        evidence: Score ≥90
+      - id: a11y-axe-core
+        description: axe-core 0 serious/critical errors
+        blocking: true
+        owner: Cursor
+        tool: axe-core
+        evidence: 0 errors
+      - id: perf-cwv
+        description: CWV P75 thresholds; bundle ≤200KB
+        blocking: true
+        owner: Codex
+        tool: Lighthouse
+        evidence: P75 pass
+      - id: perf-visual-regression
+        description: Visual regression trên 4 breakpoints
+        blocking: true
+        owner: Cursor
+        tool: Percy
+        evidence: No diffs
+      - id: perf-rum-cwv
+        description: RUM CWV prod bật
+        blocking: true
+        owner: Codex
+        tool: Cloud Logging
+        evidence: RUM enabled
+      - id: a11y-keyboard-nav
+        description: Keyboard navigation (tab order)
+        blocking: true
+        owner: Cursor
+        tool: Cypress
+        evidence: Nav pass
+      - id: perf-bundle-analysis
+        description: Bundle analysis assert
+        blocking: true
+        owner: Codex
+        tool: Webpack Analyzer
+        evidence: Size ≤200KB
+      - id: perf-rum-cls-alert
+        description: RUM cảnh báo lệch CLS P75
+        blocking: true
+        owner: Cursor
+        tool: Cloud Monitoring
+        evidence: Alert rule set
+
+  - group: 4
+    items:
+      - id: api-openapi-lint
+        description: OpenAPI 3.1 lint/validate
+        blocking: true
+        owner: Codex
+        tool: Spectral
+        evidence: Lint pass
+      - id: api-conformance-tests
+        description: Conformance tests cov ≥80%
+        blocking: true
+        owner: Cursor
+        tool: Pytest
+        evidence: Cov report
+      - id: api-sw-no-cache
+        description: SW không cache errors/headers
+        blocking: true
+        owner: Codex
+        tool: Playwright
+        evidence: No cache
+      - id: api-rbac-rules
+        description: RBAC Rules tests theo vai trò
+        blocking: true
+        owner: Cursor
+        tool: Firebase Emulator
+        evidence: Rules pass
+      - id: api-jws-ed25519
+        description: JWS/Ed25519 kiểm kid/exp/iat/nonce; rotation tuân thủ master plan
+        blocking: true
+        owner: Codex
+        tool: Jest
+        evidence: Validate pass
+      - id: api-signed-url
+        description: Signed URL GET, sha256, mime/size verify
+        blocking: true
+        owner: Cursor
+        tool: Cypress
+        evidence: URL valid
+      - id: api-e2e-security-scan
+        description: E2E security scan OWASP ZAP
+        blocking: true
+        owner: Codex
+        tool: ZAP
+        evidence: No vulns
+      - id: api-rbac-alias
+        description: RBAC alias: Kiểm role hành vi vô thời hạn, không hardcode mapping
+        blocking: true
+        owner: Cursor
+        tool: Cypress
+        evidence: Behavior pass
+
+  - group: 5
+    items:
+      - id: data-rules-index-validation
+        description: Rules/index validation Firestore
+        blocking: true
+        owner: Codex
+        tool: Terraform
+        evidence: Plan sạch
+      - id: data-api-read-sql
+        description: API read SQL trên UI readonly
+        blocking: true
+        owner: Cursor
+        tool: Cypress
+        evidence: UI display pass
+      - id: data-shadow-metrics
+        description: Shadow Read metrics lag/diff-rate
+        blocking: true
+        owner: Codex
+        tool: Cloud Monitoring
+        evidence: Metrics within threshold
+      - id: data-hybrid-query
+        description: Hybrid query Firestore + SQL
+        blocking: true
+        owner: Cursor
+        tool: Pytest
+        evidence: Query pass
+      - id: data-e2e-sync-lark-sql
+        description: E2E sync Lark → SQL, DLQ=0
+        blocking: true
+        owner: Codex
+        tool: Cypress
+        evidence: Sync pass
+      - id: data-optimistic-lock
+        description: Optimistic lock 409 UI reconciliation
+        blocking: true
+        owner: Cursor
+        tool: Jest
+        evidence: Conflict resolve
+      - id: data-jsonschema-validate
+        description: JSONSchema validate payloads
+        blocking: true
+        owner: Codex
+        tool: Pydantic
+        evidence: Validate pass
+      - id: data-shadow-baseline
+        description: Shadow-Read P95 ≤2’, DLQ=0, diff-rate ≤0.5%; alert MQL
+        blocking: true
+        owner: Cursor
+        tool: Cloud Monitoring
+        evidence: Baseline 48h pass
+
+  - group: 6
+    items:
+      - id: obs-metrics-exposure
+        description: Metrics exposure latency/requests/DLQ
+        blocking: true
+        owner: Codex
+        tool: Prometheus
+        evidence: Metrics available
+      - id: obs-end-user-slis
+        description: End-user SLIs install rate/offline sessions
+        blocking: true
+        owner: Cursor
+        tool: Cloud Logging
+        evidence: SLIs measured
+      - id: obs-slo-compliance
+        description: SLO P95 ≤1200ms; ACK ≤2s + taxonomy
+        blocking: true
+        owner: Codex
+        tool: Cloud Monitoring
+        evidence: SLO pass
+      - id: obs-slo-alert
+        description: Cảnh báo vi phạm SLO error budget 1%/7d
+        blocking: true
+        owner: Cursor
+        tool: Cloud Alerts
+        evidence: Alert set
+      - id: obs-slo-smoke-fail
+        description: SLO smoke fail ⇒ CI fail trên staging
+        blocking: true
+        owner: Codex
+        tool: CI Script
+        evidence: Staging pass
+      - id: obs-rum-integration
+        description: RUM integration Cloud Logging
+        blocking: true
+        owner: Cursor
+        tool: Cloud Logging
+        evidence: RUM logs
+
+  - group: 7
+    items:
+      - id: repo-ci-gates
+        description: CI Gates lint/validate/Rules/Lighthouse/axe/Visual/SW
+        blocking: true
+        owner: Codex
+        tool: GitHub Actions
+        evidence: CI xanh
+      - id: repo-testcount-drift
+        description: Testcount control drift=0, no rác, merge CI xanh
+        blocking: true
+        owner: Cursor
+        tool: Pytest
+        evidence: Drift=0
+      - id: repo-env-flags
+        description: Env flags VITE_ENABLE_NOOP_QDRANT; gate precondition
+        blocking: true
+        owner: Codex
+        tool: CI Script
+        evidence: Flag set
+      - id: repo-secret-scan
+        description: Secret quét TruffleHog
+        blocking: true
+        owner: Cursor
+        tool: TruffleHog
+        evidence: No secrets
+      - id: repo-git-history
+        description: Git history no force-push, commit lint
+        blocking: true
+        owner: Codex
+        tool: GitLint
+        evidence: History clean
+      - id: repo-dependabot
+        description: Dependabot auto-merge minor
+        blocking: true
+        owner: Cursor
+        tool: Dependabot
+        evidence: Config set
+      - id: repo-pre-merge-hooks
+        description: Pre-merge hooks no hard-coded secrets
+        blocking: true
+        owner: Codex
+        tool: Husky
+        evidence: Hooks pass
+      - id: repo-gates-default-blocking
+        description: Gates blocking default trừ waiver
+        blocking: true
+        owner: Cursor
+        tool: CI Config
+        evidence: Default set
+
+  - group: 8
+    items:
+      - id: ux-knowledge-hub
+        description: Knowledge Hub TreeView + TipTap diff; lock 409
+        blocking: false
+        owner: Codex
+        tool: Cypress
+        evidence: UX pass
+      - id: ux-process-factory
+        description: Process Factory Form ≤3; fallback; affiliate/HRWorld
+        blocking: false
+        owner: Cursor
+        tool: Jest
+        evidence: Form pass
+      - id: ux-diff-approval
+        description: AI-Suggested Diff Approval All/Partial, color
+        blocking: false
+        owner: Codex
+        tool: Cypress
+        evidence: Approval pass
+      - id: ux-e2e-process-flow
+        description: E2E process flow quy trình → task → job
+        blocking: false
+        owner: Cursor
+        tool: Cypress
+        evidence: Flow pass
+      - id: ux-multi-tenant-mock
+        description: Multi-tenant replication mock
+        blocking: false
+        owner: Codex
+        tool: Jest
+        evidence: Mock pass
+      - id: ux-i18n-smoke
+        description: i18n smoke vi/ja/en
+        blocking: false
+        owner: Cursor
+        tool: Cypress
+        evidence: Switch pass
+      - id: ux-form-limit-transfer
+        description: Test auto chuyển Workpage khi vượt Form limit
+        blocking: false
+        owner: Codex
+        tool: Cypress
+        evidence: Transfer pass
+      - id: ux-e2e-smooth
+        description: 1 luồng E2E chạy trơn G16
+        blocking: false
+        owner: Cursor
+        tool: Cypress
+        evidence: E2E pass
+
+  - group: 9
+    items:
+      - id: devex-secret-shell-ban
+        description: Cấm gọi Secret Manager ở shell init; script refresh
+        blocking: false
+        owner: Codex
+        tool: Script Check
+        evidence: No call
+      - id: devex-tooling-integration
+        description: Tooling Cursor terminal git/gh auth
+        blocking: false
+        owner: Cursor
+        tool: Manual/CLI
+        evidence: Auth pass
+      - id: devex-env-vars-check
+        description: Env vars check no PATH conflicts
+        blocking: false
+        owner: Codex
+        tool: Script
+        evidence: No conflict
+      - id: devex-sanity-post-setup
+        description: Sanity post-setup Firebase config loaded
+        blocking: false
+        owner: Cursor
+        tool: Script
+        evidence: Config loaded
+      - id: devex-qdrant-fallback
+        description: Fallback Qdrant suspend RAG test noop mode
+        blocking: false
+        owner: Codex
+        tool: Pytest
+        evidence: Noop pass
+      - id: devex-self-check-dotfiles
+        description: Self-check Grep no mạng in dotfiles gcloud/curl ~/.zshrc
+        blocking: false
+        owner: Cursor
+        tool: Grep Script
+        evidence: No match
+
+  - group: 10
+    items:
+      - id: reg-regression-snapshot
+        description: Regression full codebase snapshot tests core files
+        blocking: true
+        owner: Codex
+        tool: Jest
+        evidence: Snapshot match
+      - id: reg-module-integrity
+        description: Assert module toàn vẹn không thiếu import/auth baseline
+        blocking: true
+        owner: Cursor
+        tool: Jest
+        evidence: Assert pass
+      - id: reg-smoke-e2e-routes
+        description: Smoke E2E all routes Phụ lục A
+        blocking: true
+        owner: Codex
+        tool: Cypress
+        evidence: No 404
+      - id: reg-dependency-audit
+        description: Dependency audit Trivy/SBOM no high/critical vulns
+        blocking: true
+        owner: Cursor
+        tool: Trivy
+        evidence: No vulns
+      - id: reg-core-file-presence
+        description: Core file presence snapshot Auth hooks tồn tại
+        blocking: true
+        owner: Codex
+        tool: Jest
+        evidence: Presence pass
+      - id: reg-security-scan-ci
+        description: Security-scan CI SBOM fail nếu high/critical
+        blocking: true
+        owner: Cursor
+        tool: Trivy
+        evidence: Scan pass
+      - id: reg-route-smoke-404
+        description: Route smoke quét 404 tất cả routes Phụ lục A
+        blocking: true
+        owner: Codex
+        tool: Cypress
+        evidence: No errors
+
+sample_tests:
+  - name: Auth Core Presence Snapshot
+    code: |
+      describe('Auth Core Presence', () => {
+        it('asserts auth logic exists in App.vue', () => {
+          cy.readFile('src/App.vue').then((content) => {
+            expect(content).to.include('onAuthStateChanged');
+            expect(content).to.include('import { getAuth } from "firebase/auth"');
+          });
+        });
+      });
+    idempotent: true
+    self_check: cy.task('assertPass')
+  
+  - name: PWA SW No-Cache Headers
+    code: |
+      describe('SW Cache Rules', () => {
+        it('does not cache 4xx/5xx or sensitive headers', () => {
+          cy.intercept('GET', '/api/test', { statusCode: 404, headers: { 'Authorization': 'test' } });
+          cy.visit('/'); // Trigger SW
+          cy.window().then((win) => {
+            win.caches.open('test-cache').then((cache) => {
+              cache.match('/api/test').then((res) => expect(res).to.be.undefined);
+            });
+          });
+        });
+      });
+    idempotent: true
+    self_check: expect(res).to.be.undefined
+  
+  - name: RBAC Rules CI
+    code: |
+      describe('Firestore Rules', () => {
+        it('validates RBAC for roles', () => {
+          const rules = cy.readFile('firestore.rules');
+          expect(rules).to.include('allow read: if request.auth != null && hasRole("viewer");');
+          // Simulate test with firebase-tools emulator
+          cy.exec('firebase emulators:exec --only firestore "npm test rules"').then((result) => {
+            expect(result.code).to.eq(0);
+          });
+        });
+      });
+    idempotent: true
+    self_check: expect(result.code).to.eq(0)
+
+  - name: Auth Multi-Tab Sync # ADD Sample
+    code: |
+      describe('Auth Multi-Tab', () => {
+        it('syncs logout across tabs', () => {
+          cy.openNewTab(); // Simulate multi-tab
+          cy.signIn();
+          cy.broadcastLogout(); // Trigger BroadcastChannel
+          cy.expectAllTabsUserNull();
+        });
+      });
+    idempotent: true
+    self_check: cy.task('assertAllTabsNull')

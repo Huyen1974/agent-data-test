@@ -1,0 +1,194 @@
+# =====================================================
+# OPTIMIZED .zshrc - Fast Startup Version
+# =====================================================
+# This version prioritizes fast shell startup while maintaining
+# functionality through lazy loading and caching
+
+# ----- ESSENTIAL PATHS (Load First - Fast) -----
+export PATH="/opt/homebrew/bin:$PATH"
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# ----- CRITICAL TOOLS (Available Immediately) -----
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+
+# ----- CACHE DIRECTORY -----
+API_KEY_CACHE_DIR="${HOME}/.cache/api_keys"
+mkdir -p "$API_KEY_CACHE_DIR"
+
+# =====================================================
+# LAZY LOADING FUNCTIONS
+# =====================================================
+
+# ----- Load Google Cloud SDK (Lazy) -----
+load_gcloud() {
+    if [ -f '/Users/nmhuyen/google-cloud-sdk/path.zsh.inc' ]; then
+        . '/Users/nmhuyen/google-cloud-sdk/path.zsh.inc'
+    fi
+    if [ -f '/Users/nmhuyen/google-cloud-sdk/completion.zsh.inc' ]; then
+        . '/Users/nmhuyen/google-cloud-sdk/completion.zsh.inc'
+    fi
+}
+
+# ----- Load Python Environments (Lazy) -----
+load_python_envs() {
+    # Pyenv
+    export PYENV_ROOT="$HOME/.pyenv"
+    command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init -)"
+    eval "$(pyenv virtualenv-init -)"
+
+    # Conda
+    __conda_setup="$('/Users/nmhuyen/miniconda/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+    if [ $? -eq 0 ]; then
+        eval "$__conda_setup"
+    else
+        if [ -f "/Users/nmhuyen/miniconda/etc/profile.d/conda.sh" ]; then
+            . "/Users/nmhuyen/miniconda/etc/profile.d/conda.sh"
+        else
+            export PATH="/Users/nmhuyen/miniconda/bin:$PATH"
+        fi
+    fi
+    unset __conda_setup
+}
+
+# ----- Load Other Tools (Lazy) -----
+load_other_tools() {
+    export JAVA_HOME="/Library/Java/JavaVirtualMachines/openjdk.jdk/Contents/Home"
+    export PATH="$JAVA_HOME/bin:$PATH"
+    export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"
+    export PATH="$PATH:/Users/nmhuyen/.local/bin"
+    fpath=(/Users/nmhuyen/.docker/completions $fpath)
+    autoload -Uz compinit
+    compinit
+}
+
+# ----- Cached API Key Function -----
+get_cached_api_key() {
+    local secret_name="$1"
+    local cache_file="$API_KEY_CACHE_DIR/${secret_name}"
+
+    # Check if cache exists and is less than 1 hour old
+    if [ -f "$cache_file" ]; then
+        local cache_age=$(( $(date +%s) - $(stat -f%Sm -t %s "$cache_file" 2>/dev/null || stat -c%Y "$cache_file" 2>/dev/null || echo 0) ))
+        if [ $cache_age -lt 3600 ]; then  # 1 hour
+            cat "$cache_file"
+            return 0
+        fi
+    fi
+
+    # Cache miss or expired - fetch from Secret Manager
+    local api_key
+    if command -v gcloud >/dev/null 2>&1; then
+        api_key=$(gcloud secrets versions access latest --secret="$secret_name" --project=github-chatgpt-ggcloud 2>/dev/null)
+        if [ $? -eq 0 ] && [ -n "$api_key" ]; then
+            echo "$api_key" > "$cache_file"
+            echo "$api_key"
+            return 0
+        fi
+    fi
+
+    # Fallback: return empty if not available
+    return 1
+}
+
+# =====================================================
+# ALIASES FOR LAZY LOADING
+# =====================================================
+
+# ----- Aliases that trigger lazy loading -----
+alias gcloud='load_gcloud && gcloud'
+alias pyenv='load_python_envs && pyenv'
+alias conda='load_python_envs && conda'
+alias python='load_python_envs && python'
+alias pip='load_python_envs && pip'
+
+# ----- Docker and other tools -----
+alias docker='load_other_tools && docker'
+alias kubectl='load_other_tools && kubectl'
+
+# =====================================================
+# API KEY EXPORTS (Cached)
+# =====================================================
+
+# ----- Load API keys with caching -----
+export OPENAI_API_KEY=$(get_cached_api_key "openai-api-key-sg")
+export QDRANT_API_KEY=$(get_cached_api_key "Qdrant_agent_data_N1D8R2vC0_5")
+export MGMT_KEY=$(get_cached_api_key "Qdrant_cloud_management_key")
+
+# =====================================================
+# ADDITIONAL ALIASES & SSH
+# =====================================================
+
+# ----- Project aliases -----
+alias codex-auto="codex --auto-edit"
+alias codex-full="codex --full-auto"
+
+# ----- SSH Agent (Load immediately if needed) -----
+if [[ -f ~/.ssh/id_rsa ]]; then
+    eval "$(ssh-agent -s)" >/dev/null 2>&1
+    ssh-add --apple-use-keychain ~/.ssh/id_rsa >/dev/null 2>&1
+fi
+
+# =====================================================
+# SHELL COMPLETION & PROMPT
+# =====================================================
+
+# ----- Load completions only for interactive shells -----
+if [[ $- == *i* ]]; then
+    # Load completions on first tab
+    load_completions() {
+        load_other_tools
+        unset -f load_completions
+    }
+    # Hook into tab completion
+    __load_completions() {
+        load_completions
+    }
+    zle -N __load_completions
+    bindkey '^I' __load_completions
+fi
+
+# =====================================================
+# UTILITY FUNCTIONS
+# =====================================================
+
+# ----- Refresh API Keys -----
+refresh-api-keys() {
+    echo "🔄 Refreshing API keys from Secret Manager..."
+    load_gcloud
+    rm -f "$API_KEY_CACHE_DIR"/*
+    export OPENAI_API_KEY=$(gcloud secrets versions access latest --secret=openai-api-key-sg --project=github-chatgpt-ggcloud)
+    export QDRANT_API_KEY=$(gcloud secrets versions access latest --secret=Qdrant_agent_data_N1D8R2vC0_5 --project=github-chatgpt-ggcloud)
+    export MGMT_KEY=$(gcloud secrets versions access latest --secret=Qdrant_cloud_management_key --project=github-chatgpt-ggcloud)
+    echo "✅ API keys refreshed"
+}
+
+# ----- Show cache status -----
+api-cache-status() {
+    echo "📊 API Key Cache Status:"
+    for cache_file in "$API_KEY_CACHE_DIR"/*; do
+        if [ -f "$cache_file" ]; then
+            secret_name=$(basename "$cache_file")
+            cache_age=$(( $(date +%s) - $(stat -f%Sm -t %s "$cache_file" 2>/dev/null || stat -c%Y "$cache_file" 2>/dev/null || echo 0) ))
+            echo "  $secret_name: $cache_age seconds old"
+        fi
+    done
+}
+
+# ----- Performance monitoring -----
+shell-startup-time() {
+    echo "🕐 Measuring shell startup time..."
+    time zsh -c "exit" 2>&1 | grep real | awk '{print $2}'
+}
+
+# =====================================================
+# FINAL NOTES
+# =====================================================
+# This optimized .zshrc prioritizes:
+# 1. Fast startup (essential tools only)
+# 2. Cached API keys (no network calls on startup)
+# 3. Lazy loading (heavy tools load only when needed)
+# 4. Interactive shell optimizations
+#
+# Use refresh-api-keys() to manually refresh cached keys
+# Use api-cache-status() to check cache status

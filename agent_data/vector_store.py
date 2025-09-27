@@ -8,6 +8,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from gcp_secrets import SecretAccessError, get_secret
+
 try:  # pragma: no cover - optional dependency import guard
     from openai import OpenAI  # type: ignore
 except Exception:  # pragma: no cover
@@ -22,11 +24,28 @@ except Exception:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_QDRANT_SECRET = "Qdrant_agent_data_N1D8R2vC0_5"
+DEFAULT_OPENAI_SECRET = "openai-api-key-sg"
+
 
 @dataclass(slots=True)
 class VectorSyncResult:
     status: str
     error: str | None = None
+
+
+def _load_secret(env_key: str, secret_env_key: str, default_secret: str) -> str | None:
+    direct = os.getenv(env_key)
+    if direct:
+        return direct
+    secret_name = os.getenv(secret_env_key, default_secret)
+    if not secret_name:
+        return None
+    try:
+        return get_secret(secret_name)
+    except SecretAccessError as exc:  # pragma: no cover - network errors
+        logger.error("Failed to load secret %s: %s", secret_name, exc)
+        return None
 
 
 class QdrantVectorStore:
@@ -38,8 +57,12 @@ class QdrantVectorStore:
         default_collection = f"{env}_documents"
         self.collection = os.getenv("QDRANT_COLLECTION", default_collection)
         self.url = os.getenv("QDRANT_URL") or os.getenv("QDRANT_API_URL")
-        self.api_key = os.getenv("QDRANT_API_KEY")
-        self.openai_key = os.getenv("OPENAI_API_KEY")
+        self.api_key = _load_secret(
+            "QDRANT_API_KEY", "QDRANT_API_SECRET_NAME", DEFAULT_QDRANT_SECRET
+        )
+        self.openai_key = _load_secret(
+            "OPENAI_API_KEY", "OPENAI_API_SECRET_NAME", DEFAULT_OPENAI_SECRET
+        )
         self.embedding_model = os.getenv("QDRANT_EMBED_MODEL", "text-embedding-3-small")
         self.enabled = all(
             [

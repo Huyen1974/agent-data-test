@@ -1,15 +1,19 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref, watch } from 'vue';
 import { useDisplay } from 'vuetify';
-import {
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-} from 'firebase/auth';
+import { useAuth } from '../composables/useAuth';
 
-import { auth } from '../firebase/config';
+// Use authentication composable
+const {
+  user,
+  loading: authLoading,
+  error: authError,
+  isAuthActionInProgress,
+  isAuthenticated,
+  userDisplayName,
+  signInWithGoogle,
+  signOutUser
+} = useAuth();
 
 const props = defineProps({
   title: {
@@ -32,7 +36,6 @@ const props = defineProps({
   },
 });
 
-const router = useRouter();
 const display = useDisplay();
 const isMobile = computed(() => display.smAndDown.value);
 const drawer = ref(!isMobile.value);
@@ -53,76 +56,6 @@ function normalizeItems(items = []) {
 
 function toggleDrawer() {
   drawer.value = !drawer.value;
-}
-
-const user = ref(null);
-const authLoading = ref(true);
-const authError = ref('');
-
-const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
-
-const stopAuthListener = onAuthStateChanged(
-  auth,
-  (currentUser) => {
-    user.value = currentUser;
-    authError.value = '';
-    authLoading.value = false;
-  },
-  (error) => {
-    user.value = null;
-    authError.value = error?.message ?? 'Không thể xác thực người dùng.';
-    authLoading.value = false;
-  }
-);
-
-onBeforeUnmount(() => {
-  stopAuthListener?.();
-  if (typeof window !== 'undefined' && window.__AUTH_TEST_API__) {
-    delete window.__AUTH_TEST_API__;
-  }
-});
-
-const isAuthenticated = computed(() => !!user.value);
-const userDisplayName = computed(
-  () => user.value?.displayName || user.value?.email || 'Tài khoản'
-);
-
-async function signInWithGoogle() {
-  authError.value = '';
-  try {
-    await signInWithPopup(auth, googleProvider);
-  } catch (error) {
-    authError.value =
-      error instanceof Error ? error.message : 'Đăng nhập thất bại.';
-  }
-}
-
-async function signOutUser() {
-  authError.value = '';
-  try {
-    await signOut(auth);
-    user.value = null;
-    authLoading.value = false;
-    await router.push('/');
-  } catch (error) {
-    authError.value =
-      error instanceof Error ? error.message : 'Đăng xuất thất bại.';
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window.__AUTH_TEST_API__ = {
-    setUser: (value) => {
-      user.value = value;
-    },
-    setLoading: (value) => {
-      authLoading.value = value;
-    },
-    setError: (value) => {
-      authError.value = value ?? '';
-    },
-  };
 }
 </script>
 
@@ -174,7 +107,7 @@ if (typeof window !== 'undefined') {
         </slot>
         <div class="auth-controls ms-4 d-flex align-center">
           <v-progress-circular
-            v-if="authLoading"
+            v-if="authLoading || isAuthActionInProgress"
             size="20"
             width="2"
             indeterminate
@@ -187,6 +120,8 @@ if (typeof window !== 'undefined') {
               prepend-icon="mdi-google"
               variant="outlined"
               density="compact"
+              :loading="isAuthActionInProgress"
+              :disabled="isAuthActionInProgress"
               @click="signInWithGoogle"
             >
               Đăng nhập bằng Google
@@ -204,6 +139,8 @@ if (typeof window !== 'undefined') {
                 variant="text"
                 density="compact"
                 color="primary"
+                :loading="isAuthActionInProgress"
+                :disabled="isAuthActionInProgress"
                 @click="signOutUser"
               >
                 Đăng xuất
@@ -269,4 +206,5 @@ if (typeof window !== 'undefined') {
 .auth-controls {
   gap: 8px;
 }
+
 </style>

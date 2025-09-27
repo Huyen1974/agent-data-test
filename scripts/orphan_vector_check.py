@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 
+from gcp_secrets import SecretAccessError, get_secret
+
 try:  # Optional imports — script remains runnable without these
     from google.cloud import firestore  # type: ignore
 except Exception:  # pragma: no cover
@@ -22,6 +24,19 @@ try:
     from qdrant_client import QdrantClient  # type: ignore
 except Exception:  # pragma: no cover
     QdrantClient = None  # type: ignore
+
+
+def _resolve_qdrant_key() -> str:
+    direct = os.getenv("QDRANT_API_KEY")
+    if direct:
+        return direct
+    secret_name = os.getenv("QDRANT_API_SECRET_NAME", "Qdrant_agent_data_N1D8R2vC0_5")
+    if not secret_name:
+        return ""
+    try:
+        return get_secret(secret_name)
+    except SecretAccessError:  # pragma: no cover - diagnostics only
+        return ""
 
 
 def get_qdrant_ids(client: object) -> set[str]:
@@ -56,7 +71,7 @@ def main() -> int:
     # CI nudge: trigger Lint Only workflow after lint fixes
     # Initialize Qdrant client if library and env are available
     qdrant_url = os.getenv("QDRANT_URL") or os.getenv("QDRANT_HOST")
-    qdrant_api_key = os.getenv("QDRANT_API_KEY")
+    qdrant_api_key = _resolve_qdrant_key()
     qdrant_client = None
     if QdrantClient is not None and qdrant_url and qdrant_api_key:
         try:  # prefer REST for portability

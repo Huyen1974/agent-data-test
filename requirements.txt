@@ -164,6 +164,8 @@ google-cloud-firestore==2.21.0
     # via agent-data-langroid (pyproject.toml)
 google-cloud-pubsub==2.31.1
     # via agent-data-langroid (pyproject.toml)
+google-cloud-secret-manager==2.21.1
+    # via agent-data-langroid (pyproject.toml)
 google-cloud-storage==3.2.0
     # via agent-data-langroid (pyproject.toml)
 google-crc32c==1.7.1
