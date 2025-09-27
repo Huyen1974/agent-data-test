@@ -522,7 +522,7 @@ sample_tests:
       });
     idempotent: true
     self_check: cy.task('assertPass')
-  
+
   - name: PWA SW No-Cache Headers
     code: |
       describe('SW Cache Rules', () => {
@@ -538,7 +538,7 @@ sample_tests:
       });
     idempotent: true
     self_check: expect(res).to.be.undefined
-  
+
   - name: RBAC Rules CI
     code: |
       describe('Firestore Rules', () => {
