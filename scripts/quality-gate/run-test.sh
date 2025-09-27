@@ -28,6 +28,35 @@ if [[ -n "$description" ]]; then
 fi
 
 tool_lower="${tool,,}"
+tool_upper="${tool_lower//[^a-z0-9]/_}"
+tool_upper="${tool_upper^^}"
+
+tool_dir=${QUALITY_GATE_TOOL_DIR:-"$(dirname "${BASH_SOURCE[0]}")/tools"}
+tool_script="$tool_dir/${tool_lower}.sh"
+
+command_env="QUALITY_GATE_TOOL_COMMAND_${tool_upper}"
+custom_command="${!command_env:-}"
+
+export QUALITY_GATE_TEST_ID="$test_id"
+export QUALITY_GATE_TEST_DESCRIPTION="$description"
+export QUALITY_GATE_TOOL="$tool"
+export QUALITY_GATE_TEST_GROUP="${GROUP:-}"
+export QUALITY_GATE_TEST_BLOCKING="${BLOCKING:-}"
+export QUALITY_GATE_TEST_OWNER="${OWNER:-}"
+export QUALITY_GATE_TEST_EVIDENCE="${EVIDENCE:-}"
+
+if [[ -n "$custom_command" ]]; then
+  echo "[quality-gate] Executing custom command from \$$command_env"
+  bash -lc "$custom_command"
+  exit $?
+fi
+
+if [[ -x "$tool_script" ]]; then
+  echo "[quality-gate] Delegating to tool script $tool_script"
+  "$tool_script" "$test_id" "$description" "$@"
+  exit $?
+fi
+
 case "$tool_lower" in
   jest)
     echo "[quality-gate] Simulating Jest run"

@@ -113,7 +113,7 @@ checks:
         tool: Cypress
         evidence: Prompt event
       - id: pwa-sw-lifecycle
-        description: SW lifecycle: Đăng ký/cập nhật/uninstall assert (headless e2e)
+        description: "SW lifecycle: Đăng ký/cập nhật/uninstall assert (headless e2e)"
         blocking: true
         owner: Cursor
         tool: Playwright
@@ -227,7 +227,7 @@ checks:
         tool: ZAP
         evidence: No vulns
       - id: api-rbac-alias
-        description: RBAC alias: Kiểm role hành vi vô thời hạn, không hardcode mapping
+        description: "RBAC alias: Kiểm role hành vi vô thời hạn, không hardcode mapping"
         blocking: true
         owner: Cursor
         tool: Cypress
@@ -527,7 +527,7 @@ sample_tests:
     code: |
       describe('SW Cache Rules', () => {
         it('does not cache 4xx/5xx or sensitive headers', () => {
-          cy.intercept('GET', '/api/test', { statusCode: 404, headers: { 'Authorization': 'test' } });
+          cy.intercept('GET', '/api/test', { statusCode: "404, headers: { 'Authorization': 'test' } });"
           cy.visit('/'); // Trigger SW
           cy.window().then((win) => {
             win.caches.open('test-cache').then((cache) => {

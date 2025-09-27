@@ -14,87 +14,14 @@ jobs:
       blocking-tests: ${{ steps.extract.outputs.blocking_tests }}
       non-blocking-tests: ${{ steps.extract.outputs.non_blocking_tests }}
       policy: ${{ steps.extract.outputs.policy }}
+      non-blocking-threshold: ${{ steps.extract.outputs.non_blocking_threshold }}
     steps:
       - uses: actions/checkout@v4
 
       - id: extract
         name: Generate matrix from webapp.test-suite.yaml
         run: |
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-            from textwrap import dedent
-
-            exec(dedent("""
-              import json
-              import sys
-              from pathlib import Path
-
-              import yaml
-
-              config_path = Path("webapp.test-suite.yaml")
-              if not config_path.exists():
-                  print(f"::error::Missing configuration file at {config_path}")
-                  sys.exit(1)
-
-              with config_path.open("r", encoding="utf-8") as handle:
-                  config = yaml.safe_load(handle) or {}
-
-              policy = config.get("policy", "")
-              checks = config.get("checks", [])
-              if not checks:
-                  print("::error::No 'checks' section defined in configuration")
-                  sys.exit(1)
-
-              matrix_entries = []
-              blocking_ids = []
-              non_blocking_ids = []
-
-              for group in checks:
-                  group_name = group.get("group", "unknown")
-                  for item in group.get("items", []):
-                      test_id = item.get("id")
-                      if not test_id:
-                          print(f"::error::A test in group '{group_name}' is missing an id")
-                          sys.exit(1)
-
-                      tool = item.get("tool")
-                      if not tool:
-                          print(f"::error::Test '{test_id}' is missing required 'tool' attribute")
-                          sys.exit(1)
-
-                      blocking_flag = bool(item.get("blocking", False))
-                      if blocking_flag:
-                          blocking_ids.append(test_id)
-                      else:
-                          non_blocking_ids.append(test_id)
-
-                      matrix_entries.append(
-                          {
-                              "test_id": test_id,
-                              "description": item.get("description", ""),
-                              "blocking": blocking_flag,
-                              "tool": tool,
-                              "owner": item.get("owner", ""),
-                              "group": group_name,
-                              "evidence": item.get("evidence", "")
-                          }
-                      )
-
-              if not matrix_entries:
-                  print("::error::No test entries were discovered in configuration")
-                  sys.exit(1)
-
-              outputs = {
-                  "matrix": json.dumps({"include": matrix_entries}),
-                  "blocking_tests": json.dumps(blocking_ids),
-                  "non_blocking_tests": json.dumps(non_blocking_ids),
-                  "policy": policy,
-              }
-
-              for key, value in outputs.items():
-                  print(f"{key}={value}")
-            """))
-PY
-
+          python3 -m scripts.quality_gate.extract_matrix >> "$GITHUB_OUTPUT"
   test-runner:
     name: Execute Quality Tests
     needs: orchestrator
@@ -138,29 +65,8 @@ PY
           export EXIT_CODE="$exit_code"
           export STATUS="$status"
 
-          python3 - <<'PY'
-            from textwrap import dedent
-            exec(dedent("""
-              import json
-              import os
-              from pathlib import Path
-
-              record = {
-                  "id": os.environ["TEST_ID"],
-                  "description": os.environ.get("DESCRIPTION", ""),
-                  "blocking": os.environ.get("BLOCKING", "True") in {"True", "true", "1"},
-                  "tool": os.environ.get("TOOL", ""),
-                  "owner": os.environ.get("OWNER", ""),
-                  "group": os.environ.get("GROUP", ""),
-                  "evidence": os.environ.get("EVIDENCE", ""),
-                  "exit_code": int(os.environ.get("EXIT_CODE", "0")),
-                  "status": os.environ.get("STATUS", "unknown"),
-              }
-              Path("quality-results").mkdir(parents=True, exist_ok=True)
-              with (Path("quality-results") / f"{record['id']}.json").open("w", encoding="utf-8") as file_path:
-                  json.dump(record, file_path, ensure_ascii=False, indent=2)
-            """))
-PY
+          RESULTS_DIR=quality-results \
+          python3 -m scripts.quality_gate.write_result
 
           if [ $exit_code -ne 0 ]; then
             echo "status=failed" >> "$GITHUB_OUTPUT"
@@ -181,6 +87,7 @@ PY
           path: quality-results/${{ matrix.test_id }}.json
           retention-days: 7
 
+
   quality-gate-final:
     name: Apply Quality Gate
     needs: [orchestrator, test-runner]
@@ -188,6 +95,8 @@ PY
     if: always()
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download test results
         uses: actions/download-artifact@v4
         with:
@@ -203,61 +112,28 @@ PY
           NON_BLOCKING: ${{ needs.orchestrator.outputs.non-blocking-tests }}
           POLICY: ${{ needs.orchestrator.outputs.policy }}
           TEST_RUNNER_STATUS: ${{ needs.test-runner.result }}
+          QUALITY_GATE_NON_BLOCKING_THRESHOLD: ${{ needs.orchestrator.outputs.non-blocking-threshold }}
+          RESULTS_DIR: quality-results
         run: |
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-            from textwrap import dedent
-            exec(dedent("""
-              import json
-              import os
-              from pathlib import Path
-
-              blocking_expected = set(json.loads(os.environ.get("BLOCKING") or "[]"))
-              non_blocking_expected = set(json.loads(os.environ.get("NON_BLOCKING") or "[]"))
-              results_dir = Path("quality-results")
-              records = {}
-              if results_dir.exists():
-                  for file in results_dir.glob("*.json"):
-                      try:
-                          data = json.loads(file.read_text(encoding="utf-8"))
-                          records[data.get("id")] = data
-                      except Exception as exc:
-                          print(f"::warning::Unable to parse {file}: {exc}")
-
-              missing_ids = sorted((blocking_expected | non_blocking_expected) - set(records))
-              blocking_failures = sorted(
-                  test_id for test_id in blocking_expected
-                  if records.get(test_id, {}).get("status") != "passed"
-              )
-              non_blocking_failures = sorted(
-                  test_id for test_id in non_blocking_expected
-                  if records.get(test_id, {}).get("status") != "passed"
-              )
-
-              non_blocking_total = len(non_blocking_expected)
-              non_blocking_passed = non_blocking_total - len(non_blocking_failures)
-              non_blocking_ratio = (
-                  non_blocking_passed / non_blocking_total if non_blocking_total else 1.0
-              )
-
-              print(f"missing={str(bool(missing_ids)).lower()}")
-              print(f"missing_ids={json.dumps(missing_ids)}")
-              print(f"blocking_failed={str(bool(blocking_failures)).lower()}")
-              print(f"blocking_failed_ids={json.dumps(blocking_failures)}")
-              print(f"non_blocking_failed={str(bool(non_blocking_failures)).lower()}")
-              print(f"non_blocking_failed_ids={json.dumps(non_blocking_failures)}")
-              print(f"non_blocking_ratio={non_blocking_ratio:.2f}")
-            """))
-PY
-
+          python3 -m scripts.quality_gate.evaluate_results >> "$GITHUB_OUTPUT"
       - name: Create summary
+        env:
+          POLICY: ${{ needs.orchestrator.outputs.policy }}
+          BLOCKING: ${{ needs.orchestrator.outputs.blocking-tests }}
+          NON_BLOCKING: ${{ needs.orchestrator.outputs.non-blocking-tests }}
+          NON_BLOCKING_RATIO: ${{ steps.evaluate.outputs.non_blocking_ratio }}
+          NON_BLOCKING_RATIO_MET: ${{ steps.evaluate.outputs.non_blocking_ratio_met }}
+          NON_BLOCKING_THRESHOLD: ${{ steps.evaluate.outputs.non_blocking_threshold }}
+          GATES_REPORT: ${{ steps.evaluate.outputs.gates_report }}
         run: |
-          echo "# Quality Gate Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "Policy: ${{ needs.orchestrator.outputs.policy }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Blocking tests: ${{ needs.orchestrator.outputs.blocking-tests }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Non-blocking tests: ${{ needs.orchestrator.outputs.non-blocking-tests }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Non-blocking pass ratio: ${{ steps.evaluate.outputs.non_blocking_ratio }}" >> "$GITHUB_STEP_SUMMARY"
-
+          python3 -m scripts.quality_gate.create_summary
       - name: Enforce policy
+        env:
+          GATES_REPORT: ${{ steps.evaluate.outputs.gates_report }}
+          NON_BLOCKING_RATIO: ${{ steps.evaluate.outputs.non_blocking_ratio }}
+          NON_BLOCKING_THRESHOLD: ${{ steps.evaluate.outputs.non_blocking_threshold }}
+          NON_BLOCKING_RATIO_MET: ${{ steps.evaluate.outputs.non_blocking_ratio_met }}
+          GATE_CONFIGURATION_ERRORS: ${{ steps.evaluate.outputs.gate_configuration_errors }}
         run: |
           if [ "${{ steps.evaluate.outputs.missing }}" = "true" ]; then
             echo "::error::Missing quality gate results for tests: ${{ steps.evaluate.outputs.missing_ids }}"
@@ -269,9 +145,20 @@ PY
             exit 1
           fi
 
+          if [ "$GATE_CONFIGURATION_ERRORS" != "[]" ]; then
+            echo "::error::Gate configuration errors detected: $GATE_CONFIGURATION_ERRORS"
+            exit 1
+          fi
+
           if [ "${{ steps.evaluate.outputs.non_blocking_failed }}" = "true" ]; then
             echo "::warning::Non-blocking test failures: ${{ steps.evaluate.outputs.non_blocking_failed_ids }}"
           fi
+
+          if [ "$NON_BLOCKING_RATIO_MET" != "true" ]; then
+            echo "::warning::Non-blocking pass ratio $NON_BLOCKING_RATIO below threshold $NON_BLOCKING_THRESHOLD"
+          fi
+
+          python3 -m scripts.quality_gate.report_gate_warnings
 
           if [ "${{ needs.test-runner.result }}" = "failure" ]; then
             echo "::warning::Test runner reported failure but no blocking tests failed."
