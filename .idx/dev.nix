@@ -8,11 +8,23 @@
   packages = [
     pkgs.openssh
     pkgs.gh
-    # pkgs.go
-    # pkgs.python311
-    # pkgs.python311Packages.pip
-    # pkgs.nodejs_20
-    # pkgs.nodePackages.nodemon
+    pkgs.nss
+    pkgs.gtk3
+    pkgs.libglib
+    pkgs.xorg.libX11
+    pkgs.xorg.libXcomposite
+    pkgs.xorg.libXdamage
+    pkgs.xorg.libXfixes
+    pkgs.xorg.libXrandr
+    pkgs.alsa-lib
+    pkgs.at-spi2-atk
+    pkgs.cairo
+    pkgs.cups
+    pkgs.dbus
+    pkgs.expat
+    pkgs.gbm
+    pkgs.pango
+    pkgs.udev
   ];
 
   # Sets environment variables in the workspace
