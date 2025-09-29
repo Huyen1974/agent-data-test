@@ -1,69 +1,22 @@
-# To learn more about how to use Nix to configure your environment
-# see: https://firebase.google.com/docs/studio/customize-workspace
 { pkgs, ... }: {
-  # Which nixpkgs channel to use.
-  channel = "stable-24.05"; # or "unstable"
-
-  # Use https://search.nixos.org/packages to find packages
+  channel = "stable-24.05";
   packages = [
     pkgs.openssh
     pkgs.gh
-    pkgs.nss
-    pkgs.gtk3
-    pkgs.libglib
-    pkgs.xorg.libX11
-    pkgs.xorg.libXcomposite
-    pkgs.xorg.libXdamage
-    pkgs.xorg.libXfixes
-    pkgs.xorg.libXrandr
-    pkgs.alsa-lib
-    pkgs.at-spi2-atk
-    pkgs.cairo
-    pkgs.cups
-    pkgs.dbus
-    pkgs.expat
-    pkgs.gbm
-    pkgs.pango
-    pkgs.udev
+    pkgs.playwright-driver.browsers
+    pkgs.nodejs_20
+    pkgs.python311
+    pkgs.terraform
+    pkgs.pre-commit
   ];
-
-  # Sets environment variables in the workspace
-  env = {};
-  idx = {
-    # Search for the extensions you want on https://open-vsx.org/ and use "publisher.id"
-    extensions = [
-      # "vscodevim.vim"
-    ];
-
-    # Enable previews
-    previews = {
-      enable = true;
-      previews = {
-        # web = {
-        #   # Example: run "npm run dev" with PORT set to IDX's defined port for previews,
-        #   # and show it in IDX's web preview panel
-        #   command = ["npm" "run" "dev"];
-        #   manager = "web";
-        #   env = {
-        #     # Environment variables to set for your server
-        #     PORT = "$PORT";
-        #   };
-        # };
-      };
+  idx.workspace = {
+    onCreate = {
+      npm-install = "npm ci --prefix app-service-project";
+      pre-commit-install = "pre-commit install";
+      firebase-tools = "npm install -g firebase-tools";
     };
-
-    # Workspace lifecycle hooks
-    workspace = {
-      # Runs when a workspace is first created
-      onCreate = {
-        # Example: install JS dependencies from NPM
-        # npm-install = "npm install";
-      };
-      # Runs when the workspace is (re)started
-      onStart = {
-        # Example: start a background task to watch and re-build backend code
-        # watch-backend = "npm run watch-backend";
-      };
+    onStart = {
+      auth-check = "gh auth status || gh auth login --web";
     };
   };
 }
