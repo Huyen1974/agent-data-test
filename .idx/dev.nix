@@ -8,23 +8,7 @@
   packages = [
     pkgs.openssh
     pkgs.gh
-    pkgs.nss
-    pkgs.gtk3
-    pkgs.libglib
-    pkgs.xorg.libX11
-    pkgs.xorg.libXcomposite
-    pkgs.xorg.libXdamage
-    pkgs.xorg.libXfixes
-    pkgs.xorg.libXrandr
-    pkgs.alsa-lib
-    pkgs.at-spi2-atk
-    pkgs.cairo
-    pkgs.cups
-    pkgs.dbus
-    pkgs.expat
-    pkgs.gbm
-    pkgs.pango
-    pkgs.udev
+    pkgs.playwright-driver.browsers # Gói tổng hợp cho Playwright
   ];
 
   # Sets environment variables in the workspace
