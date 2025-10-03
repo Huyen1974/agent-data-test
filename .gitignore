@@ -248,3 +248,4 @@ backup/
 !lark-infra-tools/terraform/terraform.tfstate
 !lark-infra-tools/terraform/terraform.tfstate.backup
 !lark-infra-tools/terraform/.terraform.lock.hcl
+CLAUDE.md
