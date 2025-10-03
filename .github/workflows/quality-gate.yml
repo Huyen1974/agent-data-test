@@ -165,3 +165,54 @@ jobs:
           fi
 
           echo "✅ Quality gate passed"
+
+      - name: Record current test count
+        env:
+          BLOCKING: ${{ needs.orchestrator.outputs.blocking-tests }}
+          NON_BLOCKING: ${{ needs.orchestrator.outputs.non-blocking-tests }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          blocking = json.loads(os.environ.get("BLOCKING", "[]") or "[]")
+          non_blocking = json.loads(os.environ.get("NON_BLOCKING", "[]") or "[]")
+          total = len(blocking) + len(non_blocking)
+
+          Path("current-test-count.txt").write_text(f"{total}\n", encoding="utf-8")
+          print(f"::notice::Recorded current test count: {total}")
+          PY
+
+      - name: Enforce test count guardrail
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          baseline_path = Path("test_manifest_baseline.txt")
+          current_path = Path("current-test-count.txt")
+
+          try:
+            baseline = int(baseline_path.read_text().strip())
+          except ValueError:
+            print(f"::error::Baseline file '{baseline_path}' does not contain a valid integer.")
+            raise SystemExit(1)
+
+          try:
+            current = int(current_path.read_text().strip())
+          except FileNotFoundError:
+            print("::error::Current test count file not found. Ensure previous step ran correctly.")
+            raise SystemExit(1)
+          except ValueError:
+            print(f"::error::Current test count file '{current_path}' does not contain a valid integer.")
+            raise SystemExit(1)
+
+          print(f"Baseline test count: {baseline}")
+          print(f"Current test count: {current}")
+
+          if current < baseline:
+            print(f"::error::Current test count ({current}) is below baseline ({baseline}).")
+            raise SystemExit(1)
+
+          print("::notice::Test count guardrail satisfied.")
+          PY
