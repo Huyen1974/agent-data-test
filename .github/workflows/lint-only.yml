@@ -191,6 +191,7 @@ jobs:
 
   terraform-plan:
     name: Terraform Plan (CPG0.1)
+    if: ${{ !startsWith(github.actor, 'dependabot') }}
     runs-on: ubuntu-22.04
     needs: checkpoint-gate
     timeout-minutes: 25            # hard-stop sau 25 phút
