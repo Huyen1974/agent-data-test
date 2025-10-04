@@ -40,6 +40,17 @@ const firebaseConfig = {
     fallbackConfig.appId,
 };
 
+// Check if any config value is using fallback
+const usingFallback = Object.entries(firebaseConfig).some(
+  ([key, value]) => value === fallbackConfig[key]
+);
+
+if (usingFallback && process.env.NODE_ENV !== 'test') {
+  console.warn(
+    '[Firebase Config] Using fallback values. This should only happen in development or test environments.'
+  );
+}
+
 const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 const auth = getAuth(firebaseApp);
