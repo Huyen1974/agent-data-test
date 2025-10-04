@@ -56,20 +56,26 @@ const router = createRouter({
 
 // Global Navigation Guard
 router.beforeEach(async (to, from, next) => {
-  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  try {
+    const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
 
-  if (requiresAuth) {
-    const user = await getCurrentUser();
-    if (!user) {
-      // User is not logged in, redirect to the home page.
-      console.log('Unauthorized access attempt to a protected route. Redirecting to /.');
-      next({ name: 'home' });
+    if (requiresAuth) {
+      const user = await getCurrentUser();
+      if (!user) {
+        // User is not logged in, redirect to the home page.
+        console.log('Unauthorized access attempt to a protected route. Redirecting to /.');
+        next({ name: 'home' });
+      } else {
+        // User is logged in, allow access.
+        next();
+      }
     } else {
-      // User is logged in, allow access.
+      // Route does not require auth, allow access.
       next();
     }
-  } else {
-    // Route does not require auth, allow access.
+  } catch (error) {
+    // Log the error and allow navigation to continue to avoid blocking the app
+    console.error('[Router Guard Error]', error);
     next();
   }
 });

@@ -40,14 +40,20 @@ const firebaseConfig = {
     fallbackConfig.appId,
 };
 
-// Check if any config value is using fallback
+// Check if any config value is using fallback or is empty
 const usingFallback = Object.entries(firebaseConfig).some(
-  ([key, value]) => value === fallbackConfig[key]
+  ([key, value]) => value === fallbackConfig[key] || value === ''
 );
 
 if (usingFallback && process.env.NODE_ENV !== 'test') {
+  // List which values are problematic
+  const issues = Object.entries(firebaseConfig)
+    .filter(([key, value]) => value === fallbackConfig[key] || value === '')
+    .map(([key]) => key);
+
   console.warn(
-    '[Firebase Config] Using fallback values. This should only happen in development or test environments.'
+    '[Firebase Config] Using fallback or empty values for: ' + issues.join(', ') +
+    '. This should only happen in development or test environments.'
   );
 }
 
