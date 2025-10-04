@@ -9,6 +9,15 @@ export default defineConfig({
   plugins: [
     vue(),
     vueDevTools(),
+    {
+      name: 'html-transform',
+      transformIndexHtml(html) {
+        return html.replace(
+          /%VITE_FIREBASE_([A-Z_]+)%/g,
+          (match, key) => process.env[`VITE_FIREBASE_${key}`] || ''
+        );
+      },
+    },
   ],
   test: {
     // Exclude E2E tests from the Vitest runner
