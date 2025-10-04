@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 const props = defineProps({
   document: {
@@ -12,7 +13,7 @@ const props = defineProps({
 const renderedContent = computed(() => {
   if (props.document && props.document.content) {
     // Use marked to convert Markdown to HTML
-    return marked(props.document.content);
+    return DOMPurify.sanitize(marked(props.document.content));
   }
   return '';
 });
