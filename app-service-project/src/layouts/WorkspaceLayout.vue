@@ -16,6 +16,7 @@ const { selectedDocument } = useKnowledgeState();
 
 // Local state for the v-treeview's activated node
 const activatedNode = ref([]);
+const openedNodes = ref([]);
 
 const display = useDisplay();
 const isMobile = computed(() => display.smAndDown.value);
@@ -38,11 +39,44 @@ function findNodeById(nodes, id) {
 }
 
 // Watch for changes in the activated node and update the shared state
+const collectExpandableNodes = (nodes, bucket) => {
+  nodes.forEach(node => {
+    if (node.children?.length) {
+      bucket.push(node.id);
+      collectExpandableNodes(node.children, bucket);
+    }
+  });
+};
+
+const findFirstLeaf = (nodes) => {
+  for (const node of nodes) {
+    if (!node.children || node.children.length === 0) {
+      return node;
+    }
+    const child = findFirstLeaf(node.children);
+    if (child) {
+      return child;
+    }
+  }
+  return null;
+};
+
+watch(tree, (newTree) => {
+  const expanded = [];
+  collectExpandableNodes(newTree, expanded);
+  openedNodes.value = expanded;
+
+  if (activatedNode.value.length === 0) {
+    const firstLeaf = findFirstLeaf(newTree);
+    activatedNode.value = firstLeaf ? [firstLeaf.id] : [];
+  }
+}, { deep: true });
+
 watch(activatedNode, (newVal) => {
   if (newVal.length > 0) {
     const nodeId = newVal[0];
     const node = findNodeById(tree.value, nodeId);
-    selectedDocument.value = node;
+    selectedDocument.value = node ?? null;
   } else {
     selectedDocument.value = null;
   }
@@ -89,30 +123,33 @@ function getStatusColor(status) {
         <v-alert v-else-if="error" type="error" density="compact" variant="tonal">
           {{ error }}
         </v-alert>
-        <v-treeview
-          v-else
-          v-model:activated="activatedNode"
-          :items="tree"
-          activatable
-          density="compact"
-          item-title="title"
-          item-value="id"
-          open-on-click
-          color="primary"
-        >
-          <template v-slot:item="{ props, item }">
-            <div v-bind="props" class="d-flex align-center">
-              <v-icon
-                :color="getStatusColor(item.raw.status)"
-                size="x-small"
-                class="me-2"
-              >
-                mdi-circle
-              </v-icon>
-              <span>{{ item.title }}</span>
-            </div>
-          </template>
-        </v-treeview>
+        <div v-else data-testid="knowledge-tree">
+          <v-treeview
+            v-model:activated="activatedNode"
+            v-model:opened="openedNodes"
+            :items="tree"
+            activatable
+            open-all
+            density="compact"
+            item-title="title"
+            item-value="id"
+            open-on-click
+            color="primary"
+          >
+            <template v-slot:item="{ props, item }">
+              <div v-bind="props" class="d-flex align-center">
+                <v-icon
+                  :color="getStatusColor(item.raw.status)"
+                  size="x-small"
+                  class="me-2"
+                >
+                  mdi-circle
+                </v-icon>
+                <span>{{ item.title }}</span>
+              </div>
+            </template>
+          </v-treeview>
+        </div>
       </div>
     </v-navigation-drawer>
 

@@ -1,0 +1,31 @@
+name: Visual Regression
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  vrt:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app-service-project/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefix app-service-project
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+        working-directory: app-service-project
+
+      - name: Run visual regression tests
+        run: npm run test:vrt --prefix app-service-project
