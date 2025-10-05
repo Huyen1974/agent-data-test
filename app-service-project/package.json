@@ -18,9 +18,11 @@
     "eslint-plugin-deprecation": "^3.0.0",
     "eslint-plugin-vue": "^10.5.0",
     "jsdom": "^27.0.0",
+    "typescript": "^5.9.3",
     "vite": "^7.0.6",
     "vite-plugin-vue-devtools": "^8.0.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "vue-eslint-parser": "^10.2.0"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
@@ -30,7 +32,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "lint": "eslint . --ext .js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
     "preview": "vite preview",
     "test:vrt": "playwright test tests/e2e/knowledge-hub-vrt.spec.ts"
   },
