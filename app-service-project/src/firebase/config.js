@@ -6,6 +6,39 @@ const runtimeConfig =
     ? window.__FIREBASE_CONFIG__
     : globalThis?.__FIREBASE_CONFIG__;
 
+const ENV_KEY_MAP = {
+  apiKey: 'VITE_FIREBASE_API_KEY',
+  authDomain: 'VITE_FIREBASE_AUTH_DOMAIN',
+  projectId: 'VITE_FIREBASE_PROJECT_ID',
+  storageBucket: 'VITE_FIREBASE_STORAGE_BUCKET',
+  messagingSenderId: 'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  appId: 'VITE_FIREBASE_APP_ID',
+};
+
+const sanitizeValue = value => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed;
+  }
+
+  return value ?? undefined;
+};
+
+const resolveConfigValue = key => {
+  const runtimeValue = sanitizeValue(runtimeConfig?.[key]);
+  if (runtimeValue !== undefined) {
+    return runtimeValue;
+  }
+
+  const envKey = ENV_KEY_MAP[key];
+  const envValue = sanitizeValue(import.meta.env?.[envKey]);
+  if (envValue !== undefined) {
+    return envValue;
+  }
+
+  return fallbackConfig[key];
+};
+
 const fallbackConfig = {
   apiKey: 'AIzaSyDUMMY0000000000000000000000000',
   authDomain: 'localhost.localdomain',
@@ -15,45 +48,20 @@ const fallbackConfig = {
   appId: '1:000000000000:web:0000000000000000',
 };
 
-const firebaseConfig = {
-  apiKey:
-    runtimeConfig?.apiKey ?? import.meta.env.VITE_FIREBASE_API_KEY ?? fallbackConfig.apiKey,
-  authDomain:
-    runtimeConfig?.authDomain ??
-    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ??
-    fallbackConfig.authDomain,
-  projectId:
-    runtimeConfig?.projectId ??
-    import.meta.env.VITE_FIREBASE_PROJECT_ID ??
-    fallbackConfig.projectId,
-  storageBucket:
-    runtimeConfig?.storageBucket ??
-    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ??
-    fallbackConfig.storageBucket,
-  messagingSenderId:
-    runtimeConfig?.messagingSenderId ??
-    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ??
-    fallbackConfig.messagingSenderId,
-  appId:
-    runtimeConfig?.appId ??
-    import.meta.env.VITE_FIREBASE_APP_ID ??
-    fallbackConfig.appId,
-};
-
-// Check if any config value is using fallback or is empty
-const usingFallback = Object.entries(firebaseConfig).some(
-  ([key, value]) => value === fallbackConfig[key] || value === ''
+const firebaseConfig = Object.fromEntries(
+  Object.keys(ENV_KEY_MAP).map(key => [key, resolveConfigValue(key)])
 );
 
-if (usingFallback && process.env.NODE_ENV !== 'test') {
-  // List which values are problematic
-  const issues = Object.entries(firebaseConfig)
-    .filter(([key, value]) => value === fallbackConfig[key] || value === '')
-    .map(([key]) => key);
+// Check if any config value still relies on the fallback defaults
+const fallbackIssues = Object.entries(firebaseConfig)
+  .filter(([key, value]) => value === fallbackConfig[key])
+  .map(([key]) => key);
 
+if (fallbackIssues.length > 0 && process.env.NODE_ENV !== 'test') {
   console.warn(
-    '[Firebase Config] Using fallback or empty values for: ' + issues.join(', ') +
-    '. This should only happen in development or test environments.'
+    '[Firebase Config] Using fallback values for: ' +
+      fallbackIssues.join(', ') +
+      '. This should only happen in development or test environments.'
   );
 }
 
