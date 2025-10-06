@@ -6,7 +6,7 @@ const TEST_USER = {
 };
 
 test.describe('Critical screens visual regression', () => {
-  test('Login Page', async ({ page }) => {
+  test('Authentication Journey @smoke', async ({ page }) => {
     // Set consistent viewport
     await page.setViewportSize({ width: 1280, height: 720 });
 
@@ -28,7 +28,7 @@ test.describe('Critical screens visual regression', () => {
     });
   });
 
-  test('Workspace Layout', async ({ page, baseURL }) => {
+  test('Authenticated Workspace Journey @smoke', async ({ page, baseURL }) => {
     // Set consistent viewport
     await page.setViewportSize({ width: 1280, height: 720 });
 

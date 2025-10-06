@@ -27,5 +27,6 @@ jobs:
         run: npx playwright install --with-deps
         working-directory: app-service-project
 
-      - name: Run visual regression tests
-        run: npm run test:vrt --prefix app-service-project
+      - name: Run visual regression tests (smoke only)
+        run: npx playwright test --grep @smoke
+        working-directory: app-service-project

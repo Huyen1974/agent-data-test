@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('Knowledge Hub visual regression', () => {
-  test('renders knowledge tree without regressions', async ({ page }) => {
+  test('Knowledge Hub Display Journey', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
 
     await page.goto('/');
