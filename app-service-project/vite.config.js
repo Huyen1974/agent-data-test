@@ -28,6 +28,11 @@ export default defineConfig({
     ],
     // Optional: Specify test environment if needed, e.g., jsdom
     environment: 'jsdom',
+    // Coverage configuration for Codecov integration
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+    },
   },
   resolve: {
     alias: {
