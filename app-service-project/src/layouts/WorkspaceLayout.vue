@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useDisplay } from 'vuetify';
 import { useKnowledgeTree } from '../firebase/knowledgeService.js';
 import { useKnowledgeState } from '../firebase/knowledgeState.js';
+import { useEnvironmentSelector, ENVIRONMENTS } from '../firebase/environmentSelector.js';
 
 const props = defineProps({
   title: {
@@ -13,6 +14,14 @@ const props = defineProps({
 
 const { tree, loading, error } = useKnowledgeTree();
 const { selectedDocument } = useKnowledgeState();
+const { selectedEnvironment, setEnvironment, displayLabel } = useEnvironmentSelector();
+
+// Environment filter options
+const environmentOptions = [
+  { value: ENVIRONMENTS.ALL, title: 'Tất cả' },
+  { value: ENVIRONMENTS.TEST, title: 'Test' },
+  { value: ENVIRONMENTS.PRODUCTION, title: 'Production' },
+];
 
 // Local state for the v-treeview's activated node
 const activatedNode = ref([]);
@@ -115,6 +124,24 @@ function getStatusColor(status) {
           Danh mục
         </v-toolbar-title>
       </v-toolbar>
+      <v-divider />
+
+      <!-- Environment Filter -->
+      <div class="pa-2">
+        <v-select
+          :model-value="selectedEnvironment"
+          :items="environmentOptions"
+          density="compact"
+          variant="outlined"
+          hide-details
+          label="Môi trường"
+          @update:model-value="setEnvironment"
+        >
+          <template v-slot:prepend-inner>
+            <v-icon size="small" color="primary">mdi-filter-variant</v-icon>
+          </template>
+        </v-select>
+      </div>
       <v-divider />
       <div class="drawer-scroll pa-2">
         <div v-if="loading" class="text-center pa-4">

@@ -1,8 +1,9 @@
-import { ref, onUnmounted } from 'vue';
+import { ref, onUnmounted, watch } from 'vue';
 import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
 import { firebaseApp, auth } from './config.js';
+import { useEnvironmentSelector } from './environmentSelector.js';
 
 const USE_MOCK_DATA = import.meta.env.VITE_KNOWLEDGE_TREE_MOCK === 'true';
 
@@ -95,6 +96,7 @@ function buildTree(items) {
 
 /**
  * Composable function to fetch and manage the knowledge tree from Firestore.
+ * Implements Constitution-compliant strategy (QD-LAW §2) using separate collections.
  *
  * @returns {{
  *   tree: import('vue').Ref<Array>,
@@ -116,23 +118,24 @@ export function useKnowledgeTree() {
   }
 
   const db = getFirestore(firebaseApp);
+  const { collectionNames } = useEnvironmentSelector();
 
-  let unsubscribeSnapshot = null;
+  let unsubscribeSnapshots = [];
   let loadingTimeout = null;
+  let currentUser = null;
 
-  const resetSubscription = () => {
-    if (unsubscribeSnapshot) {
-      unsubscribeSnapshot();
-      unsubscribeSnapshot = null;
-    }
+  const resetSubscriptions = () => {
+    unsubscribeSnapshots.forEach(unsub => unsub());
+    unsubscribeSnapshots = [];
     if (loadingTimeout) {
       clearTimeout(loadingTimeout);
       loadingTimeout = null;
     }
   };
 
-  const startSubscription = (user) => {
-    resetSubscription();
+  const startSubscriptions = (user, collections) => {
+    resetSubscriptions();
+    currentUser = user;
 
     if (!user) {
       tree.value = [];
@@ -152,31 +155,60 @@ export function useKnowledgeTree() {
       }
     }, 8000);
 
-    const collectionRef = collection(db, 'knowledge_documents');
-    unsubscribeSnapshot = onSnapshot(
-      collectionRef,
-      (snapshot) => {
-        clearTimeout(loadingTimeout);
-        error.value = null;
-        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        tree.value = buildTree(items);
-        loading.value = false;
-      },
-      (err) => {
-        clearTimeout(loadingTimeout);
-        console.error('Error fetching knowledge documents:', err);
-        error.value = 'Không thể tải sơ đồ tri thức.';
-        loading.value = false;
-      }
-    );
+    // Aggregate documents from multiple collections
+    const allDocs = new Map();
+    let completedCollections = 0;
+
+    collections.forEach(collectionName => {
+      const collectionRef = collection(db, collectionName);
+      const unsub = onSnapshot(
+        collectionRef,
+        (snapshot) => {
+          // Store documents with collection info for debugging
+          snapshot.docs.forEach(doc => {
+            allDocs.set(doc.id, {
+              id: doc.id,
+              ...doc.data(),
+              _source: collectionName, // for debugging
+            });
+          });
+
+          completedCollections++;
+
+          // Only update tree when all collections have loaded
+          if (completedCollections >= collections.length) {
+            clearTimeout(loadingTimeout);
+            error.value = null;
+            const items = Array.from(allDocs.values());
+            tree.value = buildTree(items);
+            loading.value = false;
+          }
+        },
+        (err) => {
+          clearTimeout(loadingTimeout);
+          console.error(`Error fetching from ${collectionName}:`, err);
+          error.value = `Không thể tải dữ liệu từ ${collectionName}.`;
+          loading.value = false;
+        }
+      );
+      unsubscribeSnapshots.push(unsub);
+    });
   };
 
+  // Watch for auth changes
   const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    startSubscription(user);
+    startSubscriptions(user, collectionNames.value);
+  });
+
+  // Watch for environment changes and restart subscriptions
+  watch(collectionNames, (newCollections) => {
+    if (currentUser) {
+      startSubscriptions(currentUser, newCollections);
+    }
   });
 
   onUnmounted(() => {
-    resetSubscription();
+    resetSubscriptions();
     unsubscribeAuth();
   });
 
