@@ -157,31 +157,52 @@ export function useKnowledgeTree() {
 
     // Aggregate documents from multiple collections
     const allDocs = new Map();
-    let completedCollections = 0;
+    const loadedCollections = new Set();
+    let isInitialLoad = true;
+
+    const updateTree = () => {
+      const items = Array.from(allDocs.values());
+      tree.value = buildTree(items);
+    };
 
     collections.forEach(collectionName => {
       const collectionRef = collection(db, collectionName);
       const unsub = onSnapshot(
         collectionRef,
         (snapshot) => {
-          // Store documents with collection info for debugging
-          snapshot.docs.forEach(doc => {
-            allDocs.set(doc.id, {
-              id: doc.id,
-              ...doc.data(),
-              _source: collectionName, // for debugging
-            });
+          // Process document changes (added, modified, removed)
+          // This ensures proper synchronization when documents are deleted
+          snapshot.docChanges().forEach(change => {
+            const docId = change.doc.id;
+
+            if (change.type === 'added' || change.type === 'modified') {
+              // Add or update document in the map
+              allDocs.set(docId, {
+                id: docId,
+                ...change.doc.data(),
+                _source: collectionName, // for debugging
+              });
+            } else if (change.type === 'removed') {
+              // Remove document from the map to sync with Firestore deletion
+              allDocs.delete(docId);
+            }
           });
 
-          completedCollections++;
+          // Track which collections have loaded for initial load
+          if (isInitialLoad) {
+            loadedCollections.add(collectionName);
 
-          // Only update tree when all collections have loaded
-          if (completedCollections >= collections.length) {
-            clearTimeout(loadingTimeout);
-            error.value = null;
-            const items = Array.from(allDocs.values());
-            tree.value = buildTree(items);
-            loading.value = false;
+            // All collections loaded for the first time
+            if (loadedCollections.size >= collections.length) {
+              clearTimeout(loadingTimeout);
+              error.value = null;
+              loading.value = false;
+              isInitialLoad = false;
+              updateTree();
+            }
+          } else {
+            // After initial load, update tree on every change
+            updateTree();
           }
         },
         (err) => {
