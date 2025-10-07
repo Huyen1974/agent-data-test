@@ -9,8 +9,8 @@
           <v-card-text class="text-center">
             <h2>Bạn đã đăng xuất thành công.</h2>
             <p>Cảm ơn bạn đã sử dụng ứng dụng.</p>
-            <v-btn color="primary" to="/login" class="mt-4">
-              Đăng nhập lại
+            <v-btn color="primary" to="/" class="mt-4">
+              Trở về trang chủ
             </v-btn>
           </v-card-text>
         </v-card>

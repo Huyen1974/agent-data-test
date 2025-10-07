@@ -5,11 +5,15 @@
       <v-spacer></v-spacer>
       <div v-if="isReady">
         <div v-if="user" class="d-flex align-center">
-          <v-avatar size="36" class="mr-3">
+          <v-avatar size="36" class="mr-3" color="primary">
             <v-img
+              v-if="user.photoURL"
               :src="user.photoURL"
               :alt="user.displayName"
             ></v-img>
+            <span v-else class="text-h6 white--text">
+              {{ user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U' }}
+            </span>
           </v-avatar>
           <span class="mr-4">{{ user.displayName }}</span>
           <v-btn @click="signOut">Đăng xuất</v-btn>

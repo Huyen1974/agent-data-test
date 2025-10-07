@@ -60,7 +60,12 @@ export function useAuth() {
       // Manually clear the user state to ensure immediate UI update
       user.value = null;
       // Redirect to the goodbye page after successful sign-out
-      await router.push({ name: 'goodbye' });
+      try {
+        await router.push({ name: 'goodbye' });
+      } catch (navError) {
+        // Navigation error (e.g., navigation guard cancellation) - not critical
+        console.warn('Navigation after sign-out was cancelled:', navError);
+      }
     } catch (error) {
       authError.value = error.message;
       console.error('Error during sign-out:', error);
