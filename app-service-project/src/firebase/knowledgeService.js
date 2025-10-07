@@ -1,8 +1,8 @@
 import { ref, onUnmounted, watch } from 'vue';
 import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
 
-import { firebaseApp, auth } from './config.js';
+import { firebaseApp } from './config.js';
+import { useAuth } from './authService.js';
 import { useEnvironmentSelector } from './environmentSelector.js';
 
 const USE_MOCK_DATA = import.meta.env.VITE_KNOWLEDGE_TREE_MOCK === 'true';
@@ -119,10 +119,10 @@ export function useKnowledgeTree() {
 
   const db = getFirestore(firebaseApp);
   const { collectionNames } = useEnvironmentSelector();
+  const { user: authUser, isReady } = useAuth();
 
   let unsubscribeSnapshots = [];
   let loadingTimeout = null;
-  let currentUser = null;
 
   const resetSubscriptions = () => {
     unsubscribeSnapshots.forEach(unsub => unsub());
@@ -135,7 +135,6 @@ export function useKnowledgeTree() {
 
   const startSubscriptions = (user, collections) => {
     resetSubscriptions();
-    currentUser = user;
 
     if (!user) {
       tree.value = [];
@@ -216,21 +215,22 @@ export function useKnowledgeTree() {
     });
   };
 
-  // Watch for auth changes
-  const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-    startSubscriptions(user, collectionNames.value);
-  });
+  // Watch for auth state readiness and user changes
+  watch([isReady, authUser], ([ready, user]) => {
+    if (ready) {
+      startSubscriptions(user, collectionNames.value);
+    }
+  }, { immediate: true });
 
   // Watch for environment changes and restart subscriptions
   watch(collectionNames, (newCollections) => {
-    if (currentUser) {
-      startSubscriptions(currentUser, newCollections);
+    if (isReady.value && authUser.value) {
+      startSubscriptions(authUser.value, newCollections);
     }
   });
 
   onUnmounted(() => {
     resetSubscriptions();
-    unsubscribeAuth();
   });
 
   return { tree, loading, error };
