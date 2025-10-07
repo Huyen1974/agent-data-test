@@ -2,19 +2,17 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 
-describe('Firebase Configuration Integration Test', () => {
+// Check if we have production credentials available
+const hasProductionCredentials = process.env.VITE_FIREBASE_PROJECT_ID &&
+                                  process.env.VITE_FIREBASE_PROJECT_ID !== 'test-project';
+
+// Use describe.skipIf to conditionally skip the entire suite
+describe.skipIf(!hasProductionCredentials)('Firebase Configuration Integration Test', () => {
   let firestore;
   let firebaseApp;
   let firebaseConfig;
 
   beforeAll(() => {
-    // Skip test suite if not in integration test environment
-    if (!process.env.VITE_FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID === 'test-project') {
-      console.log('⏭️  Skipping Firebase integration tests - no production credentials provided');
-      console.log('   Set VITE_FIREBASE_* environment variables to run these tests');
-      return; // Return early, tests will be skipped
-    }
-
     // Build Firebase config from environment variables (same as production)
     firebaseConfig = {
       apiKey: process.env.VITE_FIREBASE_API_KEY,
