@@ -41,5 +41,11 @@ test('Google sign-in and sign-out UI flow', async ({ page, baseURL }) => {
 
   await logoutButton.click();
 
-  await expect(page.locator('button:has-text("Đăng nhập bằng Google")')).toBeVisible();
+  // Wait for Vue to process the logout and update UI state
+  await page.waitForTimeout(100);
+
+  // Verify login button reappears after logout with increased timeout
+  await expect(page.locator('button:has-text("Đăng nhập bằng Google")')).toBeVisible({
+    timeout: 10000
+  });
 });

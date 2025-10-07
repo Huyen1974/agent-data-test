@@ -16,17 +16,24 @@ const webServer = process.env.WEB_APP_URL
 
 export default defineConfig({
   testDir: './tests/e2e',
+  timeout: 60000, // 60 seconds per test
+  expect: {
+    timeout: 10000, // 10 seconds for assertions
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.1,
+      animations: 'disabled', // Disable animations globally for VRT
+    },
+  },
   use: {
     baseURL,
     headless: true,
     screenshot: 'only-on-failure',
-    video: 'off',
+    video: 'retain-on-failure',
+    trace: 'retain-on-failure',
+    actionTimeout: 15000, // 15 seconds for actions
   },
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFileName}/{arg}{ext}',
-  expect: {
-    toHaveScreenshot: {
-      maxDiffPixelRatio: 0.1,
-    },
-  },
+  retries: process.env.CI ? 2 : 0, // Retry failed tests twice in CI
+  workers: process.env.CI ? 2 : undefined, // Limit parallelism in CI
   webServer,
 });

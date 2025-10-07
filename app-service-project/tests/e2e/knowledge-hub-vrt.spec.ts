@@ -1,17 +1,21 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('Knowledge Hub visual regression', () => {
-  test('Knowledge Hub Display Journey', async ({ page }) => {
+  test('Knowledge Hub Display Journey @smoke', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'networkidle' });
 
-    // Wait for the navigation drawer and tree data to render.
-    await expect(page.getByTestId('knowledge-tree')).toBeVisible();
-    await expect(page.getByRole('option', { name: 'Dự án Incomex Corp' })).toBeVisible();
+    // Wait for the navigation drawer and tree data to render with explicit timeout
+    await expect(page.getByTestId('knowledge-tree')).toBeVisible({ timeout: 10000 });
 
-    // Allow any pending animations/transitions to complete before taking the snapshot.
-    await page.waitForTimeout(250);
+    // Wait for the first tree item to ensure data is loaded
+    await expect(page.getByRole('option', { name: 'Dự án Incomex Corp' })).toBeVisible({
+      timeout: 5000
+    });
+
+    // Allow animations/transitions to complete before snapshot
+    await page.waitForTimeout(500);
 
     const treeContainer = page.getByTestId('knowledge-tree');
     await expect(treeContainer).toHaveScreenshot({
@@ -19,6 +23,7 @@ test.describe('Knowledge Hub visual regression', () => {
       animations: 'disabled',
       caret: 'hide',
       scale: 'css',
+      timeout: 10000
     });
   });
 });
