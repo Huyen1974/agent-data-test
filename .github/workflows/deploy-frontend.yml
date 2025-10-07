@@ -68,6 +68,30 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build --prefix app-service-project
 
+      - name: Inject Firebase Config into Built HTML
+        run: |
+          set -euo pipefail
+          echo "Injecting Firebase config into dist/index.html..."
+
+          # Use sed to replace placeholders in the built index.html
+          sed -i "s|%VITE_FIREBASE_API_KEY%|${{ secrets.VITE_FIREBASE_API_KEY }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_AUTH_DOMAIN%|${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_PROJECT_ID%|${{ secrets.VITE_FIREBASE_PROJECT_ID }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_STORAGE_BUCKET%|${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_MESSAGING_SENDER_ID%|${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_APP_ID%|${{ secrets.VITE_FIREBASE_APP_ID }}|g" app-service-project/dist/index.html
+
+          echo "✓ Firebase config injection completed"
+
+          # Verify injection succeeded (check that placeholders are gone)
+          if grep -q '%VITE_FIREBASE_' app-service-project/dist/index.html; then
+            echo "ERROR: Found remaining placeholders in index.html" >&2
+            grep '%VITE_FIREBASE_' app-service-project/dist/index.html >&2
+            exit 1
+          fi
+
+          echo "✓ Verified all placeholders replaced"
+
       - name: Verify Build Artifact
         run: |
           set -euo pipefail

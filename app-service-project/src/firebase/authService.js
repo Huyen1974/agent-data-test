@@ -12,6 +12,7 @@ import router from '@/router';
 const user = ref(null);
 const authError = ref(null);
 const isReady = ref(false);
+const isSigningIn = ref(false);
 
 /**
  * Composable function to manage Firebase authentication.
@@ -21,6 +22,7 @@ const isReady = ref(false);
  *   signInWithGoogle: () => Promise<void>,
  *   signOut: () => Promise<void>,
  *   isReady: import('vue').Ref<boolean>,
+ *   isSigningIn: import('vue').Ref<boolean>,
  *   authError: import('vue').Ref<string | null>
  * }}
  */
@@ -45,11 +47,14 @@ export function useAuth() {
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     authError.value = null;
+    isSigningIn.value = true;
     try {
       await signInWithPopup(auth, provider);
     } catch (error) {
       authError.value = error.message;
       console.error('Error during sign-in:', error);
+    } finally {
+      isSigningIn.value = false;
     }
   };
 
@@ -87,5 +92,5 @@ export function useAuth() {
     };
   }
 
-  return { user, signInWithGoogle, signOut, isReady, authError };
+  return { user, signInWithGoogle, signOut, isReady, isSigningIn, authError };
 }
