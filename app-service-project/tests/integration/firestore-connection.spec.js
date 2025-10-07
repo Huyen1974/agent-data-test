@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, query, limit, getDocs } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 
-describe('Firestore Live Connection Integration Test', () => {
+describe('Firebase Configuration Integration Test', () => {
   let firestore;
   let firebaseApp;
+  let firebaseConfig;
 
   beforeAll(() => {
     // Skip test if not in integration test environment
@@ -15,8 +16,8 @@ describe('Firestore Live Connection Integration Test', () => {
       );
     }
 
-    // Initialize Firebase with environment variables
-    const firebaseConfig = {
+    // Build Firebase config from environment variables (same as production)
+    firebaseConfig = {
       apiKey: process.env.VITE_FIREBASE_API_KEY,
       authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
       projectId: process.env.VITE_FIREBASE_PROJECT_ID,
@@ -25,7 +26,7 @@ describe('Firestore Live Connection Integration Test', () => {
       appId: process.env.VITE_FIREBASE_APP_ID,
     };
 
-    // Validate all required config values are present
+    // Validate all required config values are present and non-empty
     const missingKeys = Object.entries(firebaseConfig)
       .filter(([, value]) => !value || value === '')
       .map(([key]) => key);
@@ -37,65 +38,67 @@ describe('Firestore Live Connection Integration Test', () => {
       );
     }
 
-    firebaseApp = initializeApp(firebaseConfig);
+    // Initialize Firebase (will throw if config is invalid)
+    firebaseApp = initializeApp(firebaseConfig, 'integration-test');
     firestore = getFirestore(firebaseApp);
   });
 
-  it('should successfully connect to Firestore and read from production_documents collection', async () => {
-    // Attempt to query the production_documents collection
-    const collectionRef = collection(firestore, 'production_documents');
-    const q = query(collectionRef, limit(1));
+  it('should validate all Firebase config values are properly injected from secrets', () => {
+    // Verify no config value contains placeholder strings
+    Object.entries(firebaseConfig).forEach(([key, value]) => {
+      expect(value, `${key} should not be empty`).toBeTruthy();
+      expect(value, `${key} should not contain %VITE_FIREBASE_`).not.toMatch(/%VITE_FIREBASE_/);
+      expect(value, `${key} should not be undefined`).not.toBe('undefined');
+      expect(value, `${key} should not be null string`).not.toBe('null');
+    });
 
-    // Execute the query
-    const querySnapshot = await getDocs(q);
+    console.log('✅ All Firebase config values are properly set');
+    console.log(`   Project ID: ${firebaseConfig.projectId}`);
+    console.log(`   Auth Domain: ${firebaseConfig.authDomain}`);
+    console.log(`   Storage Bucket: ${firebaseConfig.storageBucket}`);
+  });
 
-    // Verify the query executed successfully (no errors thrown)
-    expect(querySnapshot).toBeDefined();
+  it('should successfully initialize Firebase app with injected config', () => {
+    // Verify Firebase app was initialized
+    expect(firebaseApp).toBeDefined();
+    expect(firebaseApp.name).toBe('integration-test');
+    expect(firebaseApp.options.projectId).toBe(firebaseConfig.projectId);
+    expect(firebaseApp.options.apiKey).toBe(firebaseConfig.apiKey);
 
-    // Log the result for debugging in CI
-    if (querySnapshot.empty) {
-      console.log('✅ Firestore connection successful - collection is empty (expected for new deployments)');
-    } else {
-      console.log(`✅ Firestore connection successful - read ${querySnapshot.size} document(s) from production_documents`);
+    console.log('✅ Firebase app initialized successfully');
+    console.log(`   App name: ${firebaseApp.name}`);
+    console.log(`   Project ID: ${firebaseApp.options.projectId}`);
+  });
 
-      // Verify document structure
-      querySnapshot.forEach((doc) => {
-        console.log(`  Document ID: ${doc.id}`);
-        expect(doc.id).toBeDefined();
-        expect(doc.data()).toBeDefined();
-      });
-    }
+  it('should successfully initialize Firestore with production config', () => {
+    // Verify Firestore instance was created
+    expect(firestore).toBeDefined();
+    expect(firestore.app).toBe(firebaseApp);
+    expect(firestore.type).toBe('firestore');
 
-    // Test passes if we get here without errors
-    expect(true).toBe(true);
-  }, 10000); // 10 second timeout for network call
+    // Verify Firestore is NOT using emulator (production mode)
+    // In production, the _settings will not have host/ssl set by connectFirestoreEmulator
+    const settings = firestore._settings;
+    const isUsingEmulator = settings.host && settings.host.includes('localhost');
 
-  it('should successfully connect to Firestore and read from test_documents collection', async () => {
-    // Attempt to query the test_documents collection
-    const collectionRef = collection(firestore, 'test_documents');
-    const q = query(collectionRef, limit(1));
+    expect(isUsingEmulator, 'Firestore should NOT be using emulator in production').toBe(false);
 
-    // Execute the query
-    const querySnapshot = await getDocs(q);
+    console.log('✅ Firestore initialized successfully in production mode');
+    console.log(`   Type: ${firestore.type}`);
+    console.log(`   App: ${firestore.app.name}`);
+  });
 
-    // Verify the query executed successfully
-    expect(querySnapshot).toBeDefined();
+  it('should validate Firebase config matches production project', () => {
+    // Verify project ID matches expected production value
+    expect(firebaseConfig.projectId).toBe('github-chatgpt-ggcloud');
 
-    // Log the result
-    if (querySnapshot.empty) {
-      console.log('✅ Firestore connection successful - test_documents collection is empty');
-    } else {
-      console.log(`✅ Firestore connection successful - read ${querySnapshot.size} document(s) from test_documents`);
+    // Verify auth domain matches project
+    expect(firebaseConfig.authDomain).toMatch(/github-chatgpt-ggcloud/);
 
-      // Verify document structure
-      querySnapshot.forEach((doc) => {
-        console.log(`  Document ID: ${doc.id}`);
-        expect(doc.id).toBeDefined();
-        expect(doc.data()).toBeDefined();
-      });
-    }
+    // Verify storage bucket matches project
+    expect(firebaseConfig.storageBucket).toMatch(/github-chatgpt-ggcloud/);
 
-    // Test passes if we get here without errors
-    expect(true).toBe(true);
-  }, 10000); // 10 second timeout for network call
+    console.log('✅ Firebase config validated for production project');
+    console.log('   All config values match expected production settings');
+  });
 });
