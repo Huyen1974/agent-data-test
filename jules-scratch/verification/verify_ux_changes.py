@@ -1,5 +1,6 @@
 import re
-from playwright.sync_api import sync_playwright, Page, expect
+
+from playwright.sync_api import Page, expect, sync_playwright
 
 # Define absolute paths for screenshots
 LOGGED_IN_SS_PATH = "/app/jules-scratch/verification/verification_loggedin.png"

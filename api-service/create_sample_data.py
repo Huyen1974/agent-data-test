@@ -112,8 +112,8 @@ def create_sample_data():
 
     print("\n" + "=" * 60)
     print("✓ All sample data created successfully!")
-    print("  - test_documents: {} documents".format(len(test_data)))
-    print("  - production_documents: {} documents".format(len(production_data)))
+    print(f"  - test_documents: {len(test_data)} documents")
+    print(f"  - production_documents: {len(production_data)} documents")
     print("=" * 60)
 
 
