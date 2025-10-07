@@ -72,12 +72,10 @@ def test_gcs_ingest_download_success(
     mock_storage: MagicMock, monkeypatch: pytest.MonkeyPatch
 ):
     """Mock a successful GCS download via storage.Client and ensure it's called."""
-
     # Arrange: mock storage client, bucket, and blob
     mock_client = MagicMock()
     mock_bucket = MagicMock()
     mock_blob = MagicMock()
-
     mock_storage.Client.return_value = mock_client
     mock_client.bucket.return_value = mock_bucket
     mock_bucket.blob.return_value = mock_blob
@@ -86,26 +84,31 @@ def test_gcs_ingest_download_success(
     cfg.vecdb = None
     agent = AgentData(cfg)
 
-    # Act + Assert within patched ingest_doc_paths
-    # Ensure caching path executes by faking file reads to return content
-    monkeypatch.setattr(
-        "pathlib.Path.read_text", lambda self, **kwargs: "Framework text"
-    )
+    # To align with the corrected implementation, we now simulate the side-effect
+    # of `ingest_doc_paths`, which is to populate `doc_segments`.
+    from langroid.mytypes import Document
 
-    with patch.object(
-        agent, "ingest_doc_paths", return_value="Mock ingestion result."
-    ) as mock_ingest:
-        uri = "gs://test-bucket/test.txt"
-        result = agent.gcs_ingest(uri)
+    expected_text = "Framework text"
 
-        # Ensure download and ingestion were invoked
-        mock_blob.download_to_filename.assert_called_once()
-        mock_ingest.assert_called_once()
+    def mock_ingest(paths, *args, **kwargs):
+        agent.doc_segments = [
+            Document(content=expected_text, metadata={"source": paths[0]})
+        ]
+        return "Mock ingestion result."
 
-        # Result should include mocked ingestion output
-        assert "Mock ingestion result." in result
-        # last_ingested_text should be set from our fake content
-        assert agent.last_ingested_text == "Framework text"
+    monkeypatch.setattr(agent, "ingest_doc_paths", mock_ingest)
+
+    uri = "gs://test-bucket/test.txt"
+    result = agent.gcs_ingest(uri)
+
+    # Ensure download and ingestion were invoked
+    mock_blob.download_to_filename.assert_called_once()
+    # Check that our mock was called.
+    # We can no longer use a patch here because we replaced the method on the instance.
+    # A simple check of the result is sufficient.
+    assert "Mock ingestion result." in result
+    # last_ingested_text should be set from the content in our mocked doc_segments
+    assert agent.last_ingested_text == expected_text
 
 
 @pytest.mark.unit
@@ -362,3 +365,50 @@ def test_gcs_ingest_handles_api_error(mock_storage: MagicMock):
 
     res = agent.gcs_ingest("gs://bucket/file.txt")
     assert "GCS API error" in res
+
+
+@pytest.mark.unit
+@patch("agent_data.main.storage")
+def test_gcs_ingest_binary_file_caches_extracted_text(
+    mock_storage: MagicMock, monkeypatch: pytest.MonkeyPatch
+):
+    """Ensure gcs_ingest caches extracted text from doc_segments for binary files."""
+    # Arrange: mock GCS client to "download" a fake binary file
+    mock_client = MagicMock()
+    mock_bucket = MagicMock()
+    mock_blob = MagicMock()
+    mock_storage.Client.return_value = mock_client
+    mock_client.bucket.return_value = mock_bucket
+    mock_bucket.blob.return_value = mock_blob
+
+    # Simulate downloading a binary file by writing bytes to the mock path
+    def fake_download(path):
+        with open(path, "wb") as f:
+            f.write(b"%PDF-1.4\n%%EOF")
+
+    mock_blob.download_to_filename.side_effect = fake_download
+
+    cfg = AgentDataConfig()
+    cfg.vecdb = None
+    agent = AgentData(cfg)
+
+    # This is the expected text after a real parser would have run
+    expected_text = "This is the extracted text from a binary file."
+
+    # Mock the parent ingestion to simulate its behavior: populating doc_segments
+    # instead of doing a full ingestion.
+    from langroid.mytypes import Document
+
+    def mock_ingest(paths, *args, **kwargs):
+        agent.doc_segments = [
+            Document(content=expected_text, metadata={"source": paths[0]})
+        ]
+        return "Mock ingestion complete."
+
+    monkeypatch.setattr(agent, "ingest_doc_paths", mock_ingest)
+
+    uri = "gs://test-bucket/document.pdf"
+    agent.gcs_ingest(uri)
+
+    # Assert that the cached text is the clean, extracted content, not the raw bytes
+    assert agent.last_ingested_text == expected_text
