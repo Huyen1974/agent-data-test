@@ -36,6 +36,7 @@
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:integration": "vitest run tests/integration",
     "test:vrt": "playwright test tests/e2e/knowledge-hub-vrt.spec.ts"
   },
   "type": "module",
