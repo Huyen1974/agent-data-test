@@ -4,7 +4,13 @@
       <v-toolbar-title>Knowledge Hub</v-toolbar-title>
       <v-spacer></v-spacer>
       <div v-if="isReady">
-        <div v-if="user">
+        <div v-if="user" class="d-flex align-center">
+          <v-avatar size="36" class="mr-3">
+            <v-img
+              :src="user.photoURL"
+              :alt="user.displayName"
+            ></v-img>
+          </v-avatar>
           <span class="mr-4">{{ user.displayName }}</span>
           <v-btn @click="signOut">Đăng xuất</v-btn>
         </div>

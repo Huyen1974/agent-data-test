@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { auth } from '@/firebase/config'; // Using alias for cleaner path
 
 import KnowledgeHubView from '../views/KnowledgeHubView.vue';
+import GoodbyeView from '../views/GoodbyeView.vue';
 
 // Helper to get current user state asynchronously
 const getCurrentUser = () => {
@@ -44,6 +45,15 @@ const routes = [
       title: 'Portal Kinh Doanh',
       description: 'Phân khu kinh doanh.',
       requiresAuth: true, // This route requires authentication
+    },
+  },
+  {
+    path: '/goodbye',
+    name: 'goodbye',
+    component: GoodbyeView,
+    meta: {
+      title: 'Đã đăng xuất',
+      description: 'Trang thông báo đăng xuất thành công.',
     },
   },
 ];
