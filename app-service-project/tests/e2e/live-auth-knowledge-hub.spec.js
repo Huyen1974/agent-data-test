@@ -11,10 +11,14 @@
 
 import { expect, test } from '@playwright/test';
 
-// Skip test này trong môi trường local nếu không có credentials
-test.skip(({ browserName }) => {
-  return !process.env.GOOGLE_TEST_USER_EMAIL || !process.env.GOOGLE_TEST_USER_PASSWORD;
-}, 'Skipping live auth test - credentials not available');
+// Skip toàn bộ test suite nếu không có credentials
+const hasCredentials = process.env.GOOGLE_TEST_USER_EMAIL && process.env.GOOGLE_TEST_USER_PASSWORD;
+
+test.describe.configure({ mode: 'serial' });
+
+if (!hasCredentials) {
+  test.skip('Live auth test suite - credentials not available', () => {});
+}
 
 test.describe('Live Authentication and Knowledge Hub', () => {
   test('should authenticate with Google and load knowledge tree data', async ({ page, context }) => {

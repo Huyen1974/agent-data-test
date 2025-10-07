@@ -100,7 +100,7 @@ jobs:
           WEB_APP_URL: http://127.0.0.1:4173
           GOOGLE_TEST_USER_EMAIL: ${{ secrets.GOOGLE_TEST_USER_EMAIL }}
           GOOGLE_TEST_USER_PASSWORD: ${{ secrets.GOOGLE_TEST_USER_PASSWORD }}
-        run: npx playwright test live-auth-knowledge-hub.spec.js --project=chromium
+        run: npx playwright test live-auth-knowledge-hub.spec.js
         working-directory: app-service-project
 
       - name: Upload test results
