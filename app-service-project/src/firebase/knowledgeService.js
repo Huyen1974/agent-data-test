@@ -1,5 +1,16 @@
-import { ref, onUnmounted, watch } from 'vue';
-import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
+/**
+ * Knowledge Service - STD Architecture (Standard)
+ *
+ * Tuân thủ chiến lược "Cô lập Sự phức tạp":
+ * - Kiến trúc STD (>90% chức năng): Request-response đơn giản
+ * - KHÔNG sử dụng real-time listeners (onSnapshot)
+ * - Tải dữ liệu một lần khi cần thiết
+ *
+ * Constitution compliance: HP-06 (Kiến trúc Hướng Dịch vụ)
+ */
+
+import { ref } from 'vue';
+import { getFirestore, collection, getDocs, query } from 'firebase/firestore';
 
 import { firebaseApp } from './config.js';
 import { useAuth } from './authService.js';
@@ -95,143 +106,125 @@ function buildTree(items) {
 }
 
 /**
+ * STD Architecture: Fetch data once using request-response pattern
+ * NO real-time listeners (onSnapshot)
+ *
+ * @param {Array} collectionNames - List of collection names to fetch from
+ * @returns {Promise<Array>} Array of documents
+ */
+async function fetchKnowledgeDocuments(collectionNames) {
+  const db = getFirestore(firebaseApp);
+  const allDocs = [];
+
+  // Fetch from each collection sequentially
+  for (const collectionName of collectionNames) {
+    try {
+      const collectionRef = collection(db, collectionName);
+      const q = query(collectionRef);
+      const querySnapshot = await getDocs(q);
+
+      querySnapshot.forEach((doc) => {
+        allDocs.push({
+          id: doc.id,
+          ...doc.data(),
+          _source: collectionName, // for debugging
+        });
+      });
+    } catch (err) {
+      console.error(`Error fetching from ${collectionName}:`, err);
+      throw new Error(`Không thể tải dữ liệu từ ${collectionName}.`);
+    }
+  }
+
+  return allDocs;
+}
+
+/**
  * Composable function to fetch and manage the knowledge tree from Firestore.
- * Implements Constitution-compliant strategy (QD-LAW §2) using separate collections.
+ *
+ * STD ARCHITECTURE (>90% features):
+ * - Request-response pattern ONLY
+ * - NO real-time listeners
+ * - Manual refresh via loadData() method
  *
  * @returns {{
  *   tree: import('vue').Ref<Array>,
  *   loading: import('vue').Ref<boolean>,
- *   error: import('vue').Ref<string | null>
+ *   error: import('vue').Ref<string | null>,
+ *   loadData: () => Promise<void>,
+ *   refresh: () => Promise<void>
  * }}
  */
 export function useKnowledgeTree() {
   const tree = ref([]);
-  const loading = ref(true);
+  const loading = ref(false);
   const error = ref(null);
 
+  // Mock data mode
   if (USE_MOCK_DATA) {
     tree.value = buildTree(MOCK_DOCUMENTS);
     loading.value = false;
     error.value = null;
 
-    return { tree, loading, error };
+    return {
+      tree,
+      loading,
+      error,
+      loadData: async () => {}, // noop for mock
+      refresh: async () => {},  // noop for mock
+    };
   }
 
-  const db = getFirestore(firebaseApp);
-  const { collectionNames } = useEnvironmentSelector();
   const { user: authUser, isReady } = useAuth();
+  const { collectionNames } = useEnvironmentSelector();
 
-  let unsubscribeSnapshots = [];
-  let loadingTimeout = null;
-
-  const resetSubscriptions = () => {
-    unsubscribeSnapshots.forEach(unsub => unsub());
-    unsubscribeSnapshots = [];
-    if (loadingTimeout) {
-      clearTimeout(loadingTimeout);
-      loadingTimeout = null;
+  /**
+   * STD Architecture: Load data once using request-response
+   * NO real-time subscriptions
+   */
+  const loadData = async () => {
+    // Wait for auth to be ready
+    if (!isReady.value) {
+      error.value = 'Đang khởi tạo xác thực...';
+      return;
     }
-  };
 
-  const startSubscriptions = (user, collections) => {
-    resetSubscriptions();
-
-    if (!user) {
+    // Check if user is authenticated
+    if (!authUser.value) {
       tree.value = [];
       loading.value = false;
-      error.value = "Vui lòng đăng nhập để xem sơ đồ tri thức.";
+      error.value = 'Vui lòng đăng nhập để xem sơ đồ tri thức.';
       return;
     }
 
     loading.value = true;
     error.value = null;
 
-    loadingTimeout = setTimeout(() => {
-      if (loading.value) {
-        console.warn('Firestore connection timed out.');
-        error.value = 'Lỗi kết nối tới kho tri thức.';
-        loading.value = false;
-      }
-    }, 8000);
-
-    // Aggregate documents from multiple collections
-    const allDocs = new Map();
-    const loadedCollections = new Set();
-    let isInitialLoad = true;
-
-    const updateTree = () => {
-      const items = Array.from(allDocs.values());
-      tree.value = buildTree(items);
-    };
-
-    collections.forEach(collectionName => {
-      const collectionRef = collection(db, collectionName);
-      const unsub = onSnapshot(
-        collectionRef,
-        (snapshot) => {
-          // Process document changes (added, modified, removed)
-          // This ensures proper synchronization when documents are deleted
-          snapshot.docChanges().forEach(change => {
-            const docId = change.doc.id;
-
-            if (change.type === 'added' || change.type === 'modified') {
-              // Add or update document in the map
-              allDocs.set(docId, {
-                id: docId,
-                ...change.doc.data(),
-                _source: collectionName, // for debugging
-              });
-            } else if (change.type === 'removed') {
-              // Remove document from the map to sync with Firestore deletion
-              allDocs.delete(docId);
-            }
-          });
-
-          // Track which collections have loaded for initial load
-          if (isInitialLoad) {
-            loadedCollections.add(collectionName);
-
-            // All collections loaded for the first time
-            if (loadedCollections.size >= collections.length) {
-              clearTimeout(loadingTimeout);
-              error.value = null;
-              loading.value = false;
-              isInitialLoad = false;
-              updateTree();
-            }
-          } else {
-            // After initial load, update tree on every change
-            updateTree();
-          }
-        },
-        (err) => {
-          clearTimeout(loadingTimeout);
-          console.error(`Error fetching from ${collectionName}:`, err);
-          error.value = `Không thể tải dữ liệu từ ${collectionName}.`;
-          loading.value = false;
-        }
-      );
-      unsubscribeSnapshots.push(unsub);
-    });
+    try {
+      // STD: Simple request-response, no listeners
+      const documents = await fetchKnowledgeDocuments(collectionNames.value);
+      tree.value = buildTree(documents);
+      loading.value = false;
+    } catch (err) {
+      console.error('Error loading knowledge tree:', err);
+      error.value = err.message || 'Không thể tải dữ liệu tri thức.';
+      loading.value = false;
+      tree.value = [];
+    }
   };
 
-  // Watch for auth state readiness and user changes
-  watch([isReady, authUser], ([ready, user]) => {
-    if (ready) {
-      startSubscriptions(user, collectionNames.value);
-    }
-  }, { immediate: true });
+  /**
+   * Refresh data manually
+   */
+  const refresh = async () => {
+    await loadData();
+  };
 
-  // Watch for environment changes and restart subscriptions
-  watch(collectionNames, (newCollections) => {
-    if (isReady.value && authUser.value) {
-      startSubscriptions(authUser.value, newCollections);
-    }
-  });
-
-  onUnmounted(() => {
-    resetSubscriptions();
-  });
-
-  return { tree, loading, error };
+  return {
+    tree,
+    loading,
+    error,
+    loadData,
+    refresh,
+  };
 }

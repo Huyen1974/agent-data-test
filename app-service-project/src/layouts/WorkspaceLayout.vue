@@ -1,9 +1,10 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import { useDisplay } from 'vuetify';
 import { useKnowledgeTree } from '../firebase/knowledgeService.js';
 import { useKnowledgeState } from '../firebase/knowledgeState.js';
 import { useEnvironmentSelector, ENVIRONMENTS } from '../firebase/environmentSelector.js';
+import { useAuth } from '../firebase/authService.js';
 
 const props = defineProps({
   title: {
@@ -12,9 +13,11 @@ const props = defineProps({
   },
 });
 
-const { tree, loading, error } = useKnowledgeTree();
+// STD Architecture: Manual data loading
+const { tree, loading, error, loadData, refresh } = useKnowledgeTree();
 const { selectedDocument } = useKnowledgeState();
 const { selectedEnvironment, setEnvironment, displayLabel } = useEnvironmentSelector();
+const { user: authUser, isReady } = useAuth();
 
 // Environment filter options
 const environmentOptions = [
@@ -107,6 +110,25 @@ function getStatusColor(status) {
       return 'grey';
   }
 }
+
+// STD Architecture: Load data when auth is ready and user is authenticated
+watch([isReady, authUser], ([ready, user]) => {
+  if (ready && user) {
+    loadData();
+  }
+}, { immediate: true });
+
+// STD Architecture: Reload data when environment changes
+watch(selectedEnvironment, () => {
+  if (isReady.value && authUser.value) {
+    loadData();
+  }
+});
+
+// Manual refresh handler
+function handleRefresh() {
+  refresh();
+}
 </script>
 
 <template>
@@ -123,6 +145,15 @@ function getStatusColor(status) {
         <v-toolbar-title class="text-subtitle-2 font-weight-medium">
           Danh mục
         </v-toolbar-title>
+        <v-spacer />
+        <v-btn
+          icon="mdi-refresh"
+          variant="text"
+          size="small"
+          :loading="loading"
+          @click="handleRefresh"
+          title="Làm mới dữ liệu"
+        />
       </v-toolbar>
       <v-divider />
 
