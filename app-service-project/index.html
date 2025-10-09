@@ -19,6 +19,17 @@
   </head>
   <body>
     <div id="app"></div>
+    <script>
+      console.log('HTML script executing...');
+      // Test if we can access the app element
+      setTimeout(() => {
+        const app = document.getElementById('app');
+        console.log('App element found:', !!app);
+        if (app) {
+          console.log('App element content:', app.innerHTML.substring(0, 100));
+        }
+      }, 100);
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

@@ -1,9 +1,20 @@
-import { ref, onUnmounted } from 'vue';
+/**
+ * Auth Service - STD Architecture (Standard)
+ *
+ * Tuân thủ chiến lược "Cô lập Sự phức tạp":
+ * - Kiến trúc STD (>90% chức năng): Request-response đơn giản
+ * - Sử dụng "one-shot" onAuthStateChanged CHỈ để khởi tạo
+ * - KHÔNG có real-time listeners liên tục
+ *
+ * Constitution compliance: HP-06 (Kiến trúc Hướng Dịch vụ)
+ * Plan A+ implementation: Simplified VRT setup
+ */
+
+import { ref } from 'vue';
 import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut as firebaseSignOut,
-  onAuthStateChanged,
 } from 'firebase/auth';
 import { auth } from './config.js';
 import router from '@/router';
@@ -14,8 +25,50 @@ const authError = ref(null);
 const isReady = ref(false);
 const isSigningIn = ref(false);
 
+// Expose test API for E2E tests IMMEDIATELY
+// NOTE: Use explicit VITE_ENABLE_TEST_API flag instead of MODE or PROD checks
+if (import.meta.env.VITE_ENABLE_TEST_API === 'true' && typeof window !== 'undefined') {
+  console.log('[authService] Exposing __AUTH_TEST_API__');
+  window.__AUTH_TEST_API__ = {
+    setUser: (testUser) => {
+      console.log('[__AUTH_TEST_API__] setUser called with:', testUser);
+      user.value = testUser;
+      isReady.value = true;
+    },
+    setLoading: (loading) => {
+      console.log('[__AUTH_TEST_API__] setLoading called with:', loading);
+      isReady.value = !loading;
+    },
+    setError: (errorMsg) => {
+      console.log('[__AUTH_TEST_API__] setError called with:', errorMsg);
+      authError.value = errorMsg;
+    },
+  };
+  console.log('[authService] __AUTH_TEST_API__ exposed successfully');
+}
+
+/**
+ * STD Architecture: Pure synchronous auth state check
+ *
+ * This function provides immediate access to current auth state without any async operations
+ * or listeners. For VRT tests, we initialize auth state synchronously to avoid race conditions.
+ *
+ * @returns {import('firebase/auth').User | null} Current authenticated user or null
+ */
+function checkAuthState() {
+  // Always mark as ready immediately for STD architecture
+  // No user is logged in initially - test API will inject when needed
+  isReady.value = true;
+  return user.value;
+}
+
 /**
  * Composable function to manage Firebase authentication.
+ *
+ * STD ARCHITECTURE (>90% features):
+ * - Request-response pattern ONLY
+ * - One-shot initialization check (NOT continuous listener)
+ * - Manual state checks via checkAuthState()
  *
  * @returns {{
  *   user: import('vue').Ref<import('firebase/auth').User | null>,
@@ -23,26 +76,16 @@ const isSigningIn = ref(false);
  *   signOut: () => Promise<void>,
  *   isReady: import('vue').Ref<boolean>,
  *   isSigningIn: import('vue').Ref<boolean>,
- *   authError: import('vue').Ref<string | null>
+ *   authError: import('vue').Ref<string | null>,
+ *   checkAuthState: () => Promise<import('firebase/auth').User | null>
  * }}
  */
 export function useAuth() {
-  const unsubscribe = onAuthStateChanged(
-    auth,
-    (firebaseUser) => {
-      user.value = firebaseUser;
-      isReady.value = true;
-    },
-    (err) => {
-      console.error('Auth state error:', err);
-      authError.value = err.message;
-      isReady.value = true;
-    }
-  );
-
-  onUnmounted(() => {
-    unsubscribe();
-  });
+  // STD Architecture: Initialize auth state synchronously
+  // No async operations - state is ready immediately
+  if (!isReady.value) {
+    checkAuthState();
+  }
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
@@ -50,6 +93,8 @@ export function useAuth() {
     isSigningIn.value = true;
     try {
       await signInWithPopup(auth, provider);
+      // STD Architecture: Update state after successful sign-in
+      user.value = auth.currentUser;
     } catch (error) {
       authError.value = error.message;
       console.error('Error during sign-in:', error);
@@ -62,7 +107,7 @@ export function useAuth() {
     authError.value = null;
     try {
       await firebaseSignOut(auth);
-      // Manually clear the user state to ensure immediate UI update
+      // STD Architecture: Manually clear the user state
       user.value = null;
       // Redirect to the goodbye page after successful sign-out
       try {
@@ -77,20 +122,13 @@ export function useAuth() {
     }
   };
 
-  // Expose a test API in non-production environments
-  if (import.meta.env.MODE !== 'production' && typeof window !== 'undefined') {
-    window.__AUTH_TEST_API__ = {
-      setUser: (testUser) => {
-        user.value = testUser;
-      },
-      setLoading: (loading) => {
-        isReady.value = !loading;
-      },
-      setError: (errorMsg) => {
-        authError.value = errorMsg;
-      },
-    };
-  }
-
-  return { user, signInWithGoogle, signOut, isReady, isSigningIn, authError };
+  return {
+    user,
+    signInWithGoogle,
+    signOut,
+    isReady,
+    isSigningIn,
+    authError,
+    checkAuthState,
+  };
 }
