@@ -255,3 +255,4 @@ app-service-project/test-results/
 # Local dev
 .lintenv/
 .genkit/
+tools/ai/

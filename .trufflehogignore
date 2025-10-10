@@ -20,3 +20,4 @@ terraform/.*\.tfplan\.binary
 vendor/Langroid/.*
 venv/.*
 .*node_modules/.*
+tools/ai/.*
