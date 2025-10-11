@@ -22,6 +22,8 @@ Run Gemini CLI like Claude Code for this repo: analyze code, run safe shells, ed
 - `ssh -T git@github.com` → "Hi <user>!"
 - `echo $GOOGLE_GENAI_USE_GCA` → `true`
 - Python tooling in venv **3.11.x** (không cài system-wide)
+- `gemini --version` → CLI installed and on PATH
+- `test -x .agents/gemini/start.sh` → start script is executable (else: `git update-index --chmod=+x .agents/gemini/start.sh`)
 
 ## STARTUP (canonical, ổn định)
 ```bash
@@ -94,9 +96,6 @@ Header phải có `gemini-2.5-pro` và **không** có "sandbox".
 ## ERROR HANDLING
 - **OAuth**: nếu prompt → đăng nhập trình duyệt rồi tiếp tục; nếu treo hoặc lỗi "stale session", chạy `rm -rf ~/.gemini` rồi chạy lại lệnh STARTUP để đăng nhập GCA mới.
 - **Cursor extension warning** ("No installer is available … Gemini CLI Companion"): KHÔNG chặn CLI; `--extensions none` là đủ. Có thể cài sau để tích hợp IDE.
-
-## NOTES (Cursor integration)
-Nếu gặp "No installer is available … Gemini CLI Companion": không chặn CLI; `--extensions none` là đủ. Extension chỉ giúp tích hợp IDE, có thể cài sau.
 
 ## ROLLBACK / RESET
 - Reset đăng nhập/cấu hình: `rm -rf ~/.gemini`, đăng nhập lại GCA.
