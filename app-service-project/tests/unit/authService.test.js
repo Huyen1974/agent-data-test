@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { useAuth } from '@/firebase/authService';
 
 describe('authService', () => {
