@@ -11,6 +11,7 @@ repos:
       - id: check-yaml
       - id: pretty-format-json
         args: ["--autofix"]
+        exclude: package-lock\.json
       - id: mixed-line-ending
 
   - repo: https://github.com/psf/black
