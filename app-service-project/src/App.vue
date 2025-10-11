@@ -60,9 +60,14 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue';
 import { useAuth } from '@/firebase/authService';
 
-const { user, signInWithGoogle, signOut, isReady, isSigningIn, authError } = useAuth();
+const { user, signInWithGoogle, signOut, isReady, isSigningIn, authError, checkAuthState } = useAuth();
+
+onMounted(() => {
+  checkAuthState();
+});
 </script>
 
 <style>

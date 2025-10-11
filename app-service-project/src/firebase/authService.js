@@ -1,9 +1,9 @@
-import { ref, onUnmounted } from 'vue';
+import { ref } from 'vue';
 import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut as firebaseSignOut,
-  onAuthStateChanged,
+  getAuth,
 } from 'firebase/auth';
 import { auth } from './config.js';
 import router from '@/router';
@@ -23,33 +23,25 @@ const isSigningIn = ref(false);
  *   signOut: () => Promise<void>,
  *   isReady: import('vue').Ref<boolean>,
  *   isSigningIn: import('vue').Ref<boolean>,
- *   authError: import('vue').Ref<string | null>
+ *   authError: import('vue').Ref<string | null>,
+ *   checkAuthState: () => Promise<void>
  * }}
  */
 export function useAuth() {
-  const unsubscribe = onAuthStateChanged(
-    auth,
-    (firebaseUser) => {
-      user.value = firebaseUser;
-      isReady.value = true;
-    },
-    (err) => {
-      console.error('Auth state error:', err);
-      authError.value = err.message;
-      isReady.value = true;
-    }
-  );
-
-  onUnmounted(() => {
-    unsubscribe();
-  });
+  const checkAuthState = async () => {
+    const authInstance = getAuth();
+    // This is a one-time check of the current user state
+    user.value = authInstance.currentUser;
+    isReady.value = true;
+  };
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     authError.value = null;
     isSigningIn.value = true;
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      user.value = result.user;
     } catch (error) {
       authError.value = error.message;
       console.error('Error during sign-in:', error);
@@ -92,5 +84,5 @@ export function useAuth() {
     };
   }
 
-  return { user, signInWithGoogle, signOut, isReady, isSigningIn, authError };
+  return { user, signInWithGoogle, signOut, isReady, isSigningIn, authError, checkAuthState };
 }
