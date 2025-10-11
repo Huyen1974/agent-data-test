@@ -1,48 +1,44 @@
-# Gemini CLI Setup for Agent-Data-Langroid
+# Gemini CLI Runbook (GCA/Pro, Non-sandbox)
 
 ## OBJECTIVE
+Run Gemini CLI like Claude Code for this repo: analyze code, run safe shells, edit files with approval, work ONLY on feature branches, and produce verifiable results. Prefer Google Code Assist (Pro) models.
 
-Stabilize "Gemini CLI like Claude Code" on this repo, using Google Code Assist (Pro), non-sandbox, idempotent, safe.
-
-Make Gemini CLI behave like Claude Code: can analyze repo, run safe shell, edit files with approval, work only on feature branches, and report results.
-
-Prefer GCA (Pro) models; default model gemini-2.5-pro. Disable sandbox.
-
-Provide a single long start command (no alias dependency) and an idempotent script inside repo to start Gemini reliably.
+## STARTUP (canonical)
+- Env: `export GOOGLE_GENAI_USE_GCA=true` (không dùng GOOGLE_API_KEY/Vertex).
+- Start:
+  source ~/.zshrc && ./CLI.POSTBOOT.250.sh && export GOOGLE_GENAI_USE_GCA=true && \
+  gemini -e none --extensions none --approval-mode auto_edit \
+  --allowed-tools run_shell_command,read_file,write_file,search_file_content,web_fetch \
+  -m gemini-2.5-pro
+- Nếu prompt OAuth → hoàn tất đăng nhập trình duyệt rồi tiếp tục.
 
 ## CONSTRAINTS
+- Chỉ làm việc trên feature branch; không commit trực tiếp lên `main`.
+- Không chỉnh dotfiles hệ thống nếu chưa được duyệt.
+- Không thay lockfiles trừ khi nhiệm vụ yêu cầu rõ.
+- Hỏi trước khi thao tác phá huỷ (rm -rf, force push…).
+- Tuân thủ `.pre-commit-config.yaml`.
 
-- No changes on main directly. Work in current feature branch.
-- Don't modify global system files without explicit confirmation; prefer repo-contained scripts.
-- Don't change lockfiles unless necessary.
-- Ask approval before any destructive command.
-- Keep changes minimal, commit messages conventional.
-- Work only on feature branches.
+## ENVIRONMENT
+- Python tooling: dùng venv Python 3.11.x (ví dụ `.cienv`).
+- Lint/format qua: `pre-commit run --all-files`.
+- Bỏ qua local dev dirs: `.genkit/`, `.lintenv/`, `tools/ai/`.
 
-## CAPABILITIES
-
-- Analyze repository structure and code
-- Run safe shell commands with approval
-- Edit files with user approval
-- Work on feature branches only
-- Report results and changes
-- Use Google Code Assist (Pro) models
-- Default to gemini-2.5-pro model
-- Non-sandbox environment
+## ALLOWED TOOLS
+- `run_shell_command`, `read_file`, `write_file`, `search_file_content`, `web_fetch`.
+- Git/GitHub: cho phép status/commit/push trên feature branch; xin duyệt khi push.
 
 ## SUCCESS CRITERIA
+- One-shot smoke test in ra đúng `OK`.
+- Header phiên tương tác có `gemini-2.5-pro` và **không** có "sandbox".
+- Nếu có chỉnh code: pre-commit pass.
+- Commit gọn, conventional, không đổi lockfile khi không cần.
+- Báo cáo nêu "đã thay gì/ vì sao/ log xác minh".
 
-- All smoke tests pass (show outputs).
-- Start command and script run cleanly after macOS reboot (idempotent).
-- Gemini session header shows gemini-2.5-pro and no "sandbox".
-- No edits to global dotfiles unless approved.
-- CLI one-shot test returns "OK"
-- Interactive test returns "OK"
+## ERROR HANDLING
+- 429/quota: xác nhận `GOOGLE_GENAI_USE_GCA=true`, retry 1 lần; nếu còn, báo rõ hướng xử lý.
+- Auth gh/ssh: yêu cầu thêm PAT/SSH key nếu thiếu, không làm hành động đặc quyền khi chưa có quyền.
+- Mismatch Python: ưu tiên 3.11 venv; không cài system-wide.
 
-## SAFETY
-
-- Never switch to sandbox unless explicitly requested.
-- Ask approval before destructive commands.
-- Error handling for OAuth, quotas, and resource exhaustion.
-- If OAuth needed, prompt user to complete browser login, then auto-continue.
-- If RESOURCE_EXHAUSTED/429, verify GOOGLE_GENAI_USE_GCA=true, retry once; if persists, print actionable note (quota/account).
+## REPORTING
+- Nêu nguyên nhân gốc (nếu có), bản vá, cách xác minh/nhật ký; link CI nếu liên quan.
