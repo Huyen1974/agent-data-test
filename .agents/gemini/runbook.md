@@ -10,12 +10,13 @@ Run Gemini CLI like Claude Code for this repo: analyze code, run safe shells, ed
 > && source ~/.zshrc || true \
 > && ./CLI.POSTBOOT.250.sh || true \
 > && export GOOGLE_GENAI_USE_GCA=true \
-> && unset GOOGLE_API_KEY AISTUDIO_API_KEY VERTEX_AI_PROJECT GOOGLE_VERTEX_PROJECT GOOGLE_VERTEX_LOCATION GOOGLE_CLOUD_PROJECT \
+> && unset GEMINI_SANDBOX GEMINI_CLI_SANDBOX GEMINI_TOOLS_SANDBOX GEMINI_TOOL_SANDBOX GEMINI_EXTENSIONS_SANDBOX \
+>           GOOGLE_API_KEY AISTUDIO_API_KEY VERTEX_AI_PROJECT GOOGLE_VERTEX_PROJECT GOOGLE_VERTEX_LOCATION GOOGLE_CLOUD_PROJECT \
 > && exec gemini -e none --extensions none --approval-mode auto_edit \
 >    --allowed-tools run_shell_command,read_file,write_file,search_file_content,web_fetch \
 >    -m gemini-2.5-pro
 > ```
-> Or run script: `.agents/gemini/start.sh`
+> **Preferred:** invoke `.agents/gemini/start.sh` for the canonical validated launch sequence.
 
 ## PRE-FLIGHT CHECKLIST (quick)
 - `gh auth status` → Logged in
@@ -24,6 +25,7 @@ Run Gemini CLI like Claude Code for this repo: analyze code, run safe shells, ed
 - Python tooling in venv **3.11.x** (không cài system-wide)
 - `gemini --version` → CLI installed and on PATH
 - `test -x .agents/gemini/start.sh` → start script is executable (else: `git update-index --chmod=+x .agents/gemini/start.sh`)
+- `echo ${GEMINI_SANDBOX:-unset} ${GEMINI_CLI_SANDBOX:-unset} ${GEMINI_TOOLS_SANDBOX:-unset} ${GEMINI_TOOL_SANDBOX:-unset} ${GEMINI_EXTENSIONS_SANDBOX:-unset}` → tất cả phải unset (không còn biến sandbox cũ)
 
 ## STARTUP (canonical, ổn định)
 ```bash
@@ -32,7 +34,8 @@ set -euo pipefail \
 && source ~/.zshrc || true \
 && ./CLI.POSTBOOT.250.sh || true \
 && export GOOGLE_GENAI_USE_GCA=true \
-&& unset GOOGLE_API_KEY AISTUDIO_API_KEY VERTEX_AI_PROJECT GOOGLE_VERTEX_PROJECT GOOGLE_VERTEX_LOCATION GOOGLE_CLOUD_PROJECT \
+&& unset GEMINI_SANDBOX GEMINI_CLI_SANDBOX GEMINI_TOOLS_SANDBOX GEMINI_TOOL_SANDBOX GEMINI_EXTENSIONS_SANDBOX \
+          GOOGLE_API_KEY AISTUDIO_API_KEY VERTEX_AI_PROJECT GOOGLE_VERTEX_PROJECT GOOGLE_VERTEX_LOCATION GOOGLE_CLOUD_PROJECT \
 && exec gemini -e none --extensions none --approval-mode auto_edit \
    --allowed-tools run_shell_command,read_file,write_file,search_file_content,web_fetch \
    -m gemini-2.5-pro

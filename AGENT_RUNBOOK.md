@@ -40,6 +40,7 @@ claude code --model "$CLAUDE_CODE_MODEL" --tools "$CLAUDE_CODE_TOOLS"
 
 ### Gemini CLI Agent
 **Configuration File:** `.agents/gemini/runbook.md`
+**Startup Script:** `.agents/gemini/start.sh`
 **Environment Variables:**
 - `GOOGLE_GENAI_USE_GCA` - Use Google Code Assist (not Vertex)
 - `GEMINI_CLI_MODEL` - Preferred model version
@@ -49,13 +50,14 @@ claude code --model "$CLAUDE_CODE_MODEL" --tools "$CLAUDE_CODE_TOOLS"
 ```bash
 source ~/.zshrc && ./CLI.POSTBOOT.250.sh && \
 export GOOGLE_GENAI_USE_GCA=true && \
-unset GEMINI_SANDBOX GEMINI_CLI_SANDBOX GEMINI_TOOLS_SANDBOX && \
-unset GOOGLE_API_KEY AISTUDIO_API_KEY VERTEX_AI_PROJECT && \
-unset GOOGLE_VERTEX_PROJECT GOOGLE_VERTEX_LOCATION GOOGLE_CLOUD_PROJECT && \
+unset GEMINI_SANDBOX GEMINI_CLI_SANDBOX GEMINI_TOOLS_SANDBOX GEMINI_TOOL_SANDBOX GEMINI_EXTENSIONS_SANDBOX && \
+unset GOOGLE_API_KEY AISTUDIO_API_KEY VERTEX_AI_PROJECT GOOGLE_VERTEX_PROJECT GOOGLE_VERTEX_LOCATION GOOGLE_CLOUD_PROJECT && \
 gemini -e none --extensions none --approval-mode auto_edit \
   --allowed-tools run_shell_command,read_file,write_file,search_file_content,web_fetch \
   -m gemini-2.5-pro
 ```
+
+> **Canonical launch:** Run `.agents/gemini/start.sh` to execute the exact sequence above with environment validation, conflict cleanup, and post-session teardown.
 
 ### Codex Agent (Cursor Extension)
 **Configuration File:** `.agents/codex/runbook.md`
