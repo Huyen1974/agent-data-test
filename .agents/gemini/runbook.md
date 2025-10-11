@@ -15,7 +15,7 @@ Run Gemini CLI like Claude Code for this repo: analyze code, run safe shells, ed
 >    --allowed-tools run_shell_command,read_file,write_file,search_file_content,web_fetch \
 >    -m gemini-2.5-pro
 > ```
-> Or run script: `.agents/gemini/start.sh`
+> **Preferred:** invoke `.agents/gemini/start.sh` for the canonical validated launch sequence.
 
 ## PRE-FLIGHT CHECKLIST (quick)
 - `gh auth status` → Logged in
