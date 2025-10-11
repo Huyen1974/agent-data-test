@@ -256,3 +256,4 @@ app-service-project/test-results/
 .lintenv/
 .genkit/
 tools/ai/
+.cienv/
