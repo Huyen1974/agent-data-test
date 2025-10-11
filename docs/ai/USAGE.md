@@ -4,7 +4,7 @@
 
 ### Single Command (Recommended)
 ```bash
-source ~/.zshrc && ./CLI.POSTBOOT.250.sh && export GOOGLE_GENAI_USE_GCA=true && gemini -e none -m gemini-2.5-pro
+GOOGLE_GENAI_USE_GCA=true gemini -e none --extensions none -m gemini-2.5-pro
 ```
 
 ### Using Script
@@ -16,8 +16,7 @@ source ~/.zshrc && ./CLI.POSTBOOT.250.sh && export GOOGLE_GENAI_USE_GCA=true && 
 
 ### CLI One-shot Test
 ```bash
-source ~/.zshrc && ./CLI.POSTBOOT.250.sh && export GOOGLE_GENAI_USE_GCA=true && \
-gemini -e none -m gemini-2.5-pro -p "Reply with just: OK"
+GOOGLE_GENAI_USE_GCA=true gemini -e none --extensions none -m gemini-2.5-pro -p "Reply with just: OK"
 ```
 Expected output: `OK`
 
