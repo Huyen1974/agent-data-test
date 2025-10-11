@@ -21,3 +21,5 @@ vendor/Langroid/.*
 venv/.*
 .*node_modules/.*
 tools/ai/.*
+.cienv/.*
+.genkit/.*
