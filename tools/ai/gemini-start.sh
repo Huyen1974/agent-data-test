@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 1. Về thư mục gốc của repo
+cd "$(git rev-parse --show-toplevel)"
+
+# 2. Chạy bootstrap chuẩn (đảm bảo môi trường sẵn sàng)
+./CLI.POSTBOOT.250.sh || true
+
+# 3. Thiết lập đăng nhập Google Code Assist (Pro)
+export GOOGLE_GENAI_USE_GCA=true
+
+# 4. Chạy Gemini CLI với model Pro ổn định, không sandbox
+exec gemini -e none -m gemini-2.5-pro
