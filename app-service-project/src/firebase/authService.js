@@ -128,6 +128,21 @@ export function useAuth() {
     }
   };
 
+  /**
+   * Reset all state to initial values.
+   * FOR TESTING ONLY - resets the module-level state.
+   */
+  const resetState = () => {
+    user.value = null;
+    authError.value = null;
+    isReady.value = false;
+    isSigningIn.value = false;
+    if (authStateUnsubscribe) {
+      authStateUnsubscribe();
+      authStateUnsubscribe = null;
+    }
+  };
+
   // Expose a test API in non-production environments
   if (import.meta.env.MODE !== 'production' && typeof window !== 'undefined') {
     window.__AUTH_TEST_API__ = {
@@ -141,6 +156,7 @@ export function useAuth() {
         authError.value = errorMsg;
       },
       cleanup,
+      resetState,
     };
   }
 
@@ -152,6 +168,7 @@ export function useAuth() {
     isSigningIn,
     authError,
     checkAuthState,
-    cleanup
+    cleanup,
+    resetState  // Export for testing
   };
 }
