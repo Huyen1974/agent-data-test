@@ -9,6 +9,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 # 3. Thiết lập đăng nhập Google Code Assist (Pro)
 export GOOGLE_GENAI_USE_GCA=true
+unset GOOGLE_API_KEY AISTUDIO_API_KEY VERTEX_AI_PROJECT GOOGLE_VERTEX_PROJECT
 
 # 4. Chạy Gemini CLI với model Pro ổn định, không sandbox
 exec gemini -e none -m gemini-2.5-pro
