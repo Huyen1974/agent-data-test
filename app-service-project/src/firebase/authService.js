@@ -14,6 +14,9 @@ const authError = ref(null);
 const isReady = ref(false);
 const isSigningIn = ref(false);
 
+// Track the auth state listener to prevent duplicates
+let authStateUnsubscribe = null;
+
 /**
  * Composable function to manage Firebase authentication.
  *
@@ -23,33 +26,70 @@ const isSigningIn = ref(false);
  *   signOut: () => Promise<void>,
  *   isReady: import('vue').Ref<boolean>,
  *   isSigningIn: import('vue').Ref<boolean>,
- *   authError: import('vue').Ref<string | null>
+ *   authError: import('vue').Ref<string | null>,
+ *   checkAuthState: () => Promise<void>
  * }}
  */
 export function useAuth() {
-  const unsubscribe = onAuthStateChanged(
-    auth,
-    (firebaseUser) => {
-      user.value = firebaseUser;
-      isReady.value = true;
-    },
-    (err) => {
-      console.error('Auth state error:', err);
-      authError.value = err.message;
+  /**
+   * Waits for Firebase to complete initialization and determine the auth state.
+   * This solves the issue where getAuth().currentUser is null on page refresh
+   * because Firebase initializes asynchronously.
+   */
+  const checkAuthState = async () => {
+    try {
+      // Use a one-shot promise that waits for the first auth state emission
+      await new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Auth state initialization timeout'));
+        }, 10000); // 10 second timeout
+
+        const unsubscribe = onAuthStateChanged(
+          auth,
+          (firebaseUser) => {
+            clearTimeout(timeoutId);
+            unsubscribe(); // Unsubscribe immediately after first emission
+            user.value = firebaseUser;
+            isReady.value = true;
+            resolve();
+          },
+          (error) => {
+            clearTimeout(timeoutId);
+            unsubscribe();
+            reject(error);
+          }
+        );
+      });
+
+      // After initial state is determined, set up a persistent listener
+      // to keep the user state in sync for the app's lifetime
+      if (!authStateUnsubscribe) {
+        authStateUnsubscribe = onAuthStateChanged(
+          auth,
+          (firebaseUser) => {
+            user.value = firebaseUser;
+          },
+          (error) => {
+            console.error('[Auth State Listener Error]', error);
+            authError.value = 'Lỗi theo dõi trạng thái xác thực';
+          }
+        );
+      }
+    } catch (error) {
+      console.error('[Auth Initialization Error]', error);
+      authError.value = 'Không thể khởi tạo xác thực. Vui lòng thử lại.';
+      // Even on error, mark as ready to prevent infinite loading
       isReady.value = true;
     }
-  );
-
-  onUnmounted(() => {
-    unsubscribe();
-  });
+  };
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     authError.value = null;
     isSigningIn.value = true;
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      user.value = result.user;
     } catch (error) {
       authError.value = error.message;
       console.error('Error during sign-in:', error);
@@ -77,6 +117,17 @@ export function useAuth() {
     }
   };
 
+  /**
+   * Cleanup function to unsubscribe from auth state listener.
+   * Should be called when the app is being destroyed to prevent memory leaks.
+   */
+  const cleanup = () => {
+    if (authStateUnsubscribe) {
+      authStateUnsubscribe();
+      authStateUnsubscribe = null;
+    }
+  };
+
   // Expose a test API in non-production environments
   if (import.meta.env.MODE !== 'production' && typeof window !== 'undefined') {
     window.__AUTH_TEST_API__ = {
@@ -89,8 +140,18 @@ export function useAuth() {
       setError: (errorMsg) => {
         authError.value = errorMsg;
       },
+      cleanup,
     };
   }
 
-  return { user, signInWithGoogle, signOut, isReady, isSigningIn, authError };
+  return {
+    user,
+    signInWithGoogle,
+    signOut,
+    isReady,
+    isSigningIn,
+    authError,
+    checkAuthState,
+    cleanup
+  };
 }
