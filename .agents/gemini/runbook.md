@@ -22,7 +22,7 @@ set -euo pipefail \
    -m gemini-2.5-pro
 ```
 
-Start script tương đương (idempotent): `./tools/ai/gemini-start.sh` phải khớp 100% với lệnh dài trên.
+Start script tương đương (idempotent): `.agents/gemini/start.sh` phải khớp 100% với lệnh dài trên.
 
 ## EXPECTED SETTINGS (~/.gemini/settings.json)
 ```json
