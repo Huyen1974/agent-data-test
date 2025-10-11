@@ -162,22 +162,32 @@ describe('authService', () => {
     });
 
     it('should handle race condition when called multiple times concurrently', async () => {
-      const { checkAuthState, user, isReady } = useAuth();
+      const { checkAuthState, user, isReady, authError } = useAuth();
       const mockUser = { uid: '123', displayName: 'Test User' };
+
+      // Track all callbacks for concurrent calls
+      const callbacks = [];
+      onAuthStateChanged.mockImplementation((auth, successCallback, errorCallback) => {
+        callbacks.push({ success: successCallback, error: errorCallback });
+        return unsubscribeMock;
+      });
 
       // Start multiple concurrent calls
       const promise1 = checkAuthState();
       const promise2 = checkAuthState();
 
-      // Emit auth state - this should resolve both promises
-      await vi.runOnlyPendingTimersAsync();
-      onAuthStateChangedCallback(mockUser);
+      // Wait for next tick to ensure callbacks are registered
+      await Promise.resolve();
+
+      // Emit auth state to ALL callbacks - this should resolve both promises
+      callbacks.forEach(cb => cb.success(mockUser));
 
       await Promise.all([promise1, promise2]);
 
       // Should handle gracefully without errors
       expect(user.value).toEqual(mockUser);
       expect(isReady.value).toBe(true);
+      expect(authError.value).toBeNull();
     });
   });
 
