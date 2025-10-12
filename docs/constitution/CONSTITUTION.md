@@ -12,14 +12,14 @@ Updated: August 04, 2025 Purpose: Supreme principles governing Agent Data Langro
 | HP-04 | Automated Test Count Control | Hệ thống tự động kiểm soát sự thay đổi về số lượng bài kiểm tra. Mọi thay đổi (thêm/bớt test) phải được phản ánh một cách tường minh thông qua việc cập nhật file "manifest" (test_manifest_baseline.txt). CI sẽ tự động thất bại nếu phát hiện có sự thay đổi chưa được ghi nhận (Manifest Drift ≠ 0). | Plan checkpoint V7.docx (CP0.4), o3 gap, User chốt cuối |
 | HP-05 | Central Secrets Inheritance | Mô hình quản lý secrets được chuẩn hóa là quản lý tập trung, sử dụng một repo trung tâm (ví dụ: chatgpt-githubnew) để điều phối việc đồng bộ secrets từ Google Secret Manager sang các repo con thông qua script. Khi hạ tầng được nâng cấp lên tài khoản GitHub Organization, mô hình sẽ chuyển sang sử dụng Organization-Level secrets. | HẠ TẦNG GOOGLE CLOUD.docx, o3 X-2, user decision, o3 edit<br>Trong trường hợp quy trình đồng bộ tự động gặp sự cố kéo dài (ví dụ: >24 giờ), Owner được phép cập nhật secret thủ công tại repo trung tâm, với điều kiện bắt buộc phải có bản ghi kiểm toán (audit log) chi tiết. |
 
-HP-06	Kiến trúc Hướng Dịch vụ & Giao diện	Hệ thống phải được xây dựng dựa trên các dịch vụ (services) độc lập và cung cấp các lớp giao diện (interfaces) để tương tác. Dữ liệu gốc phải được tách biệt khỏi lớp hiển thị.<br><br> (Ví dụ: dữ liệu gốc dạng JSON được tách biệt khỏi giao diện web render ra HTML).	
-Hiến pháp hóa nguyên tắc "Dữ liệu là Nước" và kiến trúc microservices, đảm bảo tính linh hoạt và khả năng mở rộng ở cấp độ cao nhất. 
+HP-06	Kiến trúc Hướng Dịch vụ & Giao diện	Hệ thống phải được xây dựng dựa trên các dịch vụ (services) độc lập và cung cấp các lớp giao diện (interfaces) để tương tác. Dữ liệu gốc phải được tách biệt khỏi lớp hiển thị.<br><br> (Ví dụ: dữ liệu gốc dạng JSON được tách biệt khỏi giao diện web render ra HTML).
+Hiến pháp hóa nguyên tắc "Dữ liệu là Nước" và kiến trúc microservices, đảm bảo tính linh hoạt và khả năng mở rộng ở cấp độ cao nhất.
 
-HP-07	Tích hợp An toàn với Bên ngoài	Mọi hoạt động tích hợp với hệ thống của bên thứ ba phải được tiếp cận theo một lộ trình quản trị rủi ro theo giai đoạn, ưu tiên các luồng chỉ đọc (read-only) trước khi triển khai các luồng ghi (write).<br><br> (Một hệ thống được xem là có rủi ro cao khi API của nó không có các cam kết rõ ràng về độ ổn định, giới hạn truy cập, hoặc cơ chế xác thực phức tạp).	
-Đặt ra một nguyên tắc an toàn cốt lõi cho việc kết nối với các hệ thống bên ngoài (như Lark Base), tránh các rủi ro không lường trước ảnh hưởng đến toàn bộ hệ thống. 
+HP-07	Tích hợp An toàn với Bên ngoài	Mọi hoạt động tích hợp với hệ thống của bên thứ ba phải được tiếp cận theo một lộ trình quản trị rủi ro theo giai đoạn, ưu tiên các luồng chỉ đọc (read-only) trước khi triển khai các luồng ghi (write).<br><br> (Một hệ thống được xem là có rủi ro cao khi API của nó không có các cam kết rõ ràng về độ ổn định, giới hạn truy cập, hoặc cơ chế xác thực phức tạp).
+Đặt ra một nguyên tắc an toàn cốt lõi cho việc kết nối với các hệ thống bên ngoài (như Lark Base), tránh các rủi ro không lường trước ảnh hưởng đến toàn bộ hệ thống.
 
-HP-08	Mục tiêu Vận hành là Bắt buộc	Mọi dịch vụ cốt lõi được triển khai BẮT BUỘC phải có các Mục tiêu Cấp độ Dịch vụ (SLOs) được định nghĩa, đo lường và cảnh báo.	
-Nâng tầm quan trọng của việc giám sát hiệu năng và độ tin cậy từ cấp độ Luật lên cấp độ Hiến pháp, đảm bảo mọi thành phần trong hệ sinh thái đều phải đáp ứng tiêu chuẩn vận hành. 
+HP-08	Mục tiêu Vận hành là Bắt buộc	Mọi dịch vụ cốt lõi được triển khai BẮT BUỘC phải có các Mục tiêu Cấp độ Dịch vụ (SLOs) được định nghĩa, đo lường và cảnh báo.
+Nâng tầm quan trọng của việc giám sát hiệu năng và độ tin cậy từ cấp độ Luật lên cấp độ Hiến pháp, đảm bảo mọi thành phần trong hệ sinh thái đều phải đáp ứng tiêu chuẩn vận hành.
 
 
 ## Điều II – Quy ước Định danh Chung
