@@ -35,7 +35,7 @@ source ~/.zshrc && ./CLI.POSTBOOT.250.sh && \
 export CLAUDE_CODE_PROJECT_ROOT="$(pwd)" && \
 export CLAUDE_CODE_MODEL="claude-3-5-sonnet-20241022" && \
 export CLAUDE_CODE_TOOLS="read_file,write_file,run_shell_command,search_file_content" && \
-claude code --model "$CLAUDE_CODE_MODEL" --tools "$CLAUDE_CODE_TOOLS"
+claude code --model "$CLAUDE_CODE_MODEL" --allowed-tools "$CLAUDE_CODE_TOOLS"
 ```
 
 ### Gemini CLI Agent

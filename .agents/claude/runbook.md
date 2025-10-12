@@ -1,119 +1,86 @@
-# Claude Code Agent - Operational Runbook
+# Claude Code Runbook (Stable, Non-destructive)
 
-## Agent Identity
-- **Name:** Claude Code
-- **Type:** Anthropic Claude-based coding assistant
-- **Version:** Latest stable
-- **Namespace:** CLAUDE_CODE_*
+## OBJECTIVE
+Run Claude Code CLI like Gemini CLI for this repo: analyze code, run safe shells, edit files with approval, work ONLY on feature branches, and produce verifiable results. Use Claude 3.5 Sonnet model.
 
-## Startup Configuration
+## PRE-FLIGHT CHECKLIST (quick)
+- `gh auth status` → Logged in
+- `ssh -T git@github.com` → "Hi <user>!"
+- `claude --version` → CLI installed and on PATH
+- `test -x .agents/claude/start.sh` → start script is executable (else: `git update-index --chmod=+x .agents/claude/start.sh`)
 
-### Environment Variables
+## STARTUP (canonical, ổn định)
 ```bash
-export CLAUDE_CODE_PROJECT_ROOT="$(pwd)"
-export CLAUDE_CODE_MODEL="claude-3-5-sonnet-20241022"
-export CLAUDE_CODE_TOOLS="read_file,write_file,run_shell_command,search_file_content"
-export CLAUDE_CODE_APPROVAL_MODE="auto_edit"
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+source ~/.zshrc || true
+./CLI.POSTBOOT.250.sh || true
+export CLAUDE_CODE_MODEL="${CLAUDE_CODE_MODEL:-claude-3-5-sonnet-20241022}"
+export CLAUDE_CODE_TOOLS="${CLAUDE_CODE_TOOLS:-read_file,write_file,run_shell_command,search_file_content}"
+exec claude code --model "$CLAUDE_CODE_MODEL" --allowed-tools "$CLAUDE_CODE_TOOLS"
 ```
 
-### Startup Command
+Start script tương đương (idempotent): `.agents/claude/start.sh` phải khớp 100% với lệnh dài trên.
+
+## ENVIRONMENT
+- Python tooling: venv 3.11.x (ví dụ `.cienv`); tránh PEP 668 lỗi cài global.
+- Lint/format: `pre-commit run --all-files`.
+- Bỏ qua local dev dirs: `.genkit/`, `.lintenv/`, `tools/ai/` (đảm bảo script không bị ignore).
+- Đảm bảo thư mục **.agents/** KHÔNG bị ignore trong `.gitignore` (để runbook & start script được commit).
+
+## CONSTRAINTS
+- Chỉ làm việc trên feature branch; không commit trực tiếp lên `main`.
+- Không sửa dotfiles hệ thống nếu chưa được duyệt.
+- Không đổi lockfiles trừ khi nhiệm vụ yêu cầu rõ.
+- Hỏi trước khi thao tác phá huỷ (rm -rf, force push…).
+- Không chạy lệnh phá huỷ (rm -rf, force-push, reset --hard) nếu **không có phê duyệt rõ ràng** trong chat.
+- Tuân thủ `.pre-commit-config.yaml`.
+
+## ALLOWED TOOLS
+- `read_file`, `write_file`, `run_shell_command`, `search_file_content`.
+- Git/GitHub: cho phép status/commit/push trên feature branch; xin duyệt khi push/force-push.
+
+## VERIFICATION / SMOKE TESTS
+
+### One-shot:
 ```bash
-source ~/.zshrc && ./CLI.POSTBOOT.250.sh && \
-export CLAUDE_CODE_PROJECT_ROOT="$(pwd)" && \
-export CLAUDE_CODE_MODEL="claude-3-5-sonnet-20241022" && \
-export CLAUDE_CODE_TOOLS="read_file,write_file,run_shell_command,search_file_content" && \
-export CLAUDE_CODE_APPROVAL_MODE="auto_edit" && \
-claude code --model "$CLAUDE_CODE_MODEL" --tools "$CLAUDE_CODE_TOOLS" --approval-mode "$CLAUDE_CODE_APPROVAL_MODE"
+claude --version
 ```
+Kỳ vọng: in ra version number.
 
-## Operational Constraints
+### Help:
+```bash
+claude code --help
+```
+Kỳ vọng: hiển thị usage information.
 
-### File Permissions
-- ✅ Read all project files
-- ⚠️ Write requires approval for: `*.lock`, `*.json`, configuration files
-- ❌ Never modify: `.gitignore`, system dotfiles, CI configurations
+### Interactive header check:
+```bash
+.agents/claude/start.sh
+```
+Header phải có `claude-3-5-sonnet-20241022`; thoát sạch sau khi verify.
 
-### Branch Management
-- Work only on feature branches
-- Never commit to `main` directly
-- Require pull request review
-- Use conventional commits
+### Tool checks trong phiên:
+- `git status` (run_shell_command)
+- Tạo `/tmp/claude_write_test.txt` (write_file + cat)
+- `search_file_content` trên chuỗi có thật
+- `web_fetch https://example.com` (200)
 
-### Tool Restrictions
-- `run_shell_command`: Safe operations only, no destructive commands
-- `grep`: Allowed for code analysis
-- `run_terminal_cmd`: Requires approval for multi-step operations
+## ERROR HANDLING
+- **Authentication**: nếu prompt login, hoàn tất trong browser rồi tiếp tục; nếu treo, terminate và restart.
+- **Network**: verify internet connection; retry failed operations.
+- **Rate limiting**: respect quotas; implement exponential backoff.
+- **Missing dependencies**: ensure claude CLI is installed and in PATH.
 
-## Quality Standards
+## NOTES (Cursor integration)
+Nếu gặp extension prompts, có thể skip; CLI hoạt động độc lập.
 
-### Code Quality
-- Follow existing code style and conventions
-- Respect `.pre-commit-config.yaml`
-- Maintain test coverage
-- Update documentation
+## ROLLBACK / RESET
+- Reset environment: `unset CLAUDE_CODE_*`
+- Clear session: terminate claude processes
+- Re-auth: `claude auth login` if needed
 
-### Testing Requirements
-- Run relevant tests before committing
-- Ensure CI passes on feature branch
-- Validate functionality with smoke tests
-
-## Error Handling
-
-### Authentication Issues
-- Verify Anthropic API key configuration
-- Check network connectivity
-- Retry with exponential backoff
-
-### Rate Limiting
-- Respect API quotas
-- Implement intelligent retry logic
-- Report quota exhaustion
-
-### Environment Conflicts
-- Isolate environment variables
-- Clean up after session completion
-- Validate environment state
-
-## Monitoring and Audit
-
-### Activity Logging
-- Log all file modifications with timestamps
-- Record command executions
-- Track approval decisions
-
-### Performance Metrics
-- Response time monitoring
-- Success/failure rates
-- Resource usage tracking
-
-## Integration Points
-
-### With Other Agents
-- No shared state with Gemini/Codex
-- Independent environment sessions
-- Respect shared bootstrap validation
-
-### With CI/CD
-- Comply with GitHub Actions workflows
-- Respect branch protection rules
-- Follow PR approval processes
-
-## Emergency Procedures
-
-### Session Corruption
-1. Terminate Claude Code process
-2. Reset environment: `source ~/.zshrc`
-3. Re-run bootstrap: `./CLI.POSTBOOT.250.sh`
-4. Restart with clean configuration
-
-### File Conflicts
-1. Identify modified files
-2. Create backup of changes
-3. Restore from git if needed
-4. Reapply changes carefully
-
----
-
-**Agent Version:** Claude 3.5 Sonnet
-**Last Updated:** October 11, 2025
-**Configuration Hash:** CLAUDE_v1.0_20251011
+## REPORTING
+- Nêu nguyên nhân gốc (nếu có), bản vá, log xác minh; link CI nếu liên quan.
+- Commit gọn, conventional, không đổi lockfile khi không cần.
