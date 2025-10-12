@@ -25,7 +25,7 @@ agents-preflight:
 	@claude --version || echo "ℹ️  Claude CLI not available locally"
 	@echo "✅ Agent preflight checks passed!"
 
-.PHONY: sync-constitution sync-constitution-dry sync-constitution-check test-constitution
+.PHONY: sync-constitution sync-constitution-dry sync-constitution-check test-constitution constitution-verify
 
 sync-constitution:      ## Apply constitution updates to all agent runbooks
 	@echo "🔄 Syncing constitution to agent runbooks..."
@@ -42,3 +42,7 @@ sync-constitution-check: ## Check if constitution is in sync (CI gate)
 test-constitution: ## Run constitution sync tests
 	@echo "🧪 Running constitution sync tests..."
 	@bash scripts/tests/test-constitution-sync.sh
+
+constitution-verify: ## Verify constitution content matches source exactly
+	@echo "🔍 Verifying constitution equivalence..."
+	@bash scripts/verify-constitution-equivalence.sh

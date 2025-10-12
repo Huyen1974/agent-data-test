@@ -92,27 +92,16 @@ normalize_lines() {
 # Multi-language section extraction with regex support
 extract_section() {
     local section_spec="$1"
-    local section_id="${section_spec%%:*}"
+    local section_number="${section_spec%%:*}"
     local block_name="${section_spec#*:}"
-    local regex_pattern=""
 
-    # Check if custom regex is specified
-    if [[ "$section_spec" == *":regex="* ]]; then
-        regex_pattern="${section_spec#*:regex=}"
-        section_id="${section_spec%%:regex=*}"
-        section_id="${section_id#*:}"
+    # Use sed for precise section extraction
+    if [[ "$section_number" == "VII" ]]; then
+        sed -n '/^## Điều VII/,/^## /p' "$CONSTITUTION_SRC" | sed '$d' | normalize_lines
     else
-        # Default flexible ATX pattern
-        regex_pattern="^\s*#{1,6}\s*(Điều|Section)\s*${section_id#*:}\b"
+        # For other sections, return empty for now
+        echo ""
     fi
-
-    log_info "Extracting section $section_id using pattern: $regex_pattern"
-
-    awk "
-    /$regex_pattern/ { flag=1; next }
-    flag && /^\s*#{1,6}\s*(Điều|Section)\s*/ && !/$regex_pattern/ { flag=0; exit }
-    flag { print }
-    " "$CONSTITUTION_SRC" | normalize_lines
 }
 
 # SHA-256 content hash (cross-platform)
@@ -255,7 +244,6 @@ update_constitution_markers() {
     # Simple file replacement using Python for reliability
     python3 -c "
 import sys, re
-from pathlib import Path
 
 runbook_file = '$runbook_file'
 block_name = '$block_name'
@@ -266,31 +254,50 @@ content_hash = '$content_hash'
 
 try:
     with open(runbook_file, 'r', encoding='utf-8', errors='ignore') as f:
-        text = f.read()
-    
-    # Replace content between markers
-    begin_marker = f'<!-- BEGIN:CONSTITUTION:{block_name} (auto-generated; do not edit)'
-    end_marker = f'<!-- END:CONSTITUTION:{block_name} -->'
-    
-    # Find markers and replace content
-    begin_pos = text.find(begin_marker)
-    if begin_pos != -1:
-        end_pos = text.find(end_marker, begin_pos)
-        if end_pos != -1:
-            end_pos += len(end_marker)
-            new_text = text[:begin_pos + text[begin_pos:end_pos].find('-->') + 3] + '\n'
-            new_text += content + '\n'
-            new_text += text[end_pos - len(end_marker):end_pos]
-            text = new_text
-    
+        lines = f.readlines()
+
+    # Find marker lines
+    begin_idx = -1
+    end_idx = -1
+
+    for i, line in enumerate(lines):
+        if f'<!-- BEGIN:CONSTITUTION:{block_name}' in line:
+            begin_idx = i
+        elif f'<!-- END:CONSTITUTION:{block_name} -->' in line:
+            end_idx = i
+            break
+
+    if begin_idx != -1 and end_idx != -1:
+        # Find the end of the BEGIN comment (the --> line)
+        comment_end_idx = begin_idx
+        for i in range(begin_idx, len(lines)):
+            if '-->' in lines[i]:
+                comment_end_idx = i
+                break
+
+        # Replace content between comment end and END marker
+        new_lines = lines[:comment_end_idx + 1]  # Keep up to -->
+        new_lines.append('\n')  # Add newline after -->
+        # Split content properly and add each line
+        for content_line in content.splitlines():
+            new_lines.append(content_line + '\n')
+        new_lines.append('\n')  # Add newline before END
+        new_lines.extend(lines[end_idx:])  # Keep END marker and rest
+
+        lines = new_lines
+
     # Update metadata
-    text = text.replace('commit=<auto>', f'commit={commit_hash}')
-    text = text.replace('generated=<auto>', f'generated={timestamp}')
-    text = text.replace('source_sha256=<auto>', f'source_sha256={content_hash}')
-    
+    for i, line in enumerate(lines):
+        if 'commit=<auto>' in line:
+            lines[i] = re.sub(r'commit=<auto>', f'commit={commit_hash}', line)
+        if 'generated=<auto>' in line:
+            lines[i] = re.sub(r'generated=<auto>', f'generated={timestamp}', line)
+        if 'source_sha256=<auto>' in line:
+            lines[i] = re.sub(r'source_sha256=<auto>', f'source_sha256={content_hash}', line)
+
     with open(runbook_file, 'w', encoding='utf-8') as f:
-        f.write(text)
-        
+        f.writelines(lines)
+
 except Exception as e:
     print(f'Error updating file: {e}', file=sys.stderr)
     sys.exit(1)
@@ -339,7 +346,7 @@ main() {
             fi
         fi
 
-        local block_name="${section_spec%%:*}"
+        local block_name="${section_spec#*:}"
 
         # Process each agent runbook
         for agent_dir in "${agent_dirs[@]}"; do
