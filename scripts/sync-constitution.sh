@@ -69,6 +69,12 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_dry() { echo -e "${BLUE}[DRY]${NC} $1"; }
 
+# Validate Python3 availability
+if ! command -v python3 >/dev/null 2>&1; then
+    log_error "Python3 is required but not found in PATH"
+    exit 1
+fi
+
 # Validate source file exists and is within repo
 if [[ ! -f "$CONSTITUTION_SRC" ]]; then
     log_error "Constitution source file not found: $CONSTITUTION_SRC"
@@ -202,10 +208,12 @@ update_constitution_markers() {
     local content_hash
     content_hash=$(echo "$content" | compute_sha256)
 
-    # Create backup
+    # Create backup with atomic directory creation to avoid race conditions
+    local backup_base_dir=".constitution-backups"
+    mkdir -p "$backup_base_dir"
+
     local backup_dir
-    backup_dir=".constitution-backups/$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$backup_dir"
+    backup_dir=$(mktemp -d "$backup_base_dir/sync-$(date +%Y%m%d_%H%M%S)-XXXXXX")
     cp "$runbook_file" "$backup_dir/$(basename "$runbook_file")"
 
     if [[ "$DRY_RUN" == "true" ]]; then
@@ -243,18 +251,33 @@ update_constitution_markers() {
         return 0
     fi
 
-    # Simple file replacement using Python for reliability
-    python3 -c "
-import sys, re
+    # Create temp file for content to avoid injection vulnerabilities
+    local content_file
+    content_file=$(mktemp)
+    echo "$content" > "$content_file"
 
-runbook_file = '$runbook_file'
-block_name = '$block_name'
-content = '''$content'''
-commit_hash = '$commit_hash'
-timestamp = '$timestamp'
-content_hash = '$content_hash'
+    # Safe file replacement using Python with file-based content passing
+    python3 - "$runbook_file" "$block_name" "$content_file" "$commit_hash" "$timestamp" "$content_hash" <<'PYTHON_SCRIPT'
+import sys
+import re
+
+if len(sys.argv) != 7:
+    print("Error: Invalid arguments", file=sys.stderr)
+    sys.exit(1)
+
+runbook_file = sys.argv[1]
+block_name = sys.argv[2]
+content_file = sys.argv[3]
+commit_hash = sys.argv[4]
+timestamp = sys.argv[5]
+content_hash = sys.argv[6]
 
 try:
+    # Read content from file (safe from injection)
+    with open(content_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Read runbook file
     with open(runbook_file, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.readlines()
 
@@ -297,13 +320,27 @@ try:
         if 'source_sha256=<auto>' in line:
             lines[i] = re.sub(r'source_sha256=<auto>', f'source_sha256={content_hash}', line)
 
-    with open(runbook_file, 'w', encoding='utf-8') as f:
+    # Atomic write using temp file
+    temp_output = runbook_file + '.tmp'
+    with open(temp_output, 'w', encoding='utf-8') as f:
         f.writelines(lines)
+
+    # Atomic move
+    import os
+    os.replace(temp_output, runbook_file)
 
 except Exception as e:
     print(f'Error updating file: {e}', file=sys.stderr)
     sys.exit(1)
-"
+PYTHON_SCRIPT
+
+    local python_exit=$?
+    rm -f "$content_file"
+
+    if [[ $python_exit -ne 0 ]]; then
+        log_error "Failed to update $runbook_file"
+        return 1
+    fi
 
     log_info "Updated $(basename "$runbook_file") with $block_name content"
 }
