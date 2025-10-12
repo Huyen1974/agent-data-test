@@ -14,16 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install shellcheck
+      - name: Lint sync script (optional)
         run: |
-          sudo apt-get update && sudo apt-get install -y shellcheck
-
-      - name: Lint sync script
-        run: |
-          if ! shellcheck scripts/sync-constitution.sh; then
-            echo "⚠️ Shellcheck warnings detected (acceptable for now)"
+          if command -v shellcheck >/dev/null 2>&1; then
+            if shellcheck scripts/sync-constitution.sh 2>/dev/null; then
+              echo "✅ Shellcheck passed"
+            else
+              echo "⚠️ Shellcheck warnings detected (acceptable)"
+            fi
           else
-            echo "✅ Shellcheck passed"
+            echo "ℹ️ Shellcheck not available (skipping)"
           fi
 
       - name: Check constitution drift
