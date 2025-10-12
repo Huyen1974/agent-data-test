@@ -8,7 +8,6 @@ IFS=$'\n\t'
 # UTF-8 for Unicode handling
 export LC_ALL=C.UTF-8 LANG=C.UTF-8
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
@@ -21,7 +20,6 @@ SECTIONS="${SECTIONS:-$DEFAULT_SECTIONS}"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m'
 
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
@@ -90,7 +88,6 @@ verify_equivalence() {
     local agent_name="$1"
     local runbook_file=".agents/$agent_name/runbook.md"
     local section_spec="$2"
-    local section_id="${section_spec%%:*}"
     local block_name="${section_spec#*:}"
 
     # Check if markers exist
@@ -129,7 +126,6 @@ show_diff() {
     local section_spec="$2"
 
     local runbook_file=".agents/$agent_name/runbook.md"
-    local section_id="${section_spec%%:*}"
     local block_name="${section_spec#*:}"
 
     local source_content

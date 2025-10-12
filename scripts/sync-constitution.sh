@@ -10,7 +10,6 @@ IFS=$'\n\t'
 export LC_ALL=C.UTF-8 LANG=C.UTF-8
 
 # Configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
@@ -138,15 +137,17 @@ auto_insert_markers() {
         if [[ "$insert_point" == "$" ]]; then
             # Append at end
             cat "$runbook_file" > "$tmp_file"
-            echo "" >> "$tmp_file"
-            echo "<!-- BEGIN:CONSTITUTION:$block_name (auto-generated; do not edit)" >> "$tmp_file"
-            echo "source=$CONSTITUTION_SRC" >> "$tmp_file"
-            echo "section=${block_name#*:}" >> "$tmp_file"
-            echo "commit=<auto>" >> "$tmp_file"
-            echo "generated=<auto>" >> "$tmp_file"
-            echo "source_sha256=<auto>" >> "$tmp_file"
-            echo "-->" >> "$tmp_file"
-            echo "<!-- END:CONSTITUTION:$block_name -->" >> "$tmp_file"
+            {
+                echo ""
+                echo "<!-- BEGIN:CONSTITUTION:$block_name (auto-generated; do not edit)"
+                echo "source=$CONSTITUTION_SRC"
+                echo "section=${block_name#*:}"
+                echo "commit=<auto>"
+                echo "generated=<auto>"
+                echo "source_sha256=<auto>"
+                echo "-->"
+                echo "<!-- END:CONSTITUTION:$block_name -->"
+            } >> "$tmp_file"
         else
             # Insert before REPORTING section
             awk "
@@ -202,7 +203,8 @@ update_constitution_markers() {
     content_hash=$(echo "$content" | compute_sha256)
 
     # Create backup
-    local backup_dir=".constitution-backups/$(date +%Y%m%d_%H%M%S)"
+    local backup_dir
+    backup_dir=".constitution-backups/$(date +%Y%m%d_%H%M%S)"
     mkdir -p "$backup_dir"
     cp "$runbook_file" "$backup_dir/$(basename "$runbook_file")"
 
