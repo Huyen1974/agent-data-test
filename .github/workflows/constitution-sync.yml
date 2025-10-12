@@ -1,12 +1,13 @@
 name: Constitution Sync Check
 
 on:
-  pull_request:
-    paths:
-      - 'docs/constitution/**'
-      - '.agents/**/runbook.md'
-      - 'scripts/sync-constitution.sh'
-      - 'scripts/constitution.sections'
+  workflow_dispatch:  # Disabled for now - using agent-preflight.yml instead
+  # pull_request:
+  #   paths:
+  #     - 'docs/constitution/**'
+  #     - '.agents/**/runbook.md'
+  #     - 'scripts/sync-constitution.sh'
+  #     - 'scripts/constitution.sections'
 
 jobs:
   validate-and-check:
