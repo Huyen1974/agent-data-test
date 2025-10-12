@@ -257,3 +257,6 @@ app-service-project/test-results/
 .genkit/
 tools/ai/
 .cienv/
+
+# Constitution backups
+.constitution-backups/

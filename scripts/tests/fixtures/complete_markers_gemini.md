@@ -39,15 +39,5 @@ source_sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 | HP-CS-05 | Phân tách Quyền Ghi Secrets | • Các runner CI/CD thông thường (chạy test, build tại các repo con như agent-data-test) bị cấm tuyệt đối quyền secrets:write.<br><br> • Chỉ duy nhất quy trình đồng bộ secrets tự động (nếu có) mới được cấp quyền secrets:write để cập nhật secrets. |
 <!-- END:CONSTITUTION:CURSOR_MGMT -->
 
-
-<!-- BEGIN:CONSTITUTION:VII (auto-generated; do not edit)
-source=docs/constitution/CONSTITUTION.md
-section=VII
-commit=<auto>
-generated=<auto>
-source_sha256=<auto>
--->
-<!-- END:CONSTITUTION:VII -->
-
 ## REPORTING
 - Nêu nguyên nhân gốc (nếu có), bản vá, log xác minh; link CI nếu liên quan.

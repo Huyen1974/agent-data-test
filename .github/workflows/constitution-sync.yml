@@ -1,0 +1,55 @@
+name: Constitution Sync Check
+
+on:
+  pull_request:
+    paths:
+      - 'docs/constitution/**'
+      - '.agents/**/runbook.md'
+      - 'scripts/sync-constitution.sh'
+      - 'scripts/constitution.sections'
+
+jobs:
+  validate-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        uses: docker://koalaman/shellcheck-alpine:v0.9.0
+        with:
+          args: shellcheck scripts/sync-constitution.sh
+
+      - name: Check constitution drift
+        run: |
+          if ! make sync-constitution-check; then
+            echo "❌ Constitution drift detected!"
+            echo "🔧 Run these commands to fix:"
+            echo "   make sync-constitution"
+            echo "   git add -A"
+            echo "   git commit -m \"docs: sync constitution\""
+            exit 1
+          fi
+
+      - name: Verify markers and hashes
+        run: |
+          for agent in gemini claude codex; do
+            runbook=".agents/$agent/runbook.md"
+
+            # Check markers exist
+            if ! grep -q "BEGIN:CONSTITUTION:CURSOR_MGMT" "$runbook"; then
+              echo "❌ Missing constitution markers in $runbook"
+              exit 1
+            fi
+
+            # Check all metadata present
+            if ! grep -q "commit=[a-f0-9]\+" "$runbook"; then
+              echo "❌ Missing commit hash in $runbook"
+              exit 1
+            fi
+
+            if ! grep -q "source_sha256=[a-f0-9]\+" "$runbook"; then
+              echo "❌ Missing content hash in $runbook"
+              exit 1
+            fi
+          done
+          echo "✅ All markers and metadata verified"

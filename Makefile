@@ -24,3 +24,21 @@ agents-preflight:
 	@gemini --version || echo "ℹ️  Gemini CLI not available locally"
 	@claude --version || echo "ℹ️  Claude CLI not available locally"
 	@echo "✅ Agent preflight checks passed!"
+
+.PHONY: sync-constitution sync-constitution-dry sync-constitution-check test-constitution
+
+sync-constitution:      ## Apply constitution updates to all agent runbooks
+	@echo "🔄 Syncing constitution to agent runbooks..."
+	@bash scripts/sync-constitution.sh
+
+sync-constitution-dry:  ## Preview constitution changes (dry-run)
+	@echo "🔍 Previewing constitution sync..."
+	@bash scripts/sync-constitution.sh --dry-run
+
+sync-constitution-check: ## Check if constitution is in sync (CI gate)
+	@echo "🔍 Checking constitution sync status..."
+	@bash scripts/sync-constitution.sh --check
+
+test-constitution: ## Run constitution sync tests
+	@echo "🧪 Running constitution sync tests..."
+	@bash scripts/tests/test-constitution-sync.sh
