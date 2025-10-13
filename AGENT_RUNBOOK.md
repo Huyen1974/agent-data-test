@@ -3,6 +3,8 @@
 ## Overview
 This unified runbook governs all AI agents (Claude Code, Gemini CLI, Codex, and future agents) operating within the Agent Data Langroid environment. It establishes standardized operating procedures, environment isolation, and conflict resolution mechanisms.
 
+> **Constitution updates:** edit `docs/constitution/CONSTITUTION.md` via PR; CI runs `scripts/verify-constitution-equivalence.sh` in check-only mode and will not auto-sync runbooks.
+
 ## Architecture Principles
 
 ### 1. Environment Isolation
