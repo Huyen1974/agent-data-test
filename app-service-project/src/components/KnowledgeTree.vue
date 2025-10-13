@@ -27,6 +27,8 @@ watch(activated, (newActivated) => {
   if (newId && newId !== props.selectedId) {
     // Find the full item object to emit
     const findItem = (nodes, id) => {
+      if (!nodes || !Array.isArray(nodes)) return null;
+
       for (const node of nodes) {
         if (node.id === id) return node;
         if (node.children) {
@@ -36,9 +38,16 @@ watch(activated, (newActivated) => {
       }
       return null;
     };
-    const selectedItem = findItem(props.items, newId);
-    if (selectedItem) {
-      emit('item-selected', selectedItem);
+
+    try {
+      const selectedItem = findItem(props.items, newId);
+      if (selectedItem) {
+        emit('item-selected', selectedItem);
+      } else {
+        console.warn(`[KnowledgeTree] Item with id "${newId}" not found in tree`);
+      }
+    } catch (error) {
+      console.error('[KnowledgeTree] Error finding selected item:', error);
     }
   }
 });

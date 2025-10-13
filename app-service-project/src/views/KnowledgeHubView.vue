@@ -16,22 +16,32 @@ const { tree, loading, error, loadData } = useKnowledgeTree();
 
 const selectedDocument = ref(null);
 
+// Track if data has been loaded to prevent duplicate loads
+const hasLoadedData = ref(false);
+
 // Function to handle item selection from the tree
 const handleItemSelected = (item) => {
   selectedDocument.value = item;
 };
 
+// Unified function to load data (prevents race condition)
+const loadDataOnce = async () => {
+  if (hasLoadedData.value || !isAuthReady.value) {
+    return;
+  }
+  hasLoadedData.value = true;
+  await loadData();
+};
+
 // Load data when authentication is ready
 onMounted(() => {
-  if (isAuthReady.value) {
-    loadData();
-  }
+  loadDataOnce();
 });
 
-// Watch for auth readiness changes
+// Watch for auth readiness changes (handles async auth initialization)
 watch(isAuthReady, (ready) => {
   if (ready) {
-    loadData();
+    loadDataOnce();
   }
 });
 </script>
