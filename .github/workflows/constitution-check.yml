@@ -22,8 +22,21 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Verify constitution equivalence (read-only)
+        shell: bash
+        env:
+          LC_ALL: C.UTF-8
+          LANG: C.UTF-8
         run: |
-          make agents-constitution-check
+          set -Eeuo pipefail
+          bash -x scripts/verify-constitution-equivalence.sh || { rc=$?; echo "::error::Verifier failed with rc=$rc"; exit $rc; }
+
+      - name: Context dump (on-failure)
+        if: failure()
+        run: |
+          uname -a
+          bash --version
+          git status -sb
+          ls -l scripts/verify-constitution-equivalence.sh .agents/*/runbook.md docs/constitution/CONSTITUTION.md || true
 
       - name: Check markers exist
         if: failure()

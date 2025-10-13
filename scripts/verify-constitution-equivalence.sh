@@ -2,11 +2,14 @@
 # Constitution Equivalence Verifier
 # Verifies that injected constitution content matches source exactly
 
-set -euo pipefail
+set -Eeuo pipefail
 IFS=$'\n\t'
 
 # UTF-8 for Unicode handling
-export LC_ALL=C.UTF-8 LANG=C.UTF-8
+export LC_ALL=${LC_ALL:-C.UTF-8} LANG=${LANG:-C.UTF-8}
+
+# Error trap for debugging
+trap 'echo "ERR ${BASH_SOURCE[0]}:$LINENO: $BASH_COMMAND" >&2; exit 97' ERR
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
@@ -34,18 +37,17 @@ if [[ ! -f "$CONSTITUTION_SRC" ]]; then
     exit 1
 fi
 
-# Line ending normalization
+# Line ending normalization - POSIX compatible
 normalize_content() {
-    awk '{ sub(/\r$/,""); print }' | sed 's/[[:space:]]*$//'
+    awk '{ sub(/\r$/,""); gsub(/[[:space:]]+$/, ""); print }'
 }
 
 # Extract section from constitution
 extract_section() {
     local section_spec="$1"
     local section_number="${section_spec%%:*}"
-    local block_name="${section_spec#*:}"
 
-    # Use sed for precise section extraction (matches sync script)
+    # Use sed for precise section extraction
     if [[ "$section_number" == "VII" ]]; then
         sed -n '/^## Điều VII/,/^## /p' "$CONSTITUTION_SRC" | sed '$d' | normalize_content
     else
@@ -54,30 +56,32 @@ extract_section() {
     fi
 }
 
-# Extract injected content from runbook
+# Extract injected content from runbook - safe grep
 extract_injected_content() {
     local runbook_file="$1"
     local block_name="$2"
 
     # Extract content between markers, exclude metadata and HTML comment artifacts
-    sed -n "/BEGIN:CONSTITUTION:$block_name/,/END:CONSTITUTION:$block_name/p" "$runbook_file" | \
-    sed '1d;$d' | \
-    grep -v '^source=' | \
-    grep -v '^section=' | \
-    grep -v '^commit=' | \
-    grep -v '^generated=' | \
-    grep -v '^source_sha256=' | \
-    grep -v '^-->$' | \
-    sed '/^$/d' | \
-    normalize_content
+    # Using || true to prevent grep from failing pipeline
+    {
+        sed -n "/BEGIN:CONSTITUTION:$block_name/,/END:CONSTITUTION:$block_name/p" "$runbook_file" | \
+        sed '1d;$d' | \
+        grep -v '^source=' | \
+        grep -v '^section=' | \
+        grep -v '^commit=' | \
+        grep -v '^generated=' | \
+        grep -v '^source_sha256=' | \
+        grep -v '^-->$' | \
+        sed '/^$/d'
+    } | normalize_content || true
 }
 
-# Compute SHA-256
+# Compute SHA-256 - deterministic
 compute_sha256() {
     if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum | cut -d' ' -f1
+        sha256sum | awk '{print $1}'
     elif command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 | cut -d' ' -f1
+        shasum -a 256 | awk '{print $1}'
     else
         echo "no-sha256-available"
     fi
@@ -90,8 +94,13 @@ verify_equivalence() {
     local section_spec="$2"
     local block_name="${section_spec#*:}"
 
-    # Check if markers exist
-    if ! grep -q "BEGIN:CONSTITUTION:$block_name" "$runbook_file"; then
+    # Check if markers exist - safe grep
+    local has_marker=0
+    if grep -q "BEGIN:CONSTITUTION:$block_name" "$runbook_file" 2>/dev/null; then
+        has_marker=1
+    fi
+
+    if [[ $has_marker -eq 0 ]]; then
         echo "$agent_name|$section_spec|N/A|NO_MARKERS"
         return 1
     fi
@@ -134,7 +143,7 @@ show_diff() {
     injected_content=$(extract_injected_content "$runbook_file" "$block_name")
 
     echo "=== DIFF: $agent_name - $section_spec ==="
-    diff -u <(echo "$source_content") <(echo "$injected_content") | head -20
+    diff -u <(echo "$source_content") <(echo "$injected_content") | head -20 || true
     echo ""
 }
 
@@ -147,8 +156,6 @@ main() {
     local agents=("gemini" "claude" "codex")
     local results=()
     local failed_sections=()
-    local total_checks=0
-    local passed_checks=0
 
     echo ""
     echo "VERIFICATION RESULTS:"
@@ -182,17 +189,14 @@ main() {
 
     for result in "${results[@]}"; do
         if [[ "$result" == *"|PASS" ]]; then
-            ((passed_checks++))
+            ((passed_checks++)) || true
         else
-            ((failed_checks++))
+            ((failed_checks++)) || true
         fi
     done
 
     log_info "Total checks: $total_checks"
     log_ok "Passed: $passed_checks"
-
-    # Debug: print failed_checks value
-    echo "DEBUG: failed_checks=$failed_checks"
 
     if [[ $failed_checks -gt 0 ]]; then
         log_fail "Failed: $failed_checks"
@@ -204,13 +208,12 @@ main() {
             show_diff "$agent_name" "$section_spec"
         done
 
-        return 1
+        exit 1
     fi
 
     log_ok "All constitution content matches source exactly! ✅"
-    return 0
+    exit 0
 }
 
 # Run main
 main "$@"
-exit $?
