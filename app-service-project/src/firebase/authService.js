@@ -10,6 +10,16 @@ import {
 import { auth } from './config.js';
 import router from '@/router';
 
+const mockAuthEnabled = import.meta.env.VITE_E2E_AUTH_MOCK === 'true';
+
+const createMockUser = () => ({
+  uid: 'mock-user',
+  displayName: 'E2E Test User',
+  email: 'e2e-tester@example.com',
+  photoURL: null,
+  providerData: []
+});
+
 // Centralized state
 const user = ref(null);
 const authError = ref(null);
@@ -47,6 +57,14 @@ export function useAuth() {
    */
   const checkAuthState = async () => {
     try {
+      if (mockAuthEnabled) {
+        // In mock mode we skip Firebase initialization entirely
+        user.value = null;
+        authError.value = null;
+        isReady.value = true;
+        return;
+      }
+
       // First, check if we're returning from a redirect sign-in
       // This handles the case where signInWithRedirect was used as fallback
       try {
@@ -118,6 +136,15 @@ export function useAuth() {
     isSigningIn.value = true;
 
     try {
+      if (mockAuthEnabled) {
+        // Simulate async network delay so UI state transitions remain realistic
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const mockUser = createMockUser();
+        user.value = mockUser;
+        isSigningIn.value = false;
+        return;
+      }
+
       // Try popup first (better UX as user stays on same page)
       const result = await signInWithPopup(auth, provider);
       user.value = result.user;
@@ -171,7 +198,9 @@ export function useAuth() {
   const signOut = async () => {
     authError.value = null;
     try {
-      await firebaseSignOut(auth);
+      if (!mockAuthEnabled) {
+        await firebaseSignOut(auth);
+      }
       // Manually clear the user state to ensure immediate UI update
       user.value = null;
       // Redirect to the goodbye page after successful sign-out
