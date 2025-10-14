@@ -11,9 +11,8 @@
 
 import { ref } from 'vue';
 import { getFirestore, collection, getDocs, query } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
 
-import { firebaseApp } from './config.js';
+import { firebaseApp, auth } from './config.js';
 import { useAuth } from './authService.js';
 import { useEnvironmentSelector } from './environmentSelector.js';
 
@@ -62,12 +61,17 @@ const MOCK_DOCUMENTS = [
  * This prevents the race condition where onAuthStateChanged fires but the token
  * isn't yet attached to subsequent requests.
  *
+ * CRITICAL: Uses the same auth instance from config.js that authService uses.
+ * This ensures we're checking the token on the correct auth instance where
+ * the user actually logged in.
+ *
  * @param {number} maxRetries - Maximum number of retry attempts (default: 3)
  * @param {number} retryDelayMs - Delay between retries in milliseconds (default: 500ms)
  * @returns {Promise<boolean>} true if token is available, false otherwise
  */
 async function ensureAuthTokenReady(maxRetries = 3, retryDelayMs = 500) {
-  const auth = getAuth(firebaseApp);
+  // CRITICAL FIX: Use the same auth instance from config.js, not getAuth(firebaseApp)
+  // which would create a different instance without the authenticated user!
   const currentUser = auth.currentUser;
 
   if (!currentUser) {

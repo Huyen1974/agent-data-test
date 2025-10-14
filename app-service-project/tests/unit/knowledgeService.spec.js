@@ -7,6 +7,13 @@ const mockCollection = vi.fn();
 const mockQuery = vi.fn();
 const mockGetIdToken = vi.fn();
 
+// Mock auth currentUser object that can be updated by tests
+const mockCurrentUser = {
+  uid: '123',
+  email: 'test@example.com',
+  getIdToken: mockGetIdToken
+};
+
 vi.mock('firebase/firestore', () => ({
   getFirestore: vi.fn(() => ({})),
   collection: (...args) => mockCollection(...args),
@@ -14,14 +21,18 @@ vi.mock('firebase/firestore', () => ({
   getDocs: (...args) => mockGetDocs(...args),
 }));
 
-vi.mock('firebase/auth', () => ({
-  getAuth: vi.fn(() => ({
-    currentUser: {
-      uid: '123',
-      email: 'test@example.com',
-      getIdToken: mockGetIdToken
-    }
-  }))
+// Mock the auth instance from config.js (not getAuth from firebase/auth)
+// This is critical because knowledgeService now uses the same auth instance
+// that authService uses, ensuring consistent authentication state
+vi.mock('@/firebase/config.js', () => ({
+  firebaseApp: {},
+  get auth() {
+    return {
+      get currentUser() {
+        return mockCurrentUser;
+      }
+    };
+  }
 }));
 
 // Mock auth service
@@ -42,11 +53,6 @@ vi.mock('@/firebase/environmentSelector.js', () => ({
   useEnvironmentSelector: () => ({
     collectionNames: mockCollectionNames,
   }),
-}));
-
-// Mock Firebase app
-vi.mock('@/firebase/config.js', () => ({
-  firebaseApp: {},
 }));
 
 describe('knowledgeService', () => {
