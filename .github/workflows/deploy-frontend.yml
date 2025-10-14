@@ -95,14 +95,23 @@ jobs:
           EOF
 
       - name: Build frontend
-        env:
-          VITE_FIREBASE_API_KEY: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_APP_ID }}
-        run: npm run build --prefix app-service-project
+        run: |
+          # Export Firebase secrets as shell environment variables for Vite build
+          export VITE_FIREBASE_API_KEY="${{ steps.fetch-secrets.outputs.VITE_FIREBASE_API_KEY }}"
+          export VITE_FIREBASE_AUTH_DOMAIN="${{ steps.fetch-secrets.outputs.VITE_FIREBASE_AUTH_DOMAIN }}"
+          export VITE_FIREBASE_PROJECT_ID="${{ steps.fetch-secrets.outputs.VITE_FIREBASE_PROJECT_ID }}"
+          export VITE_FIREBASE_STORAGE_BUCKET="${{ steps.fetch-secrets.outputs.VITE_FIREBASE_STORAGE_BUCKET }}"
+          export VITE_FIREBASE_MESSAGING_SENDER_ID="${{ steps.fetch-secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}"
+          export VITE_FIREBASE_APP_ID="${{ steps.fetch-secrets.outputs.VITE_FIREBASE_APP_ID }}"
+
+          # Verify variables are set before build
+          echo "Building with Firebase config:"
+          echo "API Key: ${VITE_FIREBASE_API_KEY:0:10}..."
+          echo "Project ID: $VITE_FIREBASE_PROJECT_ID"
+          echo "Auth Domain: $VITE_FIREBASE_AUTH_DOMAIN"
+
+          # Run Vite build with environment variables available
+          npm run build --prefix app-service-project
 
       - name: Inject Firebase Config into Built HTML
         run: |
