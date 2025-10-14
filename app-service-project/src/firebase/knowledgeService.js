@@ -119,9 +119,13 @@ async function fetchKnowledgeDocuments(collectionNames) {
   // Fetch from each collection sequentially
   for (const collectionName of collectionNames) {
     try {
+      console.log(`[KnowledgeService] Fetching from collection: ${collectionName}`);
       const collectionRef = collection(db, collectionName);
       const q = query(collectionRef);
       const querySnapshot = await getDocs(q);
+
+      const docCount = querySnapshot.size;
+      console.log(`[KnowledgeService] Found ${docCount} documents in ${collectionName}`);
 
       querySnapshot.forEach((doc) => {
         allDocs.push({
@@ -131,11 +135,29 @@ async function fetchKnowledgeDocuments(collectionNames) {
         });
       });
     } catch (err) {
-      console.error(`Error fetching from ${collectionName}:`, err);
-      throw new Error(`Không thể tải dữ liệu từ ${collectionName}.`);
+      console.error(`[KnowledgeService] Error fetching from ${collectionName}:`, err);
+      console.error(`[KnowledgeService] Error code: ${err.code}, message: ${err.message}`);
+
+      // Provide more specific error messages based on error code
+      let userMessage = `Không thể tải dữ liệu từ ${collectionName}.`;
+
+      if (err.code === 'permission-denied') {
+        userMessage = `Không có quyền truy cập collection "${collectionName}". Vui lòng kiểm tra quyền đăng nhập.`;
+        console.error('[KnowledgeService] Permission denied. User may not be authenticated or lacks required permissions.');
+      } else if (err.code === 'unavailable') {
+        userMessage = 'Không thể kết nối đến cơ sở dữ liệu. Vui lòng kiểm tra kết nối mạng.';
+      } else if (err.code === 'not-found') {
+        userMessage = `Collection "${collectionName}" không tồn tại. Có thể chưa có dữ liệu.`;
+        // For not-found, we should not throw - just log and continue
+        console.warn(`[KnowledgeService] Collection ${collectionName} does not exist yet. Continuing...`);
+        continue;
+      }
+
+      throw new Error(userMessage);
     }
   }
 
+  console.log(`[KnowledgeService] Total documents fetched: ${allDocs.length}`);
   return allDocs;
 }
 
@@ -186,6 +208,7 @@ export function useKnowledgeTree() {
     // Wait for auth to be ready
     if (!isReady.value) {
       error.value = 'Đang khởi tạo xác thực...';
+      console.log('[KnowledgeService] Waiting for auth to be ready...');
       return;
     }
 
@@ -194,8 +217,14 @@ export function useKnowledgeTree() {
       tree.value = [];
       loading.value = false;
       error.value = 'Vui lòng đăng nhập để xem sơ đồ tri thức.';
+      console.warn('[KnowledgeService] User not authenticated');
       return;
     }
+
+    console.log('[KnowledgeService] Starting data load...', {
+      user: authUser.value.email || authUser.value.uid,
+      collections: collectionNames.value
+    });
 
     loading.value = true;
     error.value = null;
@@ -203,10 +232,22 @@ export function useKnowledgeTree() {
     try {
       // STD: Simple request-response, no listeners
       const documents = await fetchKnowledgeDocuments(collectionNames.value);
-      tree.value = buildTree(documents);
+
+      if (documents.length === 0) {
+        console.warn('[KnowledgeService] No documents found in any collection');
+        error.value = 'Chưa có dữ liệu tri thức. Vui lòng thêm tài liệu hoặc liên hệ quản trị viên.';
+        tree.value = [];
+      } else {
+        tree.value = buildTree(documents);
+        console.log('[KnowledgeService] Data loaded successfully', {
+          totalDocuments: documents.length,
+          treeNodes: tree.value.length
+        });
+      }
+
       loading.value = false;
     } catch (err) {
-      console.error('Error loading knowledge tree:', err);
+      console.error('[KnowledgeService] Error loading knowledge tree:', err);
       error.value = err.message || 'Không thể tải dữ liệu tri thức.';
       loading.value = false;
       tree.value = [];
