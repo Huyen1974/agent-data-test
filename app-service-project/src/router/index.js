@@ -1,6 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { auth } from '@/firebase/config'; // Using alias for cleaner path
 
+// Layouts
+import PublicLayout from '../layouts/PublicLayout.vue';
+
+// Views
+import HomeView from '../views/HomeView.vue';
+import AboutView from '../views/AboutView.vue';
+import ContactView from '../views/ContactView.vue';
 import KnowledgeHubView from '../views/KnowledgeHubView.vue';
 import GoodbyeView from '../views/GoodbyeView.vue';
 
@@ -18,13 +25,41 @@ const getCurrentUser = () => {
 };
 
 const routes = [
+  // --- Public Pages ---
   {
     path: '/',
-    name: 'home',
+    component: PublicLayout,
+    children: [
+      {
+        path: '',
+        name: 'home',
+        component: HomeView,
+        meta: { title: 'Trang chủ' },
+      },
+      {
+        path: 'about',
+        name: 'about',
+        component: AboutView,
+        meta: { title: 'Giới thiệu' },
+      },
+      {
+        path: 'lien-he',
+        name: 'lien-he',
+        component: ContactView,
+        meta: { title: 'Liên hệ' },
+      },
+    ],
+  },
+
+  // --- Authenticated Workspace ---
+  {
+    path: '/workspace',
+    name: 'workspace',
     component: KnowledgeHubView,
     meta: {
       title: 'Knowledge Hub',
       description: 'Tổng quan trung tâm tri thức.',
+      requiresAuth: true,
     },
   },
   {
@@ -34,7 +69,7 @@ const routes = [
     meta: {
       title: 'Portal Nội Bộ',
       description: 'Phân khu nội bộ.',
-      requiresAuth: true, // This route requires authentication
+      requiresAuth: true,
     },
   },
   {
@@ -44,9 +79,11 @@ const routes = [
     meta: {
       title: 'Portal Kinh Doanh',
       description: 'Phân khu kinh doanh.',
-      requiresAuth: true, // This route requires authentication
+      requiresAuth: true,
     },
   },
+
+  // --- Other Routes ---
   {
     path: '/goodbye',
     name: 'goodbye',
