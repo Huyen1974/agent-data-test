@@ -11,6 +11,7 @@
 
 import { ref } from 'vue';
 import { getFirestore, collection, getDocs, query } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 import { firebaseApp } from './config.js';
 import { useAuth } from './authService.js';
@@ -55,6 +56,50 @@ const MOCK_DOCUMENTS = [
     order: 1,
   },
 ];
+
+/**
+ * Ensures the Firebase Auth token is available before making Firestore requests.
+ * This prevents the race condition where onAuthStateChanged fires but the token
+ * isn't yet attached to subsequent requests.
+ *
+ * @param {number} maxRetries - Maximum number of retry attempts (default: 3)
+ * @param {number} retryDelayMs - Delay between retries in milliseconds (default: 500ms)
+ * @returns {Promise<boolean>} true if token is available, false otherwise
+ */
+async function ensureAuthTokenReady(maxRetries = 3, retryDelayMs = 500) {
+  const auth = getAuth(firebaseApp);
+  const currentUser = auth.currentUser;
+
+  if (!currentUser) {
+    console.warn('[KnowledgeService] No current user found when checking token');
+    return false;
+  }
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[KnowledgeService] Verifying auth token (attempt ${attempt}/${maxRetries})...`);
+
+      // Force Firebase to ensure the token is available
+      // This will throw if the token isn't ready yet
+      const token = await currentUser.getIdToken(false); // false = don't force refresh
+
+      if (token) {
+        console.log('[KnowledgeService] Auth token verified and ready');
+        return true;
+      }
+    } catch (error) {
+      console.warn(`[KnowledgeService] Token verification attempt ${attempt} failed:`, error);
+
+      if (attempt < maxRetries) {
+        console.log(`[KnowledgeService] Waiting ${retryDelayMs}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      }
+    }
+  }
+
+  console.error('[KnowledgeService] Failed to verify auth token after all retries');
+  return false;
+}
 
 /**
  * Transforms a flat list of documents (with parentId) into a hierarchical tree structure.
@@ -218,6 +263,20 @@ export function useKnowledgeTree() {
       loading.value = false;
       error.value = 'Vui lòng đăng nhập để xem sơ đồ tri thức.';
       console.warn('[KnowledgeService] User not authenticated');
+      return;
+    }
+
+    // CRITICAL: Ensure auth token is actually ready before making Firestore requests
+    // This prevents the race condition where onAuthStateChanged fires but the token
+    // isn't yet attached to subsequent Firestore requests (causing request.auth = null)
+    console.log('[KnowledgeService] Verifying auth token before loading data...');
+    const tokenReady = await ensureAuthTokenReady();
+
+    if (!tokenReady) {
+      tree.value = [];
+      loading.value = false;
+      error.value = 'Không thể xác minh xác thực. Vui lòng đăng nhập lại.';
+      console.error('[KnowledgeService] Auth token verification failed - cannot proceed with data load');
       return;
     }
 

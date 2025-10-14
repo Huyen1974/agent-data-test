@@ -5,12 +5,23 @@ import { ref } from 'vue';
 const mockGetDocs = vi.fn();
 const mockCollection = vi.fn();
 const mockQuery = vi.fn();
+const mockGetIdToken = vi.fn();
 
 vi.mock('firebase/firestore', () => ({
   getFirestore: vi.fn(() => ({})),
   collection: (...args) => mockCollection(...args),
   query: (...args) => mockQuery(...args),
   getDocs: (...args) => mockGetDocs(...args),
+}));
+
+vi.mock('firebase/auth', () => ({
+  getAuth: vi.fn(() => ({
+    currentUser: {
+      uid: '123',
+      email: 'test@example.com',
+      getIdToken: mockGetIdToken
+    }
+  }))
 }));
 
 // Mock auth service
@@ -48,6 +59,9 @@ describe('knowledgeService', () => {
     mockUser.value = { uid: '123', email: 'test@example.com' };
     mockIsReady.value = true;
     mockCollectionNames.value = ['test_documents'];
+
+    // Mock successful token verification by default
+    mockGetIdToken.mockResolvedValue('mock-id-token');
 
     // Reset module to get fresh instance
     vi.resetModules();
@@ -248,6 +262,89 @@ describe('knowledgeService', () => {
       expect(tree.value.length).toBe(1); // One root node
       expect(tree.value[0].children.length).toBe(2); // Two children
       expect(tree.value[0].children[0].children.length).toBe(1); // One grandchild
+    });
+  });
+
+  describe('Auth Token Verification (Race Condition Fix)', () => {
+    it('should verify auth token before loading data', async () => {
+      mockGetDocs.mockResolvedValue({
+        size: 1,
+        forEach: (callback) => {
+          callback({
+            id: 'doc1',
+            data: () => ({ title: 'Test Doc', status: 'green', parent: null, order: 1 })
+          });
+        },
+      });
+
+      const { loadData } = useKnowledgeTree();
+      await loadData();
+
+      // Verify that getIdToken was called to ensure token is ready
+      expect(mockGetIdToken).toHaveBeenCalled();
+      // Verify that data loading only happened after token verification
+      expect(mockGetDocs).toHaveBeenCalled();
+    });
+
+    it('should handle token verification failure', async () => {
+      // Simulate token not ready (all retries fail)
+      mockGetIdToken.mockRejectedValue(new Error('Token not ready'));
+
+      const { loadData, error, tree, loading } = useKnowledgeTree();
+      await loadData();
+
+      // Should show error message
+      expect(error.value).toContain('Không thể xác minh xác thực');
+      // Should not proceed with data loading
+      expect(mockGetDocs).not.toHaveBeenCalled();
+      // Should set appropriate state
+      expect(tree.value).toEqual([]);
+      expect(loading.value).toBe(false);
+    });
+
+    it('should retry token verification and succeed on second attempt', async () => {
+      // First attempt fails, second succeeds
+      mockGetIdToken
+        .mockRejectedValueOnce(new Error('Token not ready'))
+        .mockResolvedValueOnce('mock-id-token');
+
+      mockGetDocs.mockResolvedValue({
+        size: 1,
+        forEach: (callback) => {
+          callback({
+            id: 'doc1',
+            data: () => ({ title: 'Test Doc', status: 'green', parent: null, order: 1 })
+          });
+        },
+      });
+
+      const { loadData, error, tree } = useKnowledgeTree();
+      await loadData();
+
+      // Should have retried and succeeded
+      expect(mockGetIdToken).toHaveBeenCalledTimes(2);
+      // Should have loaded data successfully
+      expect(mockGetDocs).toHaveBeenCalled();
+      expect(error.value).toBeNull();
+      expect(tree.value.length).toBeGreaterThan(0);
+    });
+
+    it('should fail after exhausting all retry attempts', async () => {
+      // All 3 attempts fail
+      mockGetIdToken
+        .mockRejectedValueOnce(new Error('Token not ready'))
+        .mockRejectedValueOnce(new Error('Token not ready'))
+        .mockRejectedValueOnce(new Error('Token not ready'));
+
+      const { loadData, error } = useKnowledgeTree();
+      await loadData();
+
+      // Should have tried 3 times (default maxRetries)
+      expect(mockGetIdToken).toHaveBeenCalledTimes(3);
+      // Should show error message
+      expect(error.value).toContain('Không thể xác minh xác thực');
+      // Should not have loaded data
+      expect(mockGetDocs).not.toHaveBeenCalled();
     });
   });
 });
