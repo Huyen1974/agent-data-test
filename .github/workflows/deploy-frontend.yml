@@ -107,16 +107,31 @@ jobs:
           echo "Verifying .env.production contains all required variables..."
           REQUIRED_VARS=("VITE_FIREBASE_API_KEY" "VITE_FIREBASE_AUTH_DOMAIN" "VITE_FIREBASE_PROJECT_ID" "VITE_FIREBASE_STORAGE_BUCKET" "VITE_FIREBASE_MESSAGING_SENDER_ID" "VITE_FIREBASE_APP_ID")
           MISSING_IN_FILE=()
+          EMPTY_VALUES=()
 
           for var in "${REQUIRED_VARS[@]}"; do
             if ! grep -q "^${var}=" app-service-project/.env.production; then
               MISSING_IN_FILE+=("$var")
+              continue
+            fi
+
+            value=$(grep "^${var}=" app-service-project/.env.production | cut -d'=' -f2-)
+            if [ -z "$value" ]; then
+              EMPTY_VALUES+=("$var")
             fi
           done
 
           if [ ${#MISSING_IN_FILE[@]} -gt 0 ]; then
             echo "ERROR: The following variables are missing from .env.production:" >&2
             for var in "${MISSING_IN_FILE[@]}"; do
+              echo "  - $var" >&2
+            done
+            exit 1
+          fi
+
+          if [ ${#EMPTY_VALUES[@]} -gt 0 ]; then
+            echo "ERROR: The following variables are empty in .env.production:" >&2
+            for var in "${EMPTY_VALUES[@]}"; do
               echo "  - $var" >&2
             done
             exit 1
@@ -177,15 +192,22 @@ jobs:
               exit 1
             fi
 
+            # Ensure no leftover placeholders remain
+            if grep -q "%VITE_FIREBASE_" app-service-project/dist/index.html; then
+              echo "ERROR: Found placeholder tokens in index.html after build:" >&2
+              grep "%VITE_FIREBASE_" app-service-project/dist/index.html >&2
+              exit 1
+            fi
+
             # Check for empty values in all 6 Firebase config fields
-            # Pattern matches: apiKey: '', apiKey: "", apiKey:'', apiKey:""
+            # Pattern matches pairs of quotes with no content: apiKey: '', apiKey: "", etc.
             EMPTY_PATTERNS=(
-              "apiKey:[[:space:]]*['\"]?['\"]"
-              "authDomain:[[:space:]]*['\"]?['\"]"
-              "projectId:[[:space:]]*['\"]?['\"]"
-              "storageBucket:[[:space:]]*['\"]?['\"]"
-              "messagingSenderId:[[:space:]]*['\"]?['\"]"
-              "appId:[[:space:]]*['\"]?['\"]"
+              "apiKey:[[:space:]]*['\"][[:space:]]*['\"]"
+              "authDomain:[[:space:]]*['\"][[:space:]]*['\"]"
+              "projectId:[[:space:]]*['\"][[:space:]]*['\"]"
+              "storageBucket:[[:space:]]*['\"][[:space:]]*['\"]"
+              "messagingSenderId:[[:space:]]*['\"][[:space:]]*['\"]"
+              "appId:[[:space:]]*['\"][[:space:]]*['\"]"
             )
 
             FOUND_EMPTY=()
