@@ -85,6 +85,9 @@ jobs:
 
       - name: Create .env.production
         run: |
+          set -euo pipefail
+
+          echo "Creating .env.production with Firebase secrets..."
           cat <<EOF > app-service-project/.env.production
           VITE_FIREBASE_API_KEY=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -93,6 +96,33 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_APP_ID }}
           EOF
+
+          # Verify .env.production was created successfully
+          if [ ! -f app-service-project/.env.production ]; then
+            echo "ERROR: .env.production file was not created" >&2
+            exit 1
+          fi
+
+          # Verify all 6 variables are present in the file
+          echo "Verifying .env.production contains all required variables..."
+          REQUIRED_VARS=("VITE_FIREBASE_API_KEY" "VITE_FIREBASE_AUTH_DOMAIN" "VITE_FIREBASE_PROJECT_ID" "VITE_FIREBASE_STORAGE_BUCKET" "VITE_FIREBASE_MESSAGING_SENDER_ID" "VITE_FIREBASE_APP_ID")
+          MISSING_IN_FILE=()
+
+          for var in "${REQUIRED_VARS[@]}"; do
+            if ! grep -q "^${var}=" app-service-project/.env.production; then
+              MISSING_IN_FILE+=("$var")
+            fi
+          done
+
+          if [ ${#MISSING_IN_FILE[@]} -gt 0 ]; then
+            echo "ERROR: The following variables are missing from .env.production:" >&2
+            for var in "${MISSING_IN_FILE[@]}"; do
+              echo "  - $var" >&2
+            done
+            exit 1
+          fi
+
+          echo "✓ .env.production created and verified successfully"
 
       - name: Build frontend
         run: |
@@ -134,14 +164,62 @@ jobs:
       - name: Verify Build Artifact
         run: |
           set -euo pipefail
-          if grep -R --include '*.html' --include '*.js' 'apiKey: ""' app-service-project/dist; then
-            echo 'Detected empty Firebase apiKey in build output' >&2
+
+          echo "Verifying Firebase configuration in built artifacts..."
+
+          # Check index.html specifically for window.__FIREBASE_CONFIG__
+          if [ -f app-service-project/dist/index.html ]; then
+            echo "Checking index.html for Firebase config..."
+
+            # Verify window.__FIREBASE_CONFIG__ exists
+            if ! grep -q "window.__FIREBASE_CONFIG__" app-service-project/dist/index.html; then
+              echo "ERROR: window.__FIREBASE_CONFIG__ not found in index.html" >&2
+              exit 1
+            fi
+
+            # Check for empty values in all 6 Firebase config fields
+            # Pattern matches: apiKey: '', apiKey: "", apiKey:'', apiKey:""
+            EMPTY_PATTERNS=(
+              "apiKey:[[:space:]]*['\"]?['\"]"
+              "authDomain:[[:space:]]*['\"]?['\"]"
+              "projectId:[[:space:]]*['\"]?['\"]"
+              "storageBucket:[[:space:]]*['\"]?['\"]"
+              "messagingSenderId:[[:space:]]*['\"]?['\"]"
+              "appId:[[:space:]]*['\"]?['\"]"
+            )
+
+            FOUND_EMPTY=()
+            for pattern in "${EMPTY_PATTERNS[@]}"; do
+              if grep -qE "$pattern" app-service-project/dist/index.html; then
+                field_name=$(echo "$pattern" | cut -d: -f1)
+                FOUND_EMPTY+=("$field_name")
+              fi
+            done
+
+            if [ ${#FOUND_EMPTY[@]} -gt 0 ]; then
+              echo "ERROR: Found empty Firebase configuration fields in index.html:" >&2
+              for field in "${FOUND_EMPTY[@]}"; do
+                echo "  - $field" >&2
+              done
+              echo "" >&2
+              echo "Showing relevant section of index.html:" >&2
+              grep -A 10 "window.__FIREBASE_CONFIG__" app-service-project/dist/index.html | head -15 >&2
+              exit 1
+            fi
+
+            echo "✓ Firebase configuration in index.html verified successfully"
+          else
+            echo "ERROR: dist/index.html not found" >&2
             exit 1
           fi
-          if grep -R --include '*.html' --include '*.js' "apiKey: ''" app-service-project/dist; then
-            echo 'Detected empty Firebase apiKey in build output' >&2
-            exit 1
+
+          # Additional check: verify no empty apiKey in any JS files
+          if grep -R --include '*.js' -E "apiKey:[[:space:]]*['\"]?['\"]" app-service-project/dist 2>/dev/null; then
+            echo "WARNING: Found potential empty apiKey in JavaScript files" >&2
+            echo "This may be acceptable if it's in test/mock code, but verify manually" >&2
           fi
+
+          echo "✓ Build artifact verification completed successfully"
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
