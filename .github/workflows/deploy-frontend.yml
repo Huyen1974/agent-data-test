@@ -95,33 +95,26 @@ jobs:
           EOF
 
       - name: Build frontend
-        env:
-          VITE_FIREBASE_API_KEY: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_APP_ID }}
         run: |
           # Verify all 6 required Firebase secrets are set (without logging secret values)
           MISSING_SECRETS=()
 
-          if [ -z "$VITE_FIREBASE_API_KEY" ]; then
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_API_KEY }}" ]; then
             MISSING_SECRETS+=("VITE_FIREBASE_API_KEY")
           fi
-          if [ -z "$VITE_FIREBASE_AUTH_DOMAIN" ]; then
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_AUTH_DOMAIN }}" ]; then
             MISSING_SECRETS+=("VITE_FIREBASE_AUTH_DOMAIN")
           fi
-          if [ -z "$VITE_FIREBASE_PROJECT_ID" ]; then
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_PROJECT_ID }}" ]; then
             MISSING_SECRETS+=("VITE_FIREBASE_PROJECT_ID")
           fi
-          if [ -z "$VITE_FIREBASE_STORAGE_BUCKET" ]; then
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_STORAGE_BUCKET }}" ]; then
             MISSING_SECRETS+=("VITE_FIREBASE_STORAGE_BUCKET")
           fi
-          if [ -z "$VITE_FIREBASE_MESSAGING_SENDER_ID" ]; then
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}" ]; then
             MISSING_SECRETS+=("VITE_FIREBASE_MESSAGING_SENDER_ID")
           fi
-          if [ -z "$VITE_FIREBASE_APP_ID" ]; then
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_APP_ID }}" ]; then
             MISSING_SECRETS+=("VITE_FIREBASE_APP_ID")
           fi
 
@@ -135,32 +128,8 @@ jobs:
 
           echo "✓ All 6 Firebase secrets verified successfully"
 
-          # Run Vite build with environment variables available
+          # Run Vite build - Vite will automatically read from .env.production
           npm run build --prefix app-service-project
-
-      - name: Inject Firebase Config into Built HTML
-        run: |
-          set -euo pipefail
-          echo "Injecting Firebase config into dist/index.html..."
-
-          # Use sed to replace placeholders in the built index.html
-          sed -i "s|%VITE_FIREBASE_API_KEY%|${{ steps.fetch-secrets.outputs.VITE_FIREBASE_API_KEY }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_AUTH_DOMAIN%|${{ steps.fetch-secrets.outputs.VITE_FIREBASE_AUTH_DOMAIN }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_PROJECT_ID%|${{ steps.fetch-secrets.outputs.VITE_FIREBASE_PROJECT_ID }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_STORAGE_BUCKET%|${{ steps.fetch-secrets.outputs.VITE_FIREBASE_STORAGE_BUCKET }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_MESSAGING_SENDER_ID%|${{ steps.fetch-secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_APP_ID%|${{ steps.fetch-secrets.outputs.VITE_FIREBASE_APP_ID }}|g" app-service-project/dist/index.html
-
-          echo "✓ Firebase config injection completed"
-
-          # Verify injection succeeded (check that placeholders are gone)
-          if grep -q '%VITE_FIREBASE_' app-service-project/dist/index.html; then
-            echo "ERROR: Found remaining placeholders in index.html" >&2
-            grep '%VITE_FIREBASE_' app-service-project/dist/index.html >&2
-            exit 1
-          fi
-
-          echo "✓ Verified all placeholders replaced"
 
       - name: Verify Build Artifact
         run: |
