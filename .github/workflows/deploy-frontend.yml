@@ -103,12 +103,37 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ steps.fetch-secrets.outputs.VITE_FIREBASE_APP_ID }}
         run: |
-          # Verify critical Firebase config is set (without logging secrets)
-          if [ -z "$VITE_FIREBASE_API_KEY" ] || [ -z "$VITE_FIREBASE_PROJECT_ID" ]; then
-            echo "ERROR: Required Firebase configuration is missing" >&2
+          # Verify all 6 required Firebase secrets are set (without logging secret values)
+          MISSING_SECRETS=()
+
+          if [ -z "$VITE_FIREBASE_API_KEY" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_API_KEY")
+          fi
+          if [ -z "$VITE_FIREBASE_AUTH_DOMAIN" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_AUTH_DOMAIN")
+          fi
+          if [ -z "$VITE_FIREBASE_PROJECT_ID" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_PROJECT_ID")
+          fi
+          if [ -z "$VITE_FIREBASE_STORAGE_BUCKET" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_STORAGE_BUCKET")
+          fi
+          if [ -z "$VITE_FIREBASE_MESSAGING_SENDER_ID" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_MESSAGING_SENDER_ID")
+          fi
+          if [ -z "$VITE_FIREBASE_APP_ID" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_APP_ID")
+          fi
+
+          if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
+            echo "ERROR: The following required Firebase secrets are missing:" >&2
+            for secret in "${MISSING_SECRETS[@]}"; do
+              echo "  - $secret" >&2
+            done
             exit 1
           fi
-          echo "✓ Firebase configuration verified"
+
+          echo "✓ All 6 Firebase secrets verified successfully"
 
           # Run Vite build with environment variables available
           npm run build --prefix app-service-project
