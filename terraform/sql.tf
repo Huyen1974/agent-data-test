@@ -39,7 +39,7 @@ resource "google_sql_database_instance" "managed" {
   settings {
     tier              = var.sql_tier
     availability_type = "ZONAL"
-    activation_policy = "ALWAYS"
+    activation_policy = "NEVER"
 
     backup_configuration {
       enabled                        = true
