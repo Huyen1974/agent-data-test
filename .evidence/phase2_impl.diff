@@ -1,0 +1,9 @@
+.agents/claude/runbook.md
+.agents/codex/runbook.md
+.agents/gemini/runbook.md
+.gitignore
+Makefile
+=== IMPLEMENTATION SUMMARY ===
+Created scripts/sync-constitution.sh with 16 improvements
+Added constitution markers to all 3 agent runbooks
+Made scripts executable

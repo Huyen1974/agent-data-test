@@ -1,0 +1,15 @@
+=== PHASE 5 HAND-OFF TO CODEX ===
+SHA: cac23ed1988b141e4b8d277668ec61cd143e7db6
+Branch: feature/constitution-sync-implementation
+PR: https://github.com/Huyen1974/agent-data-test/pull/177
+
+VALIDATION CHECKLIST FOR CODEX:
+✅ make sync-constitution-check returns exit code 0
+✅ Markers exist: grep 'BEGIN:CONSTITUTION' .agents/*/runbook.md
+✅ Metadata present: grep 'commit=[a-f0-9]' .agents/*/runbook.md
+✅ Content injected: grep 'Điều VII' .agents/*/runbook.md
+✅ CI workflow present: test -f .github/workflows/constitution-sync.yml
+
+EMERGENCY RECOVERY:
+Backups: ls .constitution-backups/
+Rollback: git reset --hard HEAD~1 && git push --force
