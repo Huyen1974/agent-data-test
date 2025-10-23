@@ -46,7 +46,7 @@ def _bool_output(value: bool) -> str:
 
 
 def main() -> int:
-    suite_path = Path("webapp.test-suite.yaml")
+    suite_path = Path("agent-data.test-suite.yaml")
     try:
         suite = load_test_suite(suite_path)
     except TestSuiteError as exc:
