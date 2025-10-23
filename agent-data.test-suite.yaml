@@ -1,0 +1,11 @@
+policy: agent-data
+non_blocking_pass_threshold: 0.8
+checks:
+  - group: lint
+    items:
+      - id: lint-python
+        description: Run Python linting suite
+        tool: lint
+        blocking: true
+        owner: agent-data
+        evidence: tests/lint

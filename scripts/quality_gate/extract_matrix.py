@@ -9,7 +9,7 @@ from .config_loader import TestSuiteError, load_test_suite
 
 
 def main() -> int:
-    suite_path = Path("webapp.test-suite.yaml")
+    suite_path = Path("agent-data.test-suite.yaml")
     try:
         suite = load_test_suite(suite_path)
     except TestSuiteError as exc:
