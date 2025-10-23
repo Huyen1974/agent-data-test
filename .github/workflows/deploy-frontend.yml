@@ -17,14 +17,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud (WIF)
-        id: auth
-        uses: google-github-actions/auth@v2
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
         with:
-          workload_identity_provider: projects/812872501910/locations/global/workloadIdentityPools/agent-data-pool/providers/github-provider
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-          export_environment_variables: true
+          version: latest
+
+      - name: Configure service account credentials
+        id: auth
+        run: |
+          set -euo pipefail
+          SA_PATH="${RUNNER_TEMP}/sa.json"
+          cat <<'EOF' > "$SA_PATH"
+${{ secrets.GCP_SA_KEY_JSON }}
+EOF
+          gcloud auth activate-service-account --key-file="$SA_PATH"
+          gcloud config set project github-chatgpt-ggcloud
+          echo "credentials_path=$SA_PATH" >> "$GITHUB_OUTPUT"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$SA_PATH" >> $GITHUB_ENV
 
       - name: Export Firebase credentials JSON
         id: firebase-creds
