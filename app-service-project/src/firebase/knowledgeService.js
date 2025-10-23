@@ -12,7 +12,7 @@
 import { ref } from 'vue';
 import { getFirestore, collection, getDocs, query } from 'firebase/firestore';
 
-import { firebaseApp } from './config.js';
+import { firebaseApp, auth } from './config.js';
 import { useAuth } from './authService.js';
 import { useEnvironmentSelector } from './environmentSelector.js';
 
@@ -55,6 +55,55 @@ const MOCK_DOCUMENTS = [
     order: 1,
   },
 ];
+
+/**
+ * Ensures the Firebase Auth token is available before making Firestore requests.
+ * This prevents the race condition where onAuthStateChanged fires but the token
+ * isn't yet attached to subsequent requests.
+ *
+ * CRITICAL: Uses the same auth instance from config.js that authService uses.
+ * This ensures we're checking the token on the correct auth instance where
+ * the user actually logged in.
+ *
+ * @param {number} maxRetries - Maximum number of retry attempts (default: 3)
+ * @param {number} retryDelayMs - Delay between retries in milliseconds (default: 500ms)
+ * @returns {Promise<boolean>} true if token is available, false otherwise
+ */
+async function ensureAuthTokenReady(maxRetries = 3, retryDelayMs = 500) {
+  // CRITICAL FIX: Use the same auth instance from config.js, not getAuth(firebaseApp)
+  // which would create a different instance without the authenticated user!
+  const currentUser = auth.currentUser;
+
+  if (!currentUser) {
+    console.warn('[KnowledgeService] No current user found when checking token');
+    return false;
+  }
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[KnowledgeService] Verifying auth token (attempt ${attempt}/${maxRetries})...`);
+
+      // Force Firebase to ensure the token is available
+      // This will throw if the token isn't ready yet
+      const token = await currentUser.getIdToken(false); // false = don't force refresh
+
+      if (token) {
+        console.log('[KnowledgeService] Auth token verified and ready');
+        return true;
+      }
+    } catch (error) {
+      console.warn(`[KnowledgeService] Token verification attempt ${attempt} failed:`, error);
+
+      if (attempt < maxRetries) {
+        console.log(`[KnowledgeService] Waiting ${retryDelayMs}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      }
+    }
+  }
+
+  console.error('[KnowledgeService] Failed to verify auth token after all retries');
+  return false;
+}
 
 /**
  * Transforms a flat list of documents (with parentId) into a hierarchical tree structure.
@@ -119,9 +168,13 @@ async function fetchKnowledgeDocuments(collectionNames) {
   // Fetch from each collection sequentially
   for (const collectionName of collectionNames) {
     try {
+      console.log(`[KnowledgeService] Fetching from collection: ${collectionName}`);
       const collectionRef = collection(db, collectionName);
       const q = query(collectionRef);
       const querySnapshot = await getDocs(q);
+
+      const docCount = querySnapshot.size;
+      console.log(`[KnowledgeService] Found ${docCount} documents in ${collectionName}`);
 
       querySnapshot.forEach((doc) => {
         allDocs.push({
@@ -131,11 +184,29 @@ async function fetchKnowledgeDocuments(collectionNames) {
         });
       });
     } catch (err) {
-      console.error(`Error fetching from ${collectionName}:`, err);
-      throw new Error(`Không thể tải dữ liệu từ ${collectionName}.`);
+      console.error(`[KnowledgeService] Error fetching from ${collectionName}:`, err);
+      console.error(`[KnowledgeService] Error code: ${err.code}, message: ${err.message}`);
+
+      // Provide more specific error messages based on error code
+      let userMessage = `Không thể tải dữ liệu từ ${collectionName}.`;
+
+      if (err.code === 'permission-denied') {
+        userMessage = `Không có quyền truy cập collection "${collectionName}". Vui lòng kiểm tra quyền đăng nhập.`;
+        console.error('[KnowledgeService] Permission denied. User may not be authenticated or lacks required permissions.');
+      } else if (err.code === 'unavailable') {
+        userMessage = 'Không thể kết nối đến cơ sở dữ liệu. Vui lòng kiểm tra kết nối mạng.';
+      } else if (err.code === 'not-found') {
+        userMessage = `Collection "${collectionName}" không tồn tại. Có thể chưa có dữ liệu.`;
+        // For not-found, we should not throw - just log and continue
+        console.warn(`[KnowledgeService] Collection ${collectionName} does not exist yet. Continuing...`);
+        continue;
+      }
+
+      throw new Error(userMessage);
     }
   }
 
+  console.log(`[KnowledgeService] Total documents fetched: ${allDocs.length}`);
   return allDocs;
 }
 
@@ -186,6 +257,7 @@ export function useKnowledgeTree() {
     // Wait for auth to be ready
     if (!isReady.value) {
       error.value = 'Đang khởi tạo xác thực...';
+      console.log('[KnowledgeService] Waiting for auth to be ready...');
       return;
     }
 
@@ -194,8 +266,28 @@ export function useKnowledgeTree() {
       tree.value = [];
       loading.value = false;
       error.value = 'Vui lòng đăng nhập để xem sơ đồ tri thức.';
+      console.warn('[KnowledgeService] User not authenticated');
       return;
     }
+
+    // CRITICAL: Ensure auth token is actually ready before making Firestore requests
+    // This prevents the race condition where onAuthStateChanged fires but the token
+    // isn't yet attached to subsequent Firestore requests (causing request.auth = null)
+    console.log('[KnowledgeService] Verifying auth token before loading data...');
+    const tokenReady = await ensureAuthTokenReady();
+
+    if (!tokenReady) {
+      tree.value = [];
+      loading.value = false;
+      error.value = 'Không thể xác minh xác thực. Vui lòng đăng nhập lại.';
+      console.error('[KnowledgeService] Auth token verification failed - cannot proceed with data load');
+      return;
+    }
+
+    console.log('[KnowledgeService] Starting data load...', {
+      user: authUser.value.email || authUser.value.uid,
+      collections: collectionNames.value
+    });
 
     loading.value = true;
     error.value = null;
@@ -203,10 +295,22 @@ export function useKnowledgeTree() {
     try {
       // STD: Simple request-response, no listeners
       const documents = await fetchKnowledgeDocuments(collectionNames.value);
-      tree.value = buildTree(documents);
+
+      if (documents.length === 0) {
+        console.warn('[KnowledgeService] No documents found in any collection');
+        error.value = 'Chưa có dữ liệu tri thức. Vui lòng thêm tài liệu hoặc liên hệ quản trị viên.';
+        tree.value = [];
+      } else {
+        tree.value = buildTree(documents);
+        console.log('[KnowledgeService] Data loaded successfully', {
+          totalDocuments: documents.length,
+          treeNodes: tree.value.length
+        });
+      }
+
       loading.value = false;
     } catch (err) {
-      console.error('Error loading knowledge tree:', err);
+      console.error('[KnowledgeService] Error loading knowledge tree:', err);
       error.value = err.message || 'Không thể tải dữ liệu tri thức.';
       loading.value = false;
       tree.value = [];

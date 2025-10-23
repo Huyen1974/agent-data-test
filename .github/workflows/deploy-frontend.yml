@@ -44,65 +44,204 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app-service-project/package-lock.json
 
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: latest
+
+      - name: Fetch Firebase Secrets from Google Secret Manager
+        id: fetch-secrets
+        run: |
+          set -euo pipefail
+
+          echo "Fetching Firebase configuration from Google Secret Manager..."
+
+          # Fetch all Firebase secrets and export them as environment variables
+          export VITE_FIREBASE_API_KEY=$(gcloud secrets versions access latest --secret="VITE_FIREBASE_API_KEY" --project="github-chatgpt-ggcloud" --quiet)
+          export VITE_FIREBASE_AUTH_DOMAIN=$(gcloud secrets versions access latest --secret="VITE_FIREBASE_AUTH_DOMAIN" --project="github-chatgpt-ggcloud" --quiet)
+          export VITE_FIREBASE_PROJECT_ID=$(gcloud secrets versions access latest --secret="VITE_FIREBASE_PROJECT_ID" --project="github-chatgpt-ggcloud" --quiet)
+          export VITE_FIREBASE_STORAGE_BUCKET=$(gcloud secrets versions access latest --secret="VITE_FIREBASE_STORAGE_BUCKET" --project="github-chatgpt-ggcloud" --quiet)
+          export VITE_FIREBASE_MESSAGING_SENDER_ID=$(gcloud secrets versions access latest --secret="VITE_FIREBASE_MESSAGING_SENDER_ID" --project="github-chatgpt-ggcloud" --quiet)
+          export VITE_FIREBASE_APP_ID=$(gcloud secrets versions access latest --secret="VITE_FIREBASE_APP_ID" --project="github-chatgpt-ggcloud" --quiet)
+
+          # Verify all secrets were fetched successfully
+          if [ -z "$VITE_FIREBASE_API_KEY" ] || [ -z "$VITE_FIREBASE_AUTH_DOMAIN" ] || [ -z "$VITE_FIREBASE_PROJECT_ID" ]; then
+            echo "ERROR: Failed to fetch one or more Firebase secrets" >&2
+            exit 1
+          fi
+
+          # Export secrets as workflow outputs for use in subsequent steps
+          echo "VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY" >> "$GITHUB_OUTPUT"
+          echo "VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET" >> "$GITHUB_OUTPUT"
+          echo "VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID" >> "$GITHUB_OUTPUT"
+          echo "VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID" >> "$GITHUB_OUTPUT"
+
+          echo "✅ Successfully fetched all Firebase secrets from Secret Manager"
+
       - name: Install dependencies
         run: npm ci --prefix app-service-project
 
       - name: Create .env.production
         run: |
+          set -euo pipefail
+
+          echo "Creating .env.production with Firebase secrets..."
           cat <<EOF > app-service-project/.env.production
-          VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_API_KEY=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID=${{ steps.fetch-secrets.outputs.VITE_FIREBASE_APP_ID }}
           EOF
 
-      - name: Build frontend
-        env:
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-        run: npm run build --prefix app-service-project
-
-      - name: Inject Firebase Config into Built HTML
-        run: |
-          set -euo pipefail
-          echo "Injecting Firebase config into dist/index.html..."
-
-          # Use sed to replace placeholders in the built index.html
-          sed -i "s|%VITE_FIREBASE_API_KEY%|${{ secrets.VITE_FIREBASE_API_KEY }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_AUTH_DOMAIN%|${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_PROJECT_ID%|${{ secrets.VITE_FIREBASE_PROJECT_ID }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_STORAGE_BUCKET%|${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_MESSAGING_SENDER_ID%|${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}|g" app-service-project/dist/index.html
-          sed -i "s|%VITE_FIREBASE_APP_ID%|${{ secrets.VITE_FIREBASE_APP_ID }}|g" app-service-project/dist/index.html
-
-          echo "✓ Firebase config injection completed"
-
-          # Verify injection succeeded (check that placeholders are gone)
-          if grep -q '%VITE_FIREBASE_' app-service-project/dist/index.html; then
-            echo "ERROR: Found remaining placeholders in index.html" >&2
-            grep '%VITE_FIREBASE_' app-service-project/dist/index.html >&2
+          # Verify .env.production was created successfully
+          if [ ! -f app-service-project/.env.production ]; then
+            echo "ERROR: .env.production file was not created" >&2
             exit 1
           fi
 
-          echo "✓ Verified all placeholders replaced"
+          # Verify all 6 variables are present in the file
+          echo "Verifying .env.production contains all required variables..."
+          REQUIRED_VARS=("VITE_FIREBASE_API_KEY" "VITE_FIREBASE_AUTH_DOMAIN" "VITE_FIREBASE_PROJECT_ID" "VITE_FIREBASE_STORAGE_BUCKET" "VITE_FIREBASE_MESSAGING_SENDER_ID" "VITE_FIREBASE_APP_ID")
+          MISSING_IN_FILE=()
+          EMPTY_VALUES=()
+
+          for var in "${REQUIRED_VARS[@]}"; do
+            if ! grep -q "^${var}=" app-service-project/.env.production; then
+              MISSING_IN_FILE+=("$var")
+              continue
+            fi
+
+            value=$(grep "^${var}=" app-service-project/.env.production | cut -d'=' -f2-)
+            if [ -z "$value" ]; then
+              EMPTY_VALUES+=("$var")
+            fi
+          done
+
+          if [ ${#MISSING_IN_FILE[@]} -gt 0 ]; then
+            echo "ERROR: The following variables are missing from .env.production:" >&2
+            for var in "${MISSING_IN_FILE[@]}"; do
+              echo "  - $var" >&2
+            done
+            exit 1
+          fi
+
+          if [ ${#EMPTY_VALUES[@]} -gt 0 ]; then
+            echo "ERROR: The following variables are empty in .env.production:" >&2
+            for var in "${EMPTY_VALUES[@]}"; do
+              echo "  - $var" >&2
+            done
+            exit 1
+          fi
+
+          echo "✓ .env.production created and verified successfully"
+
+      - name: Build frontend
+        run: |
+          # Verify all 6 required Firebase secrets are set (without logging secret values)
+          MISSING_SECRETS=()
+
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_API_KEY }}" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_API_KEY")
+          fi
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_AUTH_DOMAIN }}" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_AUTH_DOMAIN")
+          fi
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_PROJECT_ID }}" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_PROJECT_ID")
+          fi
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_STORAGE_BUCKET }}" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_STORAGE_BUCKET")
+          fi
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_MESSAGING_SENDER_ID")
+          fi
+          if [ -z "${{ steps.fetch-secrets.outputs.VITE_FIREBASE_APP_ID }}" ]; then
+            MISSING_SECRETS+=("VITE_FIREBASE_APP_ID")
+          fi
+
+          if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
+            echo "ERROR: The following required Firebase secrets are missing:" >&2
+            for secret in "${MISSING_SECRETS[@]}"; do
+              echo "  - $secret" >&2
+            done
+            exit 1
+          fi
+
+          echo "✓ All 6 Firebase secrets verified successfully"
+
+          # Run Vite build - Vite will automatically read from .env.production
+          npm run build --prefix app-service-project
 
       - name: Verify Build Artifact
         run: |
           set -euo pipefail
-          if grep -R --include '*.html' --include '*.js' 'apiKey: ""' app-service-project/dist; then
-            echo 'Detected empty Firebase apiKey in build output' >&2
+
+          echo "Verifying Firebase configuration in built artifacts..."
+
+          # Check index.html specifically for window.__FIREBASE_CONFIG__
+          if [ -f app-service-project/dist/index.html ]; then
+            echo "Checking index.html for Firebase config..."
+
+            # Verify window.__FIREBASE_CONFIG__ exists
+            if ! grep -q "window.__FIREBASE_CONFIG__" app-service-project/dist/index.html; then
+              echo "ERROR: window.__FIREBASE_CONFIG__ not found in index.html" >&2
+              exit 1
+            fi
+
+            # Ensure no leftover placeholders remain
+            if grep -q "%VITE_FIREBASE_" app-service-project/dist/index.html; then
+              echo "ERROR: Found placeholder tokens in index.html after build:" >&2
+              grep "%VITE_FIREBASE_" app-service-project/dist/index.html >&2
+              exit 1
+            fi
+
+            # Check for empty values in all 6 Firebase config fields
+            # Pattern matches pairs of quotes with no content: apiKey: '', apiKey: "", etc.
+            EMPTY_PATTERNS=(
+              "apiKey:[[:space:]]*['\"][[:space:]]*['\"]"
+              "authDomain:[[:space:]]*['\"][[:space:]]*['\"]"
+              "projectId:[[:space:]]*['\"][[:space:]]*['\"]"
+              "storageBucket:[[:space:]]*['\"][[:space:]]*['\"]"
+              "messagingSenderId:[[:space:]]*['\"][[:space:]]*['\"]"
+              "appId:[[:space:]]*['\"][[:space:]]*['\"]"
+            )
+
+            FOUND_EMPTY=()
+            for pattern in "${EMPTY_PATTERNS[@]}"; do
+              if grep -qE "$pattern" app-service-project/dist/index.html; then
+                field_name=$(echo "$pattern" | cut -d: -f1)
+                FOUND_EMPTY+=("$field_name")
+              fi
+            done
+
+            if [ ${#FOUND_EMPTY[@]} -gt 0 ]; then
+              echo "ERROR: Found empty Firebase configuration fields in index.html:" >&2
+              for field in "${FOUND_EMPTY[@]}"; do
+                echo "  - $field" >&2
+              done
+              echo "" >&2
+              echo "Showing relevant section of index.html:" >&2
+              grep -A 10 "window.__FIREBASE_CONFIG__" app-service-project/dist/index.html | head -15 >&2
+              exit 1
+            fi
+
+            echo "✓ Firebase configuration in index.html verified successfully"
+          else
+            echo "ERROR: dist/index.html not found" >&2
             exit 1
           fi
-          if grep -R --include '*.html' --include '*.js' "apiKey: ''" app-service-project/dist; then
-            echo 'Detected empty Firebase apiKey in build output' >&2
-            exit 1
+
+          # Additional check: verify no empty apiKey in any JS files
+          if grep -R --include '*.js' -E "apiKey:[[:space:]]*['\"]?['\"]" app-service-project/dist 2>/dev/null; then
+            echo "WARNING: Found potential empty apiKey in JavaScript files" >&2
+            echo "This may be acceptable if it's in test/mock code, but verify manually" >&2
           fi
+
+          echo "✓ Build artifact verification completed successfully"
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0

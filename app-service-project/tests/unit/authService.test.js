@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAuth } from '@/firebase/authService';
-import { signInWithPopup, signOut as firebaseSignOut, onAuthStateChanged } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut as firebaseSignOut, onAuthStateChanged } from 'firebase/auth';
 
 // Mock Firebase Auth
 vi.mock('firebase/auth', () => ({
   getAuth: vi.fn(() => ({ useDeviceLanguage: vi.fn(), currentUser: null })),
   GoogleAuthProvider: vi.fn(),
   signInWithPopup: vi.fn(),
+  signInWithRedirect: vi.fn(),
+  getRedirectResult: vi.fn(),
   signOut: vi.fn(),
   onAuthStateChanged: vi.fn(),
 }));
@@ -43,6 +45,9 @@ describe('authService', () => {
       onAuthStateChangedErrorCallback = errorCallback;
       return unsubscribeMock;
     });
+
+    // Setup default getRedirectResult mock (return null = no redirect in progress)
+    getRedirectResult.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -58,6 +63,10 @@ describe('authService', () => {
       // Start checkAuthState
       const promise = checkAuthState();
 
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       // Simulate Firebase emitting the auth state
       onAuthStateChangedCallback(mockUser);
 
@@ -72,10 +81,54 @@ describe('authService', () => {
       const { checkAuthState, user, isReady } = useAuth();
 
       const promise = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       onAuthStateChangedCallback(null);
       await promise;
 
       expect(user.value).toBeNull();
+      expect(isReady.value).toBe(true);
+    });
+
+    it('should populate user from redirect result when available', async () => {
+      const { checkAuthState, user, authError } = useAuth();
+      const redirectUser = { uid: 'redirect', displayName: 'Redirect User' };
+
+      authError.value = 'Previous error';
+      getRedirectResult.mockResolvedValue({ user: redirectUser });
+
+      const promise = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
+      onAuthStateChangedCallback(redirectUser);
+      await promise;
+
+      expect(user.value).toEqual(redirectUser);
+      expect(authError.value).toBeNull();
+    });
+
+    it('should surface redirect result errors to the user', async () => {
+      const { checkAuthState, authError, isReady } = useAuth();
+      const redirectError = new Error('Redirect failed');
+      redirectError.code = 'auth/redirect-failed';
+      getRedirectResult.mockRejectedValue(redirectError);
+
+      const promise = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
+      onAuthStateChangedCallback(null);
+      await promise;
+
+      expect(authError.value).toBe('Lỗi xử lý kết quả đăng nhập. Vui lòng thử lại.');
       expect(isReady.value).toBe(true);
     });
 
@@ -101,6 +154,11 @@ describe('authService', () => {
       const mockError = new Error('Firebase initialization failed');
 
       const promise = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       onAuthStateChangedErrorCallback(mockError);
       await promise;
 
@@ -126,6 +184,11 @@ describe('authService', () => {
       });
 
       const promise = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       firstCallback(mockUser1);
       await promise;
 
@@ -147,12 +210,22 @@ describe('authService', () => {
 
       // Call checkAuthState twice
       const promise1 = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       onAuthStateChangedCallback(null);
       await promise1;
 
       onAuthStateChanged.mockClear();
 
       const promise2 = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       onAuthStateChangedCallback(null);
       await promise2;
 
@@ -204,17 +277,20 @@ describe('authService', () => {
       await promise;
 
       expect(user.value).toEqual(mockUser);
+      // After successful sign-in, isSigningIn MUST be reset to false
       expect(isSigningIn.value).toBe(false);
     });
 
     it('should set error on failed sign-in', async () => {
       const { signInWithGoogle, authError, isSigningIn } = useAuth();
       const mockError = new Error('Sign-in failed');
+      mockError.code = 'auth/unknown-error'; // Set an error code that will trigger generic handling
       signInWithPopup.mockRejectedValue(mockError);
 
       await signInWithGoogle();
 
-      expect(authError.value).toBe(mockError.message);
+      // The error message now has a "Lỗi đăng nhập: " prefix for generic errors
+      expect(authError.value).toBe(`Lỗi đăng nhập: ${mockError.message}`);
       expect(isSigningIn.value).toBe(false);
     });
 
@@ -228,6 +304,59 @@ describe('authService', () => {
       await signInWithGoogle();
 
       expect(authError.value).toBeNull();
+    });
+
+    it('should fall back to redirect when popup is blocked', async () => {
+      const { signInWithGoogle, authError, isSigningIn } = useAuth();
+      const popupError = new Error('Popup blocked');
+      popupError.code = 'auth/popup-blocked';
+      signInWithPopup.mockRejectedValue(popupError);
+      signInWithRedirect.mockResolvedValue(undefined);
+
+      await signInWithGoogle();
+
+      expect(signInWithRedirect).toHaveBeenCalledTimes(1);
+      expect(authError.value).toBe('Cửa sổ đăng nhập bị chặn. Đang chuyển hướng...');
+      // State remains true until redirect completes (page reload in real scenario)
+      expect(isSigningIn.value).toBe(true);
+    });
+
+    it('should report redirect errors when fallback fails', async () => {
+      const { signInWithGoogle, authError, isSigningIn } = useAuth();
+      const popupError = new Error('Popup blocked');
+      popupError.code = 'auth/popup-blocked';
+      signInWithPopup.mockRejectedValue(popupError);
+      signInWithRedirect.mockRejectedValue(new Error('Redirect blocked'));
+
+      await signInWithGoogle();
+
+      expect(signInWithRedirect).toHaveBeenCalledTimes(1);
+      expect(authError.value).toBe('Không thể đăng nhập. Vui lòng kiểm tra cài đặt trình duyệt và thử lại.');
+      expect(isSigningIn.value).toBe(false);
+    });
+
+    it('should ignore user-closing the popup without showing error', async () => {
+      const { signInWithGoogle, authError, isSigningIn } = useAuth();
+      const popupClosedError = new Error('Popup closed by user');
+      popupClosedError.code = 'auth/popup-closed-by-user';
+      signInWithPopup.mockRejectedValue(popupClosedError);
+
+      await signInWithGoogle();
+
+      expect(authError.value).toBeNull();
+      expect(isSigningIn.value).toBe(false);
+    });
+
+    it('should ignore cancelled popup requests', async () => {
+      const { signInWithGoogle, authError, isSigningIn } = useAuth();
+      const cancelledError = new Error('Popup request cancelled');
+      cancelledError.code = 'auth/cancelled-popup-request';
+      signInWithPopup.mockRejectedValue(cancelledError);
+
+      await signInWithGoogle();
+
+      expect(authError.value).toBeNull();
+      expect(isSigningIn.value).toBe(false);
     });
   });
 
@@ -281,6 +410,11 @@ describe('authService', () => {
 
       // Initialize auth state to create persistent listener
       const promise = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       onAuthStateChangedCallback(null);
       await promise;
 
@@ -301,6 +435,11 @@ describe('authService', () => {
       const { checkAuthState, cleanup } = useAuth();
 
       const promise = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       onAuthStateChangedCallback(null);
       await promise;
 
@@ -316,6 +455,11 @@ describe('authService', () => {
 
       // First initialization
       const promise1 = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       onAuthStateChangedCallback(null);
       await promise1;
 
@@ -326,6 +470,11 @@ describe('authService', () => {
       unsubscribeMock.mockClear();
 
       const promise2 = checkAuthState();
+
+      // Wait for getRedirectResult to complete and onAuthStateChanged to be called
+      await Promise.resolve();
+      await Promise.resolve();
+
       onAuthStateChangedCallback(null);
       await promise2;
 
