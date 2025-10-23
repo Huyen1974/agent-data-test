@@ -167,22 +167,10 @@ jobs:
           echo "✅ Quality gate passed"
 
       - name: Record current test count
-        env:
-          BLOCKING: ${{ needs.orchestrator.outputs.blocking-tests }}
-          NON_BLOCKING: ${{ needs.orchestrator.outputs.non-blocking-tests }}
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          blocking = json.loads(os.environ.get("BLOCKING", "[]") or "[]")
-          non_blocking = json.loads(os.environ.get("NON_BLOCKING", "[]") or "[]")
-          total = len(blocking) + len(non_blocking)
-
-          Path("current-test-count.txt").write_text(f"{total}\n", encoding="utf-8")
-          print(f"::notice::Recorded current test count: {total}")
-          PY
+          python3 scripts/collect_manifest.py > current-test-count.txt
+          total=$(cat current-test-count.txt)
+          echo "::notice::Recorded current test count: ${total}"
 
       - name: Enforce test count guardrail
         run: |
