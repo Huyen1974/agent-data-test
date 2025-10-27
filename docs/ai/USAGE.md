@@ -9,7 +9,7 @@ GOOGLE_GENAI_USE_GCA=true gemini -e none --extensions none -m gemini-2.5-pro
 
 ### Using Script
 ```bash
-./tools/ai/gemini-start.sh
+.agents/gemini/start.sh
 ```
 
 ## Smoke Tests
@@ -21,7 +21,7 @@ GOOGLE_GENAI_USE_GCA=true gemini -e none --extensions none -m gemini-2.5-pro -p 
 Expected output: `OK`
 
 ### Interactive Test
-1. Start Gemini: `./tools/ai/gemini-start.sh`
+1. Start Gemini: `.agents/gemini/start.sh`
 2. Send message: `Reply with just: OK`
 3. Expected response: `OK`
 
