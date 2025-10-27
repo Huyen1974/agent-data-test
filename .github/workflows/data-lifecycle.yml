@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           # Fetch secrets from Google Secret Manager
           MGMT_KEY=$(gcloud secrets versions access latest --secret=Qdrant_cloud_management_key --project=github-chatgpt-ggcloud)
-          QDRANT_KEY=$(gcloud secrets versions access latest --secret=Qdrant_agent_data_N1D8R2vC0_5 --project=github-chatgpt-ggcloud)
+          QDRANT_KEY=$(gcloud secrets versions access latest --secret=Qdrant_github-chatgpt-ggcloud_N1D8R2vC0 --project=github-chatgpt-ggcloud)
           # Discover first cluster id from account (static account id agreed in project)
           ACC="b7093834-20e9-4206-8ea0-025b6994b319"
           BASE="https://api.cloud.qdrant.io/api/cluster/v1"
