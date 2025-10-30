@@ -41,5 +41,5 @@ output "qdrant_endpoint" {
 
 output "qdrant_secret_name" {
   description = "Qdrant API key secret name"
-  value       = google_secret_manager_secret.qdrant_api.secret_id
+  value       = data.google_secret_manager_secret.qdrant_api.secret_id
 }
