@@ -1,0 +1,95 @@
+name: Terraform Apply on Main
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-apply.yml'
+  workflow_dispatch:
+
+# Prevent concurrent Terraform operations to avoid state conflicts
+concurrency:
+  group: terraform-apply-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=huyen1974-agent-data-tfstate-test" \
+            -backend-config="prefix=terraform/state"
+
+      - name: Terraform Validate
+        working-directory: terraform
+        run: |
+          terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: terraform
+        run: |
+          terraform plan -no-color -detailed-exitcode \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="region=${{ secrets.GCP_REGION }}" \
+            -var="qdrant_cluster_id=${{ secrets.QDRANT_CLUSTER1_ID }}" \
+            -var="qdrant_api_key=${{ secrets.QDRANT_CLUSTER1_KEY }}" \
+            -out=tfplan || exit_code=$?
+
+          # Exit code 0 = no changes, 1 = error, 2 = changes detected
+          if [ "${exit_code:-0}" = "1" ]; then
+            echo "Terraform plan failed"
+            exit 1
+          elif [ "${exit_code:-0}" = "2" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "✓ Changes detected in plan - will apply"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "✓ No changes detected - nothing to apply"
+          fi
+
+      - name: Terraform Apply
+        if: steps.plan.outputs.has_changes == 'true'
+        working-directory: terraform
+        run: |
+          echo "Applying Terraform changes..."
+          terraform apply -auto-approve tfplan
+          echo "✓ Terraform apply completed successfully"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.plan.outputs.has_changes }}" = "true" ]; then
+            echo "✅ Terraform changes applied successfully"
+          else
+            echo "ℹ️  No Terraform changes to apply"
+          fi
