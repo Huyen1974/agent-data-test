@@ -1,4 +1,5 @@
 module "agent_data_service_test" {
+  count                  = 0 # disable Cloud Run provisioning in automated apply
   source                 = "./modules/cloud_run_service"
   project_id             = "github-chatgpt-ggcloud"
   location               = "asia-southeast1"
