@@ -58,23 +58,43 @@ jobs:
         id: plan
         working-directory: terraform
         run: |
-          terraform plan -no-color -detailed-exitcode \
+          # Run terraform plan and capture both exit code and output
+          set +e
+          plan_output=$(terraform plan -no-color -detailed-exitcode \
             -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
             -var="region=${{ secrets.GCP_REGION }}" \
             -var="qdrant_cluster_id=${{ secrets.QDRANT_CLUSTER1_ID }}" \
             -var="qdrant_api_key=${{ secrets.QDRANT_CLUSTER1_KEY }}" \
-            -out=tfplan || exit_code=$?
+            -out=tfplan 2>&1)
+          exit_code=$?
+          set -e
 
-          # Exit code 0 = no changes, 1 = error, 2 = changes detected
-          if [ "${exit_code:-0}" = "1" ]; then
-            echo "Terraform plan failed"
+          # Print the output for debugging
+          echo "$plan_output"
+
+          # Check for errors (exit code 1)
+          if [ "$exit_code" = "1" ]; then
+            echo "❌ Terraform plan failed"
             exit 1
-          elif [ "${exit_code:-0}" = "2" ]; then
+          fi
+
+          # Parse plan output to detect changes (more reliable than exit code)
+          # Look for "Plan: X to add, Y to change, Z to destroy"
+          if echo "$plan_output" | grep -q "Plan:.*to add\|to change\|to destroy"; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
             echo "✓ Changes detected in plan - will apply"
-          else
+          elif echo "$plan_output" | grep -q "No changes"; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "✓ No changes detected - nothing to apply"
+          else
+            # If we can't determine from output, use exit code as fallback
+            if [ "$exit_code" = "2" ]; then
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+              echo "✓ Changes detected in plan (via exit code) - will apply"
+            else
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              echo "✓ No changes detected (via exit code) - nothing to apply"
+            fi
           fi
 
       - name: Terraform Apply
