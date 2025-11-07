@@ -28,9 +28,9 @@ output "gcs_buckets" {
 output "artifact_registry_repository" {
   description = "Artifact Registry repository details"
   value = {
-    name     = google_artifact_registry_repository.agent_data_docker_repo.name
-    location = google_artifact_registry_repository.agent_data_docker_repo.location
-    id       = google_artifact_registry_repository.agent_data_docker_repo.repository_id
+    name     = data.google_artifact_registry_repository.agent_data_docker_repo.name
+    location = data.google_artifact_registry_repository.agent_data_docker_repo.location
+    id       = data.google_artifact_registry_repository.agent_data_docker_repo.repository_id
   }
 }
 
