@@ -38,7 +38,7 @@ jobs:
         uses: google-github-actions/get-secret-manager-secrets@v1
         with:
           secrets: |
-            qdrant_api_key:projects/${{ env.GCP_PROJECT_ID }}/secrets/QDRANT_API_KEY
+            qdrant_api_key:projects/${{ env.GCP_PROJECT_ID }}/secrets/Qdrant_agent_data_N1D8R2vC0_5
             qdrant_url:projects/${{ env.GCP_PROJECT_ID }}/secrets/QDRANT_URL
             openai_api_key:projects/${{ env.GCP_PROJECT_ID }}/secrets/OPENAI_API_KEY
 
