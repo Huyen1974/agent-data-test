@@ -448,7 +448,7 @@ pyyaml==6.0.2
     # via
     #   langroid
     #   uvicorn
-qdrant-client==1.15.0
+qdrant-client==1.15.1
     # via
     #   agent-data-langroid (pyproject.toml)
     #   langroid

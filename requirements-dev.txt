@@ -560,7 +560,7 @@ pyyaml==6.0.2
     #   uvicorn
 pyyaml-env-tag==1.1
     # via mkdocs
-qdrant-client==1.14.3
+qdrant-client==1.15.1
     # via
     #   agent-data-langroid (pyproject.toml)
     #   langroid
