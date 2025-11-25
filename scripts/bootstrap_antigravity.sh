@@ -26,6 +26,19 @@ if [ -f "$MARKER_FILE" ]; then
     exit 0
 fi
 
+# Step 0: Ensure Claude CLI is available (fix broken symlinks from extension updates)
+log "Step 0: Ensuring Claude CLI is available..."
+if [ -x "${SCRIPT_DIR}/ensure_claude_cli.sh" ]; then
+    "${SCRIPT_DIR}/ensure_claude_cli.sh"
+    if [ $? -eq 0 ]; then
+        log "✓ Claude CLI is ready"
+    else
+        log "⚠ Claude CLI setup had issues, but continuing with bootstrap"
+    fi
+else
+    log "⚠ ensure_claude_cli.sh not found, skipping Claude CLI check"
+fi
+
 # Step 1: Configure PAT from GCP Secret Manager
 log "Step 1: Configuring GitHub PAT from GCP Secret Manager..."
 if [ -x "${SCRIPT_DIR}/get_pat_from_gcp.sh" ]; then
@@ -50,26 +63,34 @@ BOOTSTRAP_FOUND=false
 # Check for tools/bootstrap_gh.sh
 if [ -x "${PROJECT_ROOT}/tools/bootstrap_gh.sh" ]; then
     log "Found existing bootstrap script: tools/bootstrap_gh.sh"
-    "${PROJECT_ROOT}/tools/bootstrap_gh.sh" verify
-    if [ $? -eq 0 ]; then
-        BOOTSTRAP_FOUND=true
-        log "✓ Existing bootstrap verification successful"
+    if command -v gh &> /dev/null; then
+        "${PROJECT_ROOT}/tools/bootstrap_gh.sh" verify
+        if [ $? -eq 0 ]; then
+            BOOTSTRAP_FOUND=true
+            log "✓ Existing bootstrap verification successful"
+        else
+            log "✗ Existing bootstrap verification failed"
+            exit 1
+        fi
     else
-        log "✗ Existing bootstrap verification failed"
-        exit 1
+        log "⚠ gh CLI not found. Skipping tools/bootstrap_gh.sh as requested (lightweight mode)."
     fi
 fi
 
 # Check for CLI.POSTBOOT script
 if [ -x "${PROJECT_ROOT}/CLI.POSTBOOT.250.sh" ]; then
     log "Found CLI.POSTBOOT script: CLI.POSTBOOT.250.sh"
-    "${PROJECT_ROOT}/CLI.POSTBOOT.250.sh"
-    if [ $? -eq 0 ]; then
-        BOOTSTRAP_FOUND=true
-        log "✓ CLI.POSTBOOT script executed successfully"
+    if command -v gh &> /dev/null; then
+        "${PROJECT_ROOT}/CLI.POSTBOOT.250.sh"
+        if [ $? -eq 0 ]; then
+            BOOTSTRAP_FOUND=true
+            log "✓ CLI.POSTBOOT script executed successfully"
+        else
+            log "✗ CLI.POSTBOOT script failed"
+            exit 1
+        fi
     else
-        log "✗ CLI.POSTBOOT script failed"
-        exit 1
+        log "⚠ gh CLI not found. Skipping CLI.POSTBOOT.250.sh as requested (lightweight mode)."
     fi
 fi
 

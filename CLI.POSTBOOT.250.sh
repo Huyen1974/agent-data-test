@@ -18,3 +18,6 @@ echo "=== DoD Snapshot ==="
 [ -f "$MARKER" ] && echo "marker: present @ $(cat "$MARKER")" || echo "marker: missing"
 echo "sop.pass: $PASS"
 gh auth status -h github.com >/dev/null 2>&1 && echo "gh: logged-in" || echo "gh: not-logged-in"
+
+# Ensure Claude CLI is available (fix broken symlinks from extension updates)
+[ -x scripts/ensure_claude_cli.sh ] && scripts/ensure_claude_cli.sh >/dev/null 2>&1
