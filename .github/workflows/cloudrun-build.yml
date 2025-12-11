@@ -18,7 +18,7 @@ permissions:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ secrets.GCP_REGION }}
-  AR_REPO: agent-data
+  AR_REPO: agent-data-test-images
   SERVICE: agent-data-test
 jobs:
   build:
