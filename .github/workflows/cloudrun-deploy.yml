@@ -25,7 +25,7 @@ permissions:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ secrets.GCP_REGION }}
-  AR_REPO: agent-data
+  AR_REPO: agent-data-test-images
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -87,7 +87,7 @@ jobs:
     env:
       PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       REGION: ${{ secrets.GCP_REGION }}
-      AR_REPO: agent-data
+      AR_REPO: agent-data-test-images
       SERVICE: ${{ inputs.service || 'agent-data-test' }}
     steps:
       - uses: actions/checkout@v4
