@@ -4,7 +4,7 @@ set -Eeuo pipefail
 PROJECT="${PROJECT:-github-chatgpt-ggcloud}"
 REGION="${REGION:-asia-southeast1}"
 SERVICE="${SERVICE:-agent-data-test}"
-REPO_ID="${REPO_ID:-agent-data-test}"
+REPO_ID="${REPO_ID:-agent-data-test-images}"
 IMAGE_NAME="${IMAGE_NAME:-agent-data-test}"
 
 REG_HOST="${REGION}-docker.pkg.dev"

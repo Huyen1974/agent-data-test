@@ -3,7 +3,7 @@
 data "google_artifact_registry_repository" "agent_data_docker_repo" {
   project       = var.project_id
   location      = var.region
-  repository_id = "agent-data-${var.env}"
+  repository_id = local.artifact_registry_repo
 }
 
 // Moved to module: modules/cloud_run_service
