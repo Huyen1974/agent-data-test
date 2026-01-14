@@ -116,6 +116,77 @@ resource "google_storage_bucket" "huyen1974_agent_data_qdrant_snapshots_test" {
   }
 }
 
+# =============================================================================
+# A6-T: BACKUP BUCKET (EXISTING - needs import after merge)
+# =============================================================================
+resource "google_storage_bucket" "huyen1974_agent_data_backup_test" {
+  project       = var.project_id
+  name          = "huyen1974-agent-data-backup-${var.env}"
+  location      = "asia-southeast1"
+  storage_class = "STANDARD"
+  force_destroy = false
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "inherited"
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      age = 90
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  labels = {
+    environment = var.env
+    project     = "agent-data-langroid"
+    managed_by  = "terraform"
+    bucket_type = "backup"
+    bucket_id   = "A6-T"
+  }
+}
+
+# =============================================================================
+# A7-T: USER CONTENT UPLOADS (NEW - will be created by Terraform)
+# =============================================================================
+resource "google_storage_bucket" "huyen1974_agent_data_uploads_test" {
+  project       = var.project_id
+  name          = "huyen1974-agent-data-uploads-${var.env}"
+  location      = "asia-southeast1"
+  storage_class = "STANDARD"
+  force_destroy = false
+
+  uniform_bucket_level_access = true
+  public_access_prevention    = "inherited"
+
+  versioning {
+    enabled = true
+  }
+
+  # No lifecycle rule - permanent storage for user content
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  labels = {
+    environment = var.env
+    project     = "agent-data-langroid"
+    managed_by  = "terraform"
+    bucket_type = "uploads"
+    bucket_id   = "A7-T"
+  }
+}
+
 resource "google_storage_bucket" "huyen1974_agent_data_source_test" {
   project       = var.project_id
   name          = "huyen1974-agent-data-source-${var.env}"
