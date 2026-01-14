@@ -151,7 +151,7 @@ resource "google_storage_bucket" "huyen1974_agent_data_backup_test" {
     project     = "agent-data-langroid"
     managed_by  = "terraform"
     bucket_type = "backup"
-    bucket_id   = "A6-T"
+    bucket_id   = "a6-t"
   }
 }
 
@@ -183,7 +183,7 @@ resource "google_storage_bucket" "huyen1974_agent_data_uploads_test" {
     project     = "agent-data-langroid"
     managed_by  = "terraform"
     bucket_type = "uploads"
-    bucket_id   = "A7-T"
+    bucket_id   = "a7-t"
   }
 }
 
