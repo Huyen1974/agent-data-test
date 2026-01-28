@@ -432,6 +432,31 @@ async def ingest(message: ChatMessage):
                 }
             )
             agent.add_metadata(doc_id, meta)
+
+            # Best-effort: cache a KB document for search context when possible.
+            kb_collection = os.getenv("KB_COLLECTION", "kb_documents")
+            if getattr(agent, "db", None) is not None:
+                try:
+                    agent.gcs_ingest(gcs_uri)
+                    content = (getattr(agent, "last_ingested_text", None) or "").strip()
+                    if content:
+                        now_iso = datetime.now(UTC).isoformat()
+                        kb_payload = {
+                            "document_id": doc_id,
+                            "parent_id": "root",
+                            "content": {"mime_type": "text/plain", "body": content},
+                            "metadata": {"title": doc_id, "source": gcs_uri},
+                            "is_human_readable": True,
+                            "created_at": now_iso,
+                            "updated_at": now_iso,
+                            "deleted_at": None,
+                            "revision": 1,
+                        }
+                        agent.db.collection(kb_collection).document(doc_id).set(
+                            kb_payload
+                        )
+                except Exception:
+                    pass
         except Exception:
             pass
 
