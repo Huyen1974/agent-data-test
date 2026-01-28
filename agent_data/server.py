@@ -265,19 +265,7 @@ def _init_vecdb_config():
         logger.warning("VecDB disabled; QdrantDBConfig unavailable: %s", exc)
         return None
 
-    # Preflight Qdrant access to avoid crashing on invalid credentials.
-    try:
-        from qdrant_client import QdrantClient  # type: ignore
-
-        client = QdrantClient(url=qdrant_url, api_key=qdrant_key, timeout=5)
-        client.get_collections()
-    except Exception as exc:
-        logger.warning(
-            "VecDB preflight failed; deferring collection creation: %s", exc
-        )
-        collection = None
-
-    logger.info("VecDB enabled for collection %s", collection or "<deferred>")
+    logger.info("VecDB enabled for collection %s", collection)
     return QdrantDBConfig(collection_name=collection, cloud=True)
 
 
