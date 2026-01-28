@@ -239,14 +239,19 @@ class DocumentMoveRequest(BaseModel):
 
 
 def _init_vecdb_config():
-    qdrant_url = os.getenv("QDRANT_API_URL") or os.getenv("QDRANT_URL")
-    qdrant_key = os.getenv("QDRANT_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
+    qdrant_url = (os.getenv("QDRANT_API_URL") or os.getenv("QDRANT_URL") or "").strip()
+    qdrant_key = (os.getenv("QDRANT_API_KEY") or "").strip()
+    openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     env = os.getenv("APP_ENV") or os.getenv("ENV") or "test"
     collection = os.getenv("QDRANT_COLLECTION") or f"{env}_documents"
 
-    if not os.getenv("QDRANT_API_URL") and os.getenv("QDRANT_URL"):
-        os.environ["QDRANT_API_URL"] = os.getenv("QDRANT_URL", "")
+    if qdrant_url and not qdrant_url.startswith(("http://", "https://")):
+        qdrant_url = f"https://{qdrant_url}"
+
+    if qdrant_url and os.getenv("QDRANT_API_URL") != qdrant_url:
+        os.environ["QDRANT_API_URL"] = qdrant_url
+    if qdrant_key and os.getenv("QDRANT_API_KEY") != qdrant_key:
+        os.environ["QDRANT_API_KEY"] = qdrant_key
 
     missing = []
     if not qdrant_url:
