@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette_prometheus import PrometheusMiddleware, metrics
 
 from agent_data import vector_store
+from agent_data.docs_api import router as docs_router
 from agent_data.main import AgentData, AgentDataConfig
 
 try:
@@ -64,6 +65,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include docs API router
+app.include_router(docs_router)
 
 
 class HealthResponse(BaseModel):
