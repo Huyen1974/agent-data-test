@@ -747,6 +747,18 @@ def _retrieve_query_context(
         if len(contexts) >= top_k:
             break
 
+    if not contexts:
+        fallback_text = getattr(agent, "last_ingested_text", None)
+        if isinstance(fallback_text, str) and fallback_text.strip():
+            contexts.append(
+                QueryContextEntry(
+                    document_id="last_ingest",
+                    snippet=fallback_text.strip()[:200],
+                    score=0.5,
+                    metadata={"source": "last_ingest"},
+                )
+            )
+
     return contexts
 
 
