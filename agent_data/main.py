@@ -140,6 +140,15 @@ class AgentData(DocChatAgent):
 
         # Firestore client already initialized above to support history backend
 
+    def ingest(self) -> None:
+        """Override to skip noisy warnings when vecdb is unavailable."""
+        try:
+            if len(self.config.doc_paths) == 0 and self.vecdb is None:
+                return
+        except Exception:
+            pass
+        super().ingest()
+
     # -------- Session helpers --------
     def set_session(self, session_id: str) -> None:
         """Bind this agent to a session-backed chat history if Firestore is available."""

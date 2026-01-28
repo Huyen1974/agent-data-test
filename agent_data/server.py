@@ -274,10 +274,34 @@ def _init_vecdb_config():
     return QdrantDBConfig(collection_name=collection, cloud=True)
 
 
+def _is_vecdb_init_error(exc: Exception) -> bool:
+    try:
+        from qdrant_client.http.exceptions import UnexpectedResponse  # type: ignore
+
+        if isinstance(exc, UnexpectedResponse):
+            return True
+    except Exception:
+        pass
+
+    message = str(exc).lower()
+    return "qdrant" in message or "unexpected response" in message
+
+
 # Initialize a single AgentData instance (reuse across requests)
 agent_config = AgentDataConfig()
 agent_config.vecdb = _init_vecdb_config()
-agent = AgentData(agent_config)
+try:
+    agent = AgentData(agent_config)
+except Exception as exc:
+    if _is_vecdb_init_error(exc) and agent_config.vecdb is not None:
+        logger.warning(
+            "VecDB init failed; retrying without vecdb to avoid startup crash: %s",
+            exc,
+        )
+        agent_config.vecdb = None
+        agent = AgentData(agent_config)
+    else:
+        raise
 
 
 def _sync_vector_entry(
