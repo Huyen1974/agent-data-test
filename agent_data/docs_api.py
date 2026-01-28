@@ -68,6 +68,7 @@ class TreeItem(BaseModel):
     type: str  # "file" or "dir"
     sha: str
     size: int | None = None
+    source_id: str | None = None  # Relative path for Directus upsert key
 
 
 class TreeResponse(BaseModel):
@@ -128,7 +129,8 @@ async def get_docs_tree(
             status_code=403, detail="GitHub API rate limit exceeded or access denied"
         )
     if response.status_code != 200:
-        logger.error("GitHub API error: %s %s", response.status_code, response.text)
+        # Security: Only log status code, not response body (may contain sensitive info)
+        logger.error("GitHub API error: status=%s", response.status_code)
         raise HTTPException(
             status_code=response.status_code,
             detail=f"GitHub API error: {response.status_code}",
@@ -144,8 +146,17 @@ async def get_docs_tree(
             detail=f"Path is a file, not a directory: {path}. Use /api/docs/file endpoint.",
         )
 
+    # Base path for source_id calculation (strip "docs/" prefix for relative path)
+    base_prefix = "docs/"
+
     items = []
     for item in data:
+        # Calculate source_id as relative path from docs/ folder
+        item_path = item["path"]
+        source_id = (
+            item_path[len(base_prefix) :] if item_path.startswith(base_prefix) else item_path
+        )
+
         items.append(
             TreeItem(
                 name=item["name"],
@@ -153,6 +164,7 @@ async def get_docs_tree(
                 type=item["type"],
                 sha=item["sha"],
                 size=item.get("size"),
+                source_id=source_id,
             )
         )
 
@@ -204,7 +216,8 @@ async def get_docs_file(
             status_code=403, detail="GitHub API rate limit exceeded or access denied"
         )
     if response.status_code != 200:
-        logger.error("GitHub API error: %s %s", response.status_code, response.text)
+        # Security: Only log status code, not response body (may contain sensitive info)
+        logger.error("GitHub API error: status=%s", response.status_code)
         raise HTTPException(
             status_code=response.status_code,
             detail=f"GitHub API error: {response.status_code}",
