@@ -238,10 +238,40 @@ class DocumentMoveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _init_vecdb_config():
+    qdrant_url = os.getenv("QDRANT_API_URL") or os.getenv("QDRANT_URL")
+    qdrant_key = os.getenv("QDRANT_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    env = os.getenv("APP_ENV") or os.getenv("ENV") or "test"
+    collection = os.getenv("QDRANT_COLLECTION") or f"{env}_documents"
+
+    if not os.getenv("QDRANT_API_URL") and os.getenv("QDRANT_URL"):
+        os.environ["QDRANT_API_URL"] = os.getenv("QDRANT_URL", "")
+
+    missing = []
+    if not qdrant_url:
+        missing.append("QDRANT_URL")
+    if not qdrant_key:
+        missing.append("QDRANT_API_KEY")
+    if not openai_key:
+        missing.append("OPENAI_API_KEY")
+    if missing:
+        logger.warning("VecDB disabled; missing env: %s", ", ".join(missing))
+        return None
+
+    try:
+        from langroid.vector_store.qdrantdb import QdrantDBConfig  # type: ignore
+    except Exception as exc:
+        logger.warning("VecDB disabled; QdrantDBConfig unavailable: %s", exc)
+        return None
+
+    logger.info("VecDB enabled for collection %s", collection)
+    return QdrantDBConfig(collection_name=collection, cloud=True)
+
+
 # Initialize a single AgentData instance (reuse across requests)
 agent_config = AgentDataConfig()
-# Avoid external vector store dependencies in default server runtime
-agent_config.vecdb = None
+agent_config.vecdb = _init_vecdb_config()
 agent = AgentData(agent_config)
 
 

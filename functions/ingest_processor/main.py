@@ -102,6 +102,41 @@ def _write_metadata(gcs_uri: str, status: str = "completed") -> dict[str, Any]:
         return data
 
 
+def _write_kb_document(gcs_uri: str, local_path: str | None) -> None:
+    kb_collection = os.getenv("KB_COLLECTION", "kb_documents")
+    if firestore is None:  # pragma: no cover
+        logger.warning("google-cloud-firestore not available; skipping KB write")
+        return
+    if not local_path:
+        logger.warning("KB write skipped; no local file for %s", gcs_uri)
+        return
+    try:
+        text = Path(local_path).read_text(encoding="utf-8", errors="ignore").strip()
+        if not text:
+            logger.warning("KB write skipped; empty content for %s", gcs_uri)
+            return
+
+        doc_id = _metadata_doc_id(gcs_uri)
+        now_iso = datetime.now(UTC).isoformat()
+        payload = {
+            "document_id": doc_id,
+            "parent_id": "root",
+            "content": {"mime_type": "text/plain", "body": text},
+            "metadata": {"title": doc_id, "source": gcs_uri},
+            "is_human_readable": True,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "deleted_at": None,
+            "revision": 1,
+        }
+        db = firestore.Client()  # type: ignore[attr-defined]
+        db.collection(kb_collection).document(doc_id).set(payload)
+    except Exception as e:  # pragma: no cover
+        logger.error(
+            json.dumps({"event": "kb_write_error", "uri": gcs_uri, "error": str(e)})
+        )
+
+
 @functions_framework.cloud_event
 def handle(event):
     """Handle Pub/Sub events with CloudEvent signature."""
@@ -126,10 +161,11 @@ def handle(event):
             return
 
         # Best-effort download to verify access; ignore failures
-        _download_if_possible(gcs_uri)
+        local_path = _download_if_possible(gcs_uri)
 
         # Persist metadata as completed
         doc = _write_metadata(gcs_uri, status="completed")
+        _write_kb_document(gcs_uri, local_path)
         logger.info(
             json.dumps({"event": "ingest_done", "gcs_uri": gcs_uri, "metadata": doc})
         )
