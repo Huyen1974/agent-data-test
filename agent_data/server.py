@@ -393,6 +393,43 @@ async def ingest(message: ChatMessage):
         if not gcs_uri:
             raise ValueError("Missing GCS URI in request body")
 
+        if not gcs_uri.startswith("gs://"):
+            inline_text = gcs_uri.strip()
+            agent.last_ingested_text = inline_text[:10000]
+            try:
+                kb_collection = os.getenv("KB_COLLECTION", "kb_documents")
+                if getattr(agent, "db", None) is not None:
+                    now_iso = datetime.now(UTC).isoformat()
+                    doc_id = f"inline-{uuid4()}"
+                    kb_payload = {
+                        "document_id": doc_id,
+                        "parent_id": "root",
+                        "content": {
+                            "mime_type": "text/plain",
+                            "body": inline_text,
+                        },
+                        "metadata": {"title": doc_id, "source": "inline"},
+                        "is_human_readable": True,
+                        "created_at": now_iso,
+                        "updated_at": now_iso,
+                        "deleted_at": None,
+                        "revision": 1,
+                    }
+                    agent.db.collection(kb_collection).document(doc_id).set(kb_payload)
+            except Exception:
+                pass
+
+            try:
+                INGEST_SUCCESS.inc()
+            except Exception:
+                pass
+            ack = "Accepted ingest request (inline)"
+            return ChatResponse(
+                response=ack,
+                content=ack,
+                session_id=message.session_id,
+            )
+
         topic = os.getenv("PUBSUB_TOPIC", "agent-data-tasks-test")
         # Allow overriding project via common envs
         project_id = (
