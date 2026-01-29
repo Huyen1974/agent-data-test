@@ -7,6 +7,7 @@ import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid5, NAMESPACE_DNS
 
 try:  # pragma: no cover - optional dependency import guard
     from openai import OpenAI  # type: ignore
@@ -123,8 +124,11 @@ class QdrantVectorStore:
                 "parent_id": parent_id,
                 "is_human_readable": is_human_readable,
             }
+            # Qdrant requires point IDs to be either unsigned integers or UUIDs
+            # Convert document_id string to a deterministic UUID
+            point_id = str(uuid5(NAMESPACE_DNS, document_id))
             point = qmodels.PointStruct(
-                id=document_id,
+                id=point_id,
                 vector=embedding,
                 payload=payload,
             )
@@ -145,7 +149,9 @@ class QdrantVectorStore:
             self._ensure_client()
             if self._client is None:
                 raise RuntimeError("Qdrant client unavailable")
-            selector = qmodels.PointIdsList(points=[document_id])
+            # Use same UUID conversion as upsert_document
+            point_id = str(uuid5(NAMESPACE_DNS, document_id))
+            selector = qmodels.PointIdsList(points=[point_id])
             self._client.delete(
                 collection_name=self.collection,
                 points_selector=selector,
