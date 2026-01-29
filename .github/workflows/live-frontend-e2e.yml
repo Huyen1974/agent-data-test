@@ -1,0 +1,122 @@
+name: Live Frontend E2E Tests
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - 'app-service-project/**'
+      - '.github/workflows/live-frontend-e2e.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  live-frontend-auth-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    env:
+      GCP_PROJECT_ID: github-chatgpt-ggcloud
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Note: Secrets are fetched directly from GitHub secrets, not Google Secret Manager
+      # This follows the same pattern as deploy-frontend.yml
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app-service-project/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefix app-service-project
+
+      - name: Create .env.production for build
+        run: |
+          cat <<EOF > app-service-project/.env.production
+          VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
+          EOF
+
+      - name: Build frontend (production mode)
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: npm run build --prefix app-service-project
+
+      - name: Inject Firebase Config into Built HTML
+        run: |
+          set -euo pipefail
+          echo "Injecting Firebase config into dist/index.html..."
+
+          # Use sed to replace placeholders in the built index.html
+          sed -i "s|%VITE_FIREBASE_API_KEY%|${{ secrets.VITE_FIREBASE_API_KEY }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_AUTH_DOMAIN%|${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_PROJECT_ID%|${{ secrets.VITE_FIREBASE_PROJECT_ID }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_STORAGE_BUCKET%|${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_MESSAGING_SENDER_ID%|${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}|g" app-service-project/dist/index.html
+          sed -i "s|%VITE_FIREBASE_APP_ID%|${{ secrets.VITE_FIREBASE_APP_ID }}|g" app-service-project/dist/index.html
+
+          echo "✓ Firebase config injection completed"
+
+          # Verify injection succeeded
+          if grep -q '%VITE_FIREBASE_' app-service-project/dist/index.html; then
+            echo "ERROR: Found remaining placeholders in index.html" >&2
+            grep '%VITE_FIREBASE_' app-service-project/dist/index.html >&2
+            exit 1
+          fi
+
+          echo "✓ Verified all placeholders replaced"
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: app-service-project
+
+      - name: Start preview server in background
+        run: |
+          nohup npm run preview -- --host 127.0.0.1 --port 4173 > preview-server.log 2>&1 &
+          echo $! > preview-server.pid
+
+          # Wait for server to be ready
+          timeout 60 bash -c 'until curl -sf http://127.0.0.1:4173 > /dev/null; do sleep 2; done'
+          echo "✓ Preview server is ready"
+        working-directory: app-service-project
+
+      - name: Run live authentication E2E test
+        env:
+          WEB_APP_URL: http://127.0.0.1:4173
+          GOOGLE_TEST_USER_EMAIL: ${{ secrets.GOOGLE_TEST_USER_EMAIL }}
+          GOOGLE_TEST_USER_PASSWORD: ${{ secrets.GOOGLE_TEST_USER_PASSWORD }}
+        run: npx playwright test live-auth-knowledge-hub.spec.js
+        working-directory: app-service-project
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-live-auth-results
+          path: |
+            app-service-project/test-results/
+            app-service-project/playwright-report/
+          retention-days: 7
+
+      - name: Stop preview server
+        if: always()
+        run: |
+          if [ -f preview-server.pid ]; then
+            kill $(cat preview-server.pid) || true
+          fi
+        working-directory: app-service-project
