@@ -427,13 +427,19 @@ async def ingest(message: ChatMessage):
             # Sync to Qdrant vector store for RAG
             try:
                 store = vector_store.get_vector_store()
-                store.upsert_document(
+                vec_result = store.upsert_document(
                     document_id=doc_id,
                     content=inline_text,
                     metadata=metadata,
                     parent_id="root",
                     is_human_readable=True,
                 )
+                if vec_result.status == "error":
+                    logger.warning("Vector sync error for %s: %s", doc_id, vec_result.error)
+                elif vec_result.status == "skipped":
+                    logger.info("Vector sync skipped for %s (store disabled)", doc_id)
+                else:
+                    logger.info("Vector sync completed for %s: %s", doc_id, vec_result.status)
             except Exception as vec_err:
                 logger.warning("Vector sync failed for %s: %s", doc_id, vec_err)
 
