@@ -119,6 +119,7 @@ class QdrantVectorStore:
                 raise RuntimeError("Qdrant client unavailable")
             embedding = self._embed(content)
             payload = {
+                "content": content,  # Required by langroid Document class
                 "document_id": document_id,
                 "metadata": metadata or {},
                 "parent_id": parent_id,
