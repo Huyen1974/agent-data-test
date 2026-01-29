@@ -30,6 +30,9 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+# Download NLTK data required by langroid
+RUN python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
+
 # Copy application code
 COPY agent_data/ /app/agent_data/
 
