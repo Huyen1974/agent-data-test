@@ -2,9 +2,11 @@
 Agent Data Langroid Server - FastAPI server for agent data operations
 """
 
+import asyncio
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
@@ -33,6 +35,10 @@ except Exception:  # pragma: no cover - optional dependency in local/dev
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Thread pool for running sync langroid calls from async context
+# Prevents "asyncio.run() cannot be called from a running event loop" error
+_langroid_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="langroid")
 
 # Create FastAPI app
 app = FastAPI(
@@ -645,7 +651,13 @@ async def query_knowledge(payload: QueryKnowledgeRequest):
         else:
             llm_input = query_text
 
-        agent_reply = agent.llm_response(llm_input)
+        # Run langroid call in executor to avoid asyncio.run() conflict
+        # Langroid internally uses asyncio.run() which can't be called from async context
+        loop = asyncio.get_event_loop()
+        agent_reply = await loop.run_in_executor(
+            _langroid_executor,
+            lambda: agent.llm_response(llm_input)
+        )
         reply_text = (getattr(agent_reply, "content", None) or "").strip()
 
         if not reply_text or reply_text.upper() in {"DO-NOT-KNOW", "UNKNOWN"}:
