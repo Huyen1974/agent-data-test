@@ -273,11 +273,17 @@ class AgentData(DocChatAgent):
                 ) as ingest_err:  # pragma: no cover - integration fallback
                     ingestion_result = f"Ingestion skipped or failed: {ingest_err}"
 
-                # Best-effort: cache text for simple QA when vecdb/LLM are absent
+                # Best-effort: cache text from the actual ingested content.
+                # This ensures that for binary files (like PDFs), we cache the
+                # extracted text, not the raw binary content.
                 try:
-                    text = local_path.read_text(encoding="utf-8", errors="ignore")
-                    self.last_ingested_text = text[:10000]
+                    if self.doc_segments:
+                        full_text = " ".join(
+                            [doc.content for doc in self.doc_segments]
+                        )
+                        self.last_ingested_text = full_text[:10000]
                 except Exception:
+                    # It's a best-effort cache, so we can ignore errors here.
                     pass
 
                 # Note: local_path resides in a TemporaryDirectory and will be
