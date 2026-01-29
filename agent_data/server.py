@@ -563,8 +563,12 @@ async def ingest(message: ChatMessage):
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def query_knowledge(payload: QueryKnowledgeRequest):
-    """Query knowledge base using RAG flow per MCP contract."""
+def query_knowledge(payload: QueryKnowledgeRequest):
+    """Query knowledge base using RAG flow per MCP contract.
+
+    Note: This is a sync endpoint (not async) because langroid internally uses
+    asyncio.run() which conflicts with FastAPI's async event loop.
+    """
 
     import time
 
@@ -645,6 +649,7 @@ async def query_knowledge(payload: QueryKnowledgeRequest):
         else:
             llm_input = query_text
 
+        # Direct langroid call (sync endpoint avoids asyncio.run() conflict)
         agent_reply = agent.llm_response(llm_input)
         reply_text = (getattr(agent_reply, "content", None) or "").strip()
 
