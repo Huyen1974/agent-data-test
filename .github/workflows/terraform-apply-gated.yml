@@ -1,0 +1,52 @@
+name: Terraform Apply (GATED)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type YES to confirm you really want to apply"
+        required: true
+        default: "NO"
+
+permissions:
+  contents: read
+
+env:
+  TF_APPLY_ENABLED: "false"  # default: do NOT allow apply
+  GCS_BACKEND_OK: "false"    # set to true only if backend is verified
+
+jobs:
+  apply:
+    # Hard gate: run only when ALL guards are true
+    if: ${{ github.event.inputs.confirm == 'YES' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Guard not satisfied (skip)
+        if: ${{ !(env.TF_APPLY_ENABLED == 'true' && env.GCS_BACKEND_OK == 'true') }}
+        run: |
+          echo "::notice::Terraform apply gated; skipping by default."
+          exit 0
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.*"
+
+      - name: Terraform init (GCS backend)
+        working-directory: terraform
+        run: |
+          set -euo pipefail
+          terraform init \
+            -input=false -no-color
+
+      - name: Terraform apply (explicitly gated)
+        if: ${{ env.TF_APPLY_ENABLED == 'true' && env.GCS_BACKEND_OK == 'true' }}
+        working-directory: terraform
+        env:
+          TF_INPUT: "false"
+        run: |
+          set -euo pipefail
+          terraform apply -auto-approve -input=false -no-color
