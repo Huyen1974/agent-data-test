@@ -284,7 +284,7 @@ joblib==1.5.1
     #   scikit-learn
 json-repair==0.47.8
     # via langroid
-jsonschema==4.24.0
+jsonschema==4.25.1
     # via mcp
 jsonschema-specifications==2025.4.1
     # via jsonschema
