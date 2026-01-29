@@ -27,7 +27,7 @@ jobs:
       QDRANT_CLUSTER_ID: ${{ secrets.QDRANT_CLUSTER1_ID }}
       QDRANT_REGION: "us-east4"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Verify secrets
         run: scripts/verify_secrets.sh
