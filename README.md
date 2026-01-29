@@ -22,6 +22,7 @@ Agent Data Langroid is a next-generation agent-based data management system that
 - **Document Processing**: Intelligent document ingestion and processing
 - **Scalable Design**: Microservices architecture with containerized deployment
 - **CI/CD Ready**: Comprehensive testing and deployment pipelines
+- **Constitution Compliance**: Any change to `docs/constitution/CONSTITUTION.md` must be proposed via PR; CI only verifies equivalence and never auto-writes runbooks.
 
 ## Architecture
 

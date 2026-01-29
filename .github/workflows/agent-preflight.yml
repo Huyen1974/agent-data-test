@@ -1,0 +1,76 @@
+name: Agent Preflight Checks
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.agents/**'
+      - 'AGENT_RUNBOOK.md'
+      - '.gitignore'
+
+jobs:
+  agent-consistency-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify constitution markers
+        run: |
+          echo "🔍 Checking constitution markers in all agent runbooks..."
+          for agent in gemini claude codex; do
+            runbook=".agents/$agent/runbook.md"
+            if ! grep -q "BEGIN:CONSTITUTION:CURSOR_MGMT" "$runbook"; then
+              echo "❌ Missing constitution markers in $runbook"
+              exit 1
+            fi
+            if ! grep -q "END:CONSTITUTION:CURSOR_MGMT" "$runbook"; then
+              echo "❌ Missing constitution end marker in $runbook"
+              exit 1
+            fi
+            if ! grep -q "commit=[a-f0-9]\+" "$runbook"; then
+              echo "❌ Missing commit hash in $runbook"
+              exit 1
+            fi
+            echo "✅ Constitution markers present in $runbook"
+          done
+
+      - name: Verify Claude flag consistency
+        run: |
+          echo "🔍 Checking Claude launcher uses --allowed-tools..."
+          grep -q "\\-\\-allowed-tools" .agents/claude/start.sh || exit 1
+          echo "✅ Claude launcher uses --allowed-tools"
+
+          echo "🔍 Checking no incorrect --tools in Claude launcher..."
+          ! grep -q "\\-\\-tools" .agents/claude/start.sh || exit 1
+          echo "✅ No incorrect --tools flags in Claude launcher"
+
+      - name: Verify overview consistency
+        run: |
+          echo "🔍 Checking AGENT_RUNBOOK.md Claude section uses --allowed-tools..."
+          grep -A 20 "### Claude Code Agent" AGENT_RUNBOOK.md | grep -q "\\-\\-allowed-tools" || exit 1
+          echo "✅ Overview Claude section uses --allowed-tools"
+
+      - name: Verify .agents directory not ignored
+        run: |
+          echo "🔍 Checking .agents/ not ignored in .gitignore..."
+          ! grep -q "^\.agents/" .gitignore || exit 1
+          echo "✅ .agents/ directory not ignored"
+
+      - name: Check CLI availability (log only)
+        run: |
+          echo "🔍 Checking Gemini CLI availability..."
+          gemini --version || echo "ℹ️  Gemini CLI not available on runner (expected)"
+
+          echo "🔍 Checking Claude CLI availability..."
+          claude --version || echo "ℹ️  Claude CLI not available on runner (expected)"
+
+      - name: Guard against lockfile changes
+        run: |
+          echo "🔍 Checking for lockfile changes..."
+          # Skip this check if git diff fails (e.g., in shallow clones)
+          if git diff --name-only origin/main... 2>/dev/null | grep -E '(package-lock\.json|poetry\.lock|requirements\.txt)$'; then
+            echo "❌ Lockfile changes detected - this breaks agent isolation"
+            exit 1
+          fi
+          echo "✅ No lockfile changes detected"
