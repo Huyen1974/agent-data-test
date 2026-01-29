@@ -400,11 +400,12 @@ async def ingest(message: ChatMessage):
         if not gcs_uri.startswith("gs://"):
             inline_text = gcs_uri.strip()
             agent.last_ingested_text = inline_text[:10000]
+            doc_id = f"inline-{uuid4()}"
+            metadata = {"title": doc_id, "source": "inline"}
             try:
                 kb_collection = os.getenv("KB_COLLECTION", "kb_documents")
                 if getattr(agent, "db", None) is not None:
                     now_iso = datetime.now(UTC).isoformat()
-                    doc_id = f"inline-{uuid4()}"
                     kb_payload = {
                         "document_id": doc_id,
                         "parent_id": "root",
@@ -412,7 +413,7 @@ async def ingest(message: ChatMessage):
                             "mime_type": "text/plain",
                             "body": inline_text,
                         },
-                        "metadata": {"title": doc_id, "source": "inline"},
+                        "metadata": metadata,
                         "is_human_readable": True,
                         "created_at": now_iso,
                         "updated_at": now_iso,
@@ -422,6 +423,19 @@ async def ingest(message: ChatMessage):
                     agent.db.collection(kb_collection).document(doc_id).set(kb_payload)
             except Exception:
                 pass
+
+            # Sync to Qdrant vector store for RAG
+            try:
+                store = vector_store.get_vector_store()
+                store.upsert_document(
+                    document_id=doc_id,
+                    content=inline_text,
+                    metadata=metadata,
+                    parent_id="root",
+                    is_human_readable=True,
+                )
+            except Exception as vec_err:
+                logger.warning("Vector sync failed for %s: %s", doc_id, vec_err)
 
             try:
                 INGEST_SUCCESS.inc()
