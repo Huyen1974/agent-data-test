@@ -5,9 +5,13 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid5, NAMESPACE_DNS
+
+# Chunking configuration (configurable via environment variables)
+CHUNK_SIZE = int(os.getenv("QDRANT_CHUNK_SIZE", "4000"))
+CHUNK_OVERLAP = int(os.getenv("QDRANT_CHUNK_OVERLAP", "400"))
 
 try:  # pragma: no cover - optional dependency import guard
     from openai import OpenAI  # type: ignore
@@ -28,6 +32,49 @@ logger = logging.getLogger(__name__)
 class VectorSyncResult:
     status: str
     error: str | None = None
+    chunks_created: int = 0
+
+
+def _split_text(text: str, chunk_size: int, overlap: int) -> list[str]:
+    """Split text into overlapping chunks.
+
+    Uses a simple character-based splitter that tries to break on paragraph
+    boundaries (\n\n), then sentence boundaries (. ), then word boundaries.
+    """
+    if len(text) <= chunk_size:
+        return [text]
+
+    chunks: list[str] = []
+    start = 0
+
+    while start < len(text):
+        end = start + chunk_size
+
+        # If we're not at the end, try to find a good break point
+        if end < len(text):
+            # Look for paragraph break
+            para_break = text.rfind("\n\n", start, end)
+            if para_break > start + chunk_size // 2:
+                end = para_break + 2  # Include the newlines
+            else:
+                # Look for sentence break
+                sentence_break = text.rfind(". ", start, end)
+                if sentence_break > start + chunk_size // 2:
+                    end = sentence_break + 2
+                else:
+                    # Look for word break
+                    word_break = text.rfind(" ", start, end)
+                    if word_break > start + chunk_size // 2:
+                        end = word_break + 1
+
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        # Move start with overlap
+        start = end - overlap if end < len(text) else len(text)
+
+    return chunks
 
 
 class QdrantVectorStore:
@@ -111,51 +158,99 @@ class QdrantVectorStore:
         parent_id: str | None = None,
         is_human_readable: bool = False,
     ) -> VectorSyncResult:
+        """Upsert document with automatic chunking for long content.
+
+        Documents longer than CHUNK_SIZE are split into overlapping chunks.
+        Each chunk gets a unique point_id but shares the same document_id
+        in metadata for retrieval grouping.
+        """
         if not self.enabled:
             return VectorSyncResult(status="skipped")
         try:
             self._ensure_client()
             if self._client is None:
                 raise RuntimeError("Qdrant client unavailable")
-            embedding = self._embed(content)
-            payload = {
-                "content": content,  # Required by langroid Document class
-                "document_id": document_id,
-                "metadata": metadata or {},
-                "parent_id": parent_id,
-                "is_human_readable": is_human_readable,
-            }
-            # Qdrant requires point IDs to be either unsigned integers or UUIDs
-            # Convert document_id string to a deterministic UUID
-            point_id = str(uuid5(NAMESPACE_DNS, document_id))
-            point = qmodels.PointStruct(
-                id=point_id,
-                vector=embedding,
-                payload=payload,
-            )
+
+            # Split content into chunks
+            chunks = _split_text(content, CHUNK_SIZE, CHUNK_OVERLAP)
+            total_chunks = len(chunks)
+
+            # Preserve original metadata with source info
+            base_metadata = metadata or {}
+            if "source_id" not in base_metadata and "title" not in base_metadata:
+                # Ensure source tracking for citation integrity
+                base_metadata["source_id"] = document_id
+
+            points: list[Any] = []
+            for idx, chunk_text in enumerate(chunks):
+                embedding = self._embed(chunk_text)
+
+                # Build payload with chunk metadata
+                payload = {
+                    "content": chunk_text,  # Required by langroid Document class
+                    "document_id": document_id,
+                    "metadata": {
+                        **base_metadata,
+                        "chunk_index": idx,
+                        "total_chunks": total_chunks,
+                    },
+                    "parent_id": parent_id,
+                    "is_human_readable": is_human_readable,
+                }
+
+                # Generate unique point_id for each chunk
+                # Format: uuid5(document_id:chunk_idx) for deterministic IDs
+                chunk_id = f"{document_id}:chunk:{idx}"
+                point_id = str(uuid5(NAMESPACE_DNS, chunk_id))
+
+                points.append(
+                    qmodels.PointStruct(
+                        id=point_id,
+                        vector=embedding,
+                        payload=payload,
+                    )
+                )
+
+            # Batch upsert all chunks
             self._client.upsert(
                 collection_name=self.collection,
-                points=[point],
+                points=points,
                 wait=True,
             )
-            return VectorSyncResult(status="ready")
+
+            logger.info(
+                "Upserted %d chunk(s) for document %s", total_chunks, document_id
+            )
+            return VectorSyncResult(status="ready", chunks_created=total_chunks)
         except Exception as exc:  # pragma: no cover - network/SDK errors
             logger.error("Failed to upsert vector for %s: %s", document_id, exc)
             return VectorSyncResult(status="error", error=str(exc))
 
     def delete_document(self, document_id: str) -> VectorSyncResult:
+        """Delete all chunks for a document.
+
+        Uses filter-based deletion to remove all points matching the document_id,
+        handling both single-vector documents and chunked documents.
+        """
         if not self.enabled:
             return VectorSyncResult(status="skipped")
         try:
             self._ensure_client()
             if self._client is None:
                 raise RuntimeError("Qdrant client unavailable")
-            # Use same UUID conversion as upsert_document
-            point_id = str(uuid5(NAMESPACE_DNS, document_id))
-            selector = qmodels.PointIdsList(points=[point_id])
+
+            # Delete by filter on document_id to handle all chunks
+            filter_condition = qmodels.Filter(
+                must=[
+                    qmodels.FieldCondition(
+                        key="document_id",
+                        match=qmodels.MatchValue(value=document_id),
+                    )
+                ]
+            )
             self._client.delete(
                 collection_name=self.collection,
-                points_selector=selector,
+                points_selector=qmodels.FilterSelector(filter=filter_condition),
                 wait=True,
             )
             return VectorSyncResult(status="deleted")
