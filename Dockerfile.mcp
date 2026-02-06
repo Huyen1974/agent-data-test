@@ -1,0 +1,25 @@
+# Dockerfile for MCP Server
+# Lightweight wrapper that proxies requests to Agent Data
+
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Copy MCP server code and requirements
+COPY mcp_server/ ./mcp_server/
+COPY mcp_server/requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+EXPOSE 8001
+
+# Environment variables
+ENV AGENT_DATA_URL=http://localhost:8000
+ENV PORT=8001
+
+CMD ["python", "-m", "uvicorn", "mcp_server.server:app", "--host", "0.0.0.0", "--port", "8001"]
