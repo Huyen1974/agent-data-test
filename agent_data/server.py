@@ -420,7 +420,7 @@ async def ingest(message: ChatMessage):
                         "deleted_at": None,
                         "revision": 1,
                     }
-                    agent.db.collection(kb_collection).document(doc_id).set(kb_payload)
+                    agent.db.collection(kb_collection).document(_fs_key(doc_id)).set(kb_payload)
             except Exception:
                 pass
 
@@ -542,7 +542,7 @@ async def ingest(message: ChatMessage):
                             "deleted_at": None,
                             "revision": 1,
                         }
-                        agent.db.collection(kb_collection).document(doc_id).set(
+                        agent.db.collection(kb_collection).document(_fs_key(doc_id)).set(
                             kb_payload
                         )
                 except Exception:
@@ -722,6 +722,16 @@ async def info():
 KB_COLLECTION = os.getenv("KB_COLLECTION", "kb_documents")
 
 
+def _fs_key(doc_id: str) -> str:
+    """Encode a document ID for use as a flat Firestore document key.
+
+    Replaces '/' with '__' so that Firestore does not interpret slashes
+    as nested collection/document paths.  Flat IDs without slashes pass
+    through unchanged, preserving backward compatibility.
+    """
+    return doc_id.replace("/", "__")
+
+
 def _firestore():
     db = getattr(agent, "db", None)
     if db is None:
@@ -835,7 +845,7 @@ def _assert_move_target_valid(*, db, document_id: str, new_parent_id: str) -> No
     if new_parent_id in root_sentinels:
         return
 
-    parent_ref = db.collection(KB_COLLECTION).document(new_parent_id)
+    parent_ref = db.collection(KB_COLLECTION).document(_fs_key(new_parent_id))
     parent_snapshot = parent_ref.get()
     if not getattr(parent_snapshot, "exists", False):
         raise _error(
@@ -867,7 +877,7 @@ def _assert_move_target_valid(*, db, document_id: str, new_parent_id: str) -> No
             )
         lineage_seen.add(current_id)
 
-        ancestor_ref = db.collection(KB_COLLECTION).document(current_id)
+        ancestor_ref = db.collection(KB_COLLECTION).document(_fs_key(current_id))
         ancestor_snapshot = ancestor_ref.get()
         if not getattr(ancestor_snapshot, "exists", False):
             break
@@ -881,7 +891,7 @@ async def create_document(payload: DocumentCreate, _=Depends(require_api_key)):
     try:
         db = _firestore()
         doc_id = payload.document_id
-        doc_ref = db.collection(KB_COLLECTION).document(doc_id)
+        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
         snapshot = doc_ref.get()
         if getattr(snapshot, "exists", False):
             raise _error(
@@ -935,7 +945,7 @@ async def create_document(payload: DocumentCreate, _=Depends(require_api_key)):
         ) from e
 
 
-@app.put("/documents/{doc_id}", response_model=DocumentResponse)
+@app.put("/documents/{doc_id:path}", response_model=DocumentResponse)
 async def update_document(
     doc_id: str = Path(..., min_length=1),
     payload: DocumentUpdate = None,
@@ -943,7 +953,7 @@ async def update_document(
 ):
     try:
         db = _firestore()
-        doc_ref = db.collection(KB_COLLECTION).document(doc_id)
+        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
         snapshot = doc_ref.get()
         if not getattr(snapshot, "exists", False):
             raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
@@ -1048,7 +1058,7 @@ async def update_document(
         ) from e
 
 
-@app.post("/documents/{doc_id}/move", response_model=DocumentResponse)
+@app.post("/documents/{doc_id:path}/move", response_model=DocumentResponse)
 async def move_document(
     doc_id: str = Path(..., min_length=1),
     payload: DocumentMoveRequest | None = None,
@@ -1059,7 +1069,7 @@ async def move_document(
             raise _error(400, "INVALID_ARGUMENT", "Move payload is required")
 
         db = _firestore()
-        doc_ref = db.collection(KB_COLLECTION).document(doc_id)
+        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
         snapshot = doc_ref.get()
         if not getattr(snapshot, "exists", False):
             raise _error(
@@ -1137,13 +1147,13 @@ async def move_document(
         ) from e
 
 
-@app.delete("/documents/{doc_id}", response_model=DocumentResponse)
+@app.delete("/documents/{doc_id:path}", response_model=DocumentResponse)
 async def delete_document(
     doc_id: str = Path(..., min_length=1), _=Depends(require_api_key)
 ):
     try:
         db = _firestore()
-        doc_ref = db.collection(KB_COLLECTION).document(doc_id)
+        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
         snapshot = doc_ref.get()
         if not getattr(snapshot, "exists", False):
             raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)

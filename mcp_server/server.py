@@ -34,8 +34,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Hybrid config: local priority, cloud fallback ---
 AGENT_DATA_URL = os.getenv("AGENT_DATA_URL", "http://localhost:8000")
-AGENT_DATA_API_KEY = os.getenv("AGENT_DATA_API_KEY", "")
+AGENT_DATA_URL_CLOUD = os.getenv("AGENT_DATA_URL_CLOUD", "")
+AGENT_DATA_API_KEY_LOCAL = os.getenv("AGENT_DATA_API_KEY_LOCAL", os.getenv("AGENT_DATA_API_KEY", ""))
+AGENT_DATA_API_KEY_CLOUD = os.getenv("AGENT_DATA_API_KEY_CLOUD", "")
+AGENT_DATA_PREFER = os.getenv("AGENT_DATA_PREFER", "local")
 
 # MCP Tool Definitions
 MCP_TOOLS = [
@@ -89,11 +93,11 @@ MCP_TOOLS = [
     # --- Write tools ---
     {
         "name": "upload_document",
-        "description": "Upload/create a new document in the knowledge base. Use flat IDs for full CRUD support.",
+        "description": "Upload/create a new document in the knowledge base.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Document ID. Flat ID like 'web-50-report' (recommended) or path-style."},
+                "path": {"type": "string", "description": "Document path, e.g. 'docs/operations/sessions/web-50-report.md'"},
                 "content": {"type": "string", "description": "Document content (markdown or plain text)"},
                 "title": {"type": "string", "description": "Optional document title"},
                 "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags"},
@@ -103,11 +107,11 @@ MCP_TOOLS = [
     },
     {
         "name": "update_document",
-        "description": "Update an existing document's content and/or metadata. Flat ID only (no slashes).",
+        "description": "Update an existing document's content and/or metadata.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Document ID to update (flat, no slashes)"},
+                "path": {"type": "string", "description": "Document path to update"},
                 "content": {"type": "string", "description": "New document content"},
                 "title": {"type": "string", "description": "Optional new title"},
                 "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional new tags"},
@@ -117,23 +121,23 @@ MCP_TOOLS = [
     },
     {
         "name": "delete_document",
-        "description": "Delete a document from the knowledge base. Flat ID only (no slashes).",
+        "description": "Delete a document from the knowledge base.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Document ID to delete (flat, no slashes)"},
+                "path": {"type": "string", "description": "Document path to delete"},
             },
             "required": ["path"],
         },
     },
     {
         "name": "move_document",
-        "description": "Move a document to a new parent. Flat ID only. Use 'root' for top level.",
+        "description": "Move a document to a new parent. Use 'root' for top level.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Current document ID (flat, no slashes)"},
-                "new_path": {"type": "string", "description": "New parent document ID, or 'root' for top level"},
+                "path": {"type": "string", "description": "Current document path"},
+                "new_path": {"type": "string", "description": "New parent path, or 'root' for top level"},
             },
             "required": ["path", "new_path"],
         },
@@ -154,107 +158,113 @@ MCP_TOOLS = [
 
 # Tool implementations
 async def search_knowledge(query: str, limit: int = 5) -> dict[str, Any]:
-    """Execute RAG search via Agent Data /chat endpoint"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{AGENT_DATA_URL}/chat",
-                json={"message": query},
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError as e:
-            logger.error(f"search_knowledge error: {e}")
-            return {"error": str(e), "query": query}
+    """Execute RAG search via Agent Data /chat endpoint (hybrid)"""
+    try:
+        response = await _hybrid_request("POST", "/chat", json={"message": query})
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError as e:
+        logger.error(f"search_knowledge error: {e}")
+        return {"error": str(e), "query": query}
 
 
 async def list_documents(path: str = "") -> dict[str, Any]:
-    """List documents - uses /docs/list endpoint if available"""
-    async with httpx.AsyncClient() as client:
-        # Try /docs/list endpoint first
-        try:
-            response = await client.get(
-                f"{AGENT_DATA_URL}/docs/list",
-                params={"path": path} if path else {},
-                timeout=10.0,
-            )
-            if response.status_code == 200:
-                return response.json()
-        except httpx.HTTPError:
-            pass
+    """List documents (hybrid) - uses /docs/list endpoint if available"""
+    try:
+        response = await _hybrid_request(
+            "GET", "/docs/list", params={"path": path} if path else {},
+        )
+        if response.status_code == 200:
+            return response.json()
+    except httpx.HTTPError:
+        pass
 
-        # Fallback to /info
-        try:
-            response = await client.get(f"{AGENT_DATA_URL}/info", timeout=10.0)
-            return {
-                "status": "list_endpoint_not_available",
-                "message": "Use search_knowledge to find documents",
-                "server_info": response.json(),
-            }
-        except httpx.HTTPError as e:
-            return {"error": str(e)}
+    # Fallback to /info
+    try:
+        response = await _hybrid_request("GET", "/info")
+        return {
+            "status": "list_endpoint_not_available",
+            "message": "Use search_knowledge to find documents",
+            "server_info": response.json(),
+        }
+    except httpx.HTTPError as e:
+        return {"error": str(e)}
 
 
 async def get_document(document_id: str) -> dict[str, Any]:
-    """Get specific document content"""
-    async with httpx.AsyncClient() as client:
-        # Try /docs/{id} endpoint
-        try:
-            response = await client.get(
-                f"{AGENT_DATA_URL}/docs/{document_id}",
-                timeout=10.0,
-            )
-            if response.status_code == 200:
-                return response.json()
-        except httpx.HTTPError:
-            pass
+    """Get specific document content (hybrid)"""
+    try:
+        response = await _hybrid_request("GET", f"/docs/{document_id}")
+        if response.status_code == 200:
+            return response.json()
+    except httpx.HTTPError:
+        pass
 
-        # Fallback: use chat to retrieve document context
-        return await search_knowledge(f"Get document content: {document_id}")
+    # Fallback: use chat to retrieve document context
+    return await search_knowledge(f"Get document content: {document_id}")
 
 
-def _auth_headers() -> dict[str, str]:
+def _auth_headers(url: str | None = None) -> dict[str, str]:
     """Build auth headers for write operations."""
-    if AGENT_DATA_API_KEY:
-        return {"X-API-Key": AGENT_DATA_API_KEY}
+    target = url or AGENT_DATA_URL
+    if target == AGENT_DATA_URL_CLOUD and AGENT_DATA_API_KEY_CLOUD:
+        return {"X-API-Key": AGENT_DATA_API_KEY_CLOUD}
+    if AGENT_DATA_API_KEY_LOCAL:
+        return {"X-API-Key": AGENT_DATA_API_KEY_LOCAL}
     return {}
 
 
+async def _hybrid_request(method: str, path: str, **kwargs) -> httpx.Response:
+    """Try local URL first, fallback to cloud on connection error."""
+    async with httpx.AsyncClient() as client:
+        for url in [AGENT_DATA_URL, AGENT_DATA_URL_CLOUD]:
+            if not url:
+                continue
+            try:
+                headers = {**_auth_headers(url), **kwargs.pop("headers", {})}
+                resp = await client.request(
+                    method, f"{url}{path}",
+                    headers=headers,
+                    timeout=kwargs.pop("timeout", 30.0),
+                    **kwargs,
+                )
+                label = "LOCAL" if url == AGENT_DATA_URL else "CLOUD"
+                logger.info("Using %s endpoint: %s", label, url)
+                return resp
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                label = "LOCAL" if url == AGENT_DATA_URL else "CLOUD"
+                logger.warning("%s unavailable (%s), trying fallback...", label, e)
+                continue
+    raise httpx.ConnectError("Both LOCAL and CLOUD endpoints unavailable")
+
+
 async def upload_document(path: str, content: str, title: str = "", tags: list[str] | None = None) -> dict[str, Any]:
-    """Create a new document via POST /documents"""
-    # Derive parent_id from path (e.g. "docs/test/file.md" → "docs/test")
+    """Create a new document via POST /documents (hybrid)"""
     parent_id = "/".join(path.split("/")[:-1]) if "/" in path else ""
+    if not title:
+        title = path.rsplit("/", 1)[-1] if "/" in path else path
 
     body: dict[str, Any] = {
         "document_id": path,
         "parent_id": parent_id,
         "content": {"mime_type": "text/markdown", "body": content},
-        "metadata": {},
+        "metadata": {"title": title},
     }
-    if title:
-        body["metadata"]["title"] = title
     if tags:
         body["metadata"]["tags"] = tags
 
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{AGENT_DATA_URL}/documents",
-                json=body,
-                headers=_auth_headers(),
-                timeout=30.0,
-            )
-            if response.status_code in (200, 201):
-                return response.json()
-            return {"error": f"HTTP {response.status_code}", "detail": response.text}
-        except httpx.HTTPError as e:
-            logger.error(f"upload_document error: {e}")
-            return {"error": str(e)}
+    try:
+        response = await _hybrid_request("POST", "/documents", json=body)
+        if response.status_code in (200, 201):
+            return response.json()
+        return {"error": f"HTTP {response.status_code}", "detail": response.text}
+    except httpx.HTTPError as e:
+        logger.error(f"upload_document error: {e}")
+        return {"error": str(e)}
 
 
 async def update_document(path: str, content: str, title: str = "", tags: list[str] | None = None) -> dict[str, Any]:
-    """Update a document via PUT /documents/{id}"""
+    """Update a document via PUT /documents/{id} (hybrid)"""
     patch: dict[str, Any] = {"content": {"mime_type": "text/markdown", "body": content}}
     update_mask = ["content"]
     metadata: dict[str, Any] = {}
@@ -268,72 +278,52 @@ async def update_document(path: str, content: str, title: str = "", tags: list[s
 
     body = {"document_id": path, "patch": patch, "update_mask": update_mask}
 
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.put(
-                f"{AGENT_DATA_URL}/documents/{path}",
-                json=body,
-                headers=_auth_headers(),
-                timeout=30.0,
-            )
-            if response.status_code == 200:
-                return response.json()
-            return {"error": f"HTTP {response.status_code}", "detail": response.text}
-        except httpx.HTTPError as e:
-            logger.error(f"update_document error: {e}")
-            return {"error": str(e)}
+    try:
+        response = await _hybrid_request("PUT", f"/documents/{path}", json=body)
+        if response.status_code == 200:
+            return response.json()
+        return {"error": f"HTTP {response.status_code}", "detail": response.text}
+    except httpx.HTTPError as e:
+        logger.error(f"update_document error: {e}")
+        return {"error": str(e)}
 
 
 async def delete_document(path: str) -> dict[str, Any]:
-    """Delete a document via DELETE /documents/{id}"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.delete(
-                f"{AGENT_DATA_URL}/documents/{path}",
-                headers=_auth_headers(),
-                timeout=30.0,
-            )
-            if response.status_code == 200:
-                return response.json()
-            return {"error": f"HTTP {response.status_code}", "detail": response.text}
-        except httpx.HTTPError as e:
-            logger.error(f"delete_document error: {e}")
-            return {"error": str(e)}
+    """Delete a document via DELETE /documents/{id} (hybrid)"""
+    try:
+        response = await _hybrid_request("DELETE", f"/documents/{path}")
+        if response.status_code == 200:
+            return response.json()
+        return {"error": f"HTTP {response.status_code}", "detail": response.text}
+    except httpx.HTTPError as e:
+        logger.error(f"delete_document error: {e}")
+        return {"error": str(e)}
 
 
 async def move_document(path: str, new_path: str) -> dict[str, Any]:
-    """Move a document via POST /documents/{id}/move"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{AGENT_DATA_URL}/documents/{path}/move",
-                json={"new_parent_id": new_path},
-                headers=_auth_headers(),
-                timeout=30.0,
-            )
-            if response.status_code == 200:
-                return response.json()
-            return {"error": f"HTTP {response.status_code}", "detail": response.text}
-        except httpx.HTTPError as e:
-            logger.error(f"move_document error: {e}")
-            return {"error": str(e)}
+    """Move a document via POST /documents/{id}/move (hybrid)"""
+    try:
+        response = await _hybrid_request(
+            "POST", f"/documents/{path}/move", json={"new_parent_id": new_path},
+        )
+        if response.status_code == 200:
+            return response.json()
+        return {"error": f"HTTP {response.status_code}", "detail": response.text}
+    except httpx.HTTPError as e:
+        logger.error(f"move_document error: {e}")
+        return {"error": str(e)}
 
 
 async def ingest_document(source: str) -> dict[str, Any]:
-    """Ingest a document via POST /ingest"""
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{AGENT_DATA_URL}/ingest",
-                json={"text": source},
-                timeout=30.0,
-            )
-            if response.status_code in (200, 202):
-                return response.json()
-            return {"error": f"HTTP {response.status_code}", "detail": response.text}
-        except httpx.HTTPError as e:
-            logger.error(f"ingest_document error: {e}")
-            return {"error": str(e)}
+    """Ingest a document via POST /ingest (hybrid)"""
+    try:
+        response = await _hybrid_request("POST", "/ingest", json={"text": source})
+        if response.status_code in (200, 202):
+            return response.json()
+        return {"error": f"HTTP {response.status_code}", "detail": response.text}
+    except httpx.HTTPError as e:
+        logger.error(f"ingest_document error: {e}")
+        return {"error": str(e)}
 
 
 # MCP Protocol Handlers
@@ -436,22 +426,31 @@ async def mcp_sse(request: Request):
 
 @app.get("/health")
 async def health():
-    """Health check - also verifies Agent Data connectivity"""
-    agent_data_status = "unknown"
+    """Health check - verifies Agent Data connectivity (hybrid)"""
+    local_status = "unknown"
+    cloud_status = "unknown"
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{AGENT_DATA_URL}/info", timeout=5.0)
-            if response.status_code == 200:
-                agent_data_status = "connected"
-            else:
-                agent_data_status = f"error:{response.status_code}"
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{AGENT_DATA_URL}/info")
+            local_status = "connected" if resp.status_code == 200 else f"error:{resp.status_code}"
     except Exception as e:
-        agent_data_status = f"error:{str(e)}"
+        local_status = f"unavailable:{type(e).__name__}"
+    if AGENT_DATA_URL_CLOUD:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{AGENT_DATA_URL_CLOUD}/info")
+                cloud_status = "connected" if resp.status_code == 200 else f"error:{resp.status_code}"
+        except Exception as e:
+            cloud_status = f"unavailable:{type(e).__name__}"
+    else:
+        cloud_status = "not_configured"
 
     return {
         "status": "ok",
-        "agent_data_url": AGENT_DATA_URL,
-        "agent_data_status": agent_data_status,
+        "mode": "hybrid",
+        "prefer": AGENT_DATA_PREFER,
+        "local": {"url": AGENT_DATA_URL, "status": local_status},
+        "cloud": {"url": AGENT_DATA_URL_CLOUD, "status": cloud_status},
     }
 
 

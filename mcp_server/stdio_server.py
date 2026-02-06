@@ -6,6 +6,7 @@ and upload_document, update_document, delete_document, move_document, ingest_doc
 """
 
 import asyncio
+import logging
 import os
 import sys
 
@@ -14,23 +15,42 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
-# Agent Data backend URL
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+logger = logging.getLogger("mcp-stdio")
+
+# --- Hybrid config ---
+# Primary (local) and fallback (cloud) endpoints
 AGENT_DATA_URL = os.getenv("AGENT_DATA_URL", "http://localhost:8000")
+AGENT_DATA_URL_CLOUD = os.getenv("AGENT_DATA_URL_CLOUD", "")
+AGENT_DATA_PREFER = os.getenv("AGENT_DATA_PREFER", "local")
 
-# API key for write operations (from Secret Manager: agent-data-api-key)
-AGENT_DATA_API_KEY = os.getenv("AGENT_DATA_API_KEY", "")
+# API keys per environment
+AGENT_DATA_API_KEY_LOCAL = os.getenv("AGENT_DATA_API_KEY_LOCAL", os.getenv("AGENT_DATA_API_KEY", ""))
+AGENT_DATA_API_KEY_CLOUD = os.getenv("AGENT_DATA_API_KEY_CLOUD", "")
+
+# Track which endpoint is currently active
+_active_url: str = AGENT_DATA_URL
+_active_api_key: str = AGENT_DATA_API_KEY_LOCAL
 
 
-def _get_auth_headers() -> dict[str, str]:
-    """Build auth headers. Includes IAM identity token for Cloud Run and API key for write ops."""
+def _get_auth_headers(url: str | None = None) -> dict[str, str]:
+    """Build auth headers for the given URL (or active URL)."""
+    target = url or _active_url
     headers: dict[str, str] = {}
 
-    # Add API key for write operations
-    if AGENT_DATA_API_KEY:
-        headers["X-API-Key"] = AGENT_DATA_API_KEY
+    # Select correct API key based on target
+    if target == AGENT_DATA_URL:
+        api_key = AGENT_DATA_API_KEY_LOCAL
+    elif target == AGENT_DATA_URL_CLOUD:
+        api_key = AGENT_DATA_API_KEY_CLOUD
+    else:
+        api_key = AGENT_DATA_API_KEY_LOCAL
+
+    if api_key:
+        headers["X-API-Key"] = api_key
 
     # Add Google Cloud identity token if targeting Cloud Run (https://)
-    if AGENT_DATA_URL.startswith("https://"):
+    if target.startswith("https://"):
         try:
             import subprocess
             result = subprocess.run(
@@ -40,9 +60,50 @@ def _get_auth_headers() -> dict[str, str]:
             if result.returncode == 0 and result.stdout.strip():
                 headers["Authorization"] = f"Bearer {result.stdout.strip()}"
         except Exception:
-            pass  # Fall through without IAM token (may 403 on Cloud Run)
+            pass  # Fall through without IAM token
 
     return headers
+
+
+async def _request_with_fallback(
+    client: httpx.AsyncClient,
+    method: str,
+    path: str,
+    **kwargs,
+) -> httpx.Response:
+    """Try primary URL first; on connection error, fallback to cloud.
+
+    Returns the httpx.Response from whichever endpoint succeeds.
+    """
+    global _active_url, _active_api_key
+
+    primary = AGENT_DATA_URL
+    fallback = AGENT_DATA_URL_CLOUD
+
+    for attempt_url in [primary, fallback]:
+        if not attempt_url:
+            continue
+        try:
+            headers = _get_auth_headers(attempt_url)
+            merged_headers = {**headers, **kwargs.pop("headers", {})}
+            resp = await client.request(
+                method,
+                f"{attempt_url}{path}",
+                headers=merged_headers,
+                timeout=kwargs.pop("timeout", 30.0),
+                **kwargs,
+            )
+            if _active_url != attempt_url:
+                label = "LOCAL" if attempt_url == primary else "CLOUD"
+                logger.info("Using %s endpoint: %s", label, attempt_url)
+                _active_url = attempt_url
+            return resp
+        except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            label = "LOCAL" if attempt_url == primary else "CLOUD"
+            logger.warning("%s unavailable (%s), trying fallback...", label, e)
+            continue
+
+    raise httpx.ConnectError(f"Both LOCAL ({primary}) and CLOUD ({fallback}) unavailable")
 
 # Create MCP server
 server = Server("agent-data")
@@ -97,13 +158,13 @@ async def list_tools() -> list[Tool]:
         # --- Write tools ---
         Tool(
             name="upload_document",
-            description="Upload/create a new document in the knowledge base. Use flat IDs (e.g. 'web-50-report') for full CRUD support, or path-style IDs (e.g. 'docs/reports/web-50') for create-only.",
+            description="Upload/create a new document in the knowledge base.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Document ID. Use flat ID like 'web-50-report' (recommended) or path like 'docs/reports/web-50-report.md'. Flat IDs support update/delete/move; path IDs only support create.",
+                        "description": "Document path, e.g. 'docs/operations/sessions/web-50-report.md'",
                     },
                     "content": {
                         "type": "string",
@@ -124,13 +185,13 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="update_document",
-            description="Update an existing document's content and/or metadata. Document must have a flat ID (no slashes).",
+            description="Update an existing document's content and/or metadata.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Document ID to update (flat ID, no slashes)",
+                        "description": "Document path to update, e.g. 'docs/foundation/constitution.md'",
                     },
                     "content": {
                         "type": "string",
@@ -151,13 +212,13 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="delete_document",
-            description="Delete a document from the knowledge base. Document must have a flat ID (no slashes).",
+            description="Delete a document from the knowledge base.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Document ID to delete (flat ID, no slashes)",
+                        "description": "Document path to delete, e.g. 'docs/test/old-file.md'",
                     },
                 },
                 "required": ["path"],
@@ -165,17 +226,17 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="move_document",
-            description="Move a document to a new parent. Document must have a flat ID (no slashes). Use 'root' to move to top level.",
+            description="Move a document to a new parent. Use 'root' to move to top level.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Current document ID (flat ID, no slashes)",
+                        "description": "Current document path, e.g. 'docs/old-location/file.md'",
                     },
                     "new_path": {
                         "type": "string",
-                        "description": "New parent document ID, or 'root' for top level",
+                        "description": "New parent document path, or 'root' for top level",
                     },
                 },
                 "required": ["path", "new_path"],
@@ -200,42 +261,32 @@ async def list_tools() -> list[Tool]:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-    """Execute a tool and return results."""
-
-    auth_headers = _get_auth_headers()
+    """Execute a tool and return results. Uses hybrid fallback (local→cloud)."""
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             if name == "search_knowledge":
                 query = arguments.get("query", "")
-                response = await client.post(
-                    f"{AGENT_DATA_URL}/chat",
-                    json={"message": query},
-                    headers=auth_headers,
+                response = await _request_with_fallback(
+                    client, "POST", "/chat", json={"message": query},
                 )
                 if response.status_code == 200:
                     data = response.json()
                     result = data.get("response", data.get("content", "No response"))
-
-                    # Add context if available
                     context = data.get("context", [])
                     if context:
                         sources = "\n\nSources:\n" + "\n".join(
                             f"- {c.get('document_id', 'unknown')}" for c in context[:3]
                         )
                         result += sources
-
                     return [TextContent(type="text", text=result)]
                 else:
                     return [TextContent(type="text", text=f"Error: HTTP {response.status_code}")]
 
             elif name == "list_documents":
                 path = arguments.get("path", "docs")
-                # Use /api/docs/tree endpoint to list documents
-                response = await client.get(
-                    f"{AGENT_DATA_URL}/api/docs/tree",
-                    params={"path": path},
-                    headers=auth_headers,
+                response = await _request_with_fallback(
+                    client, "GET", "/api/docs/tree", params={"path": path},
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -244,25 +295,19 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         result = f"Documents in '{path}':\n\n"
                         for item in items:
                             item_type = "📁" if item.get("type") == "dir" else "📄"
-                            name = item.get("name", "unknown")
+                            item_name = item.get("name", "unknown")
                             item_path = item.get("path", "")
-                            result += f"{item_type} {name}\n   Path: {item_path}\n"
+                            result += f"{item_type} {item_name}\n   Path: {item_path}\n"
                         return [TextContent(type="text", text=result)]
                     else:
                         return [TextContent(type="text", text=f"No documents found in '{path}'")]
-
                 return [TextContent(type="text", text=f"Error listing documents: HTTP {response.status_code}")]
 
             elif name == "get_document":
                 doc_id = arguments.get("document_id", "")
-
-                # Try /api/docs/file endpoint first (for GitHub docs)
-                # Handle both full path and short name
                 doc_path = doc_id if doc_id.startswith("docs/") else f"docs/{doc_id}"
-                response = await client.get(
-                    f"{AGENT_DATA_URL}/api/docs/file",
-                    params={"path": doc_path},
-                    headers=auth_headers,
+                response = await _request_with_fallback(
+                    client, "GET", "/api/docs/file", params={"path": doc_path},
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -271,23 +316,20 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         return [TextContent(type="text", text=f"# Document: {doc_id}\n\n{content}")]
 
                 # Fallback: search in Qdrant via chat
-                response = await client.post(
-                    f"{AGENT_DATA_URL}/chat",
+                response = await _request_with_fallback(
+                    client, "POST", "/chat",
                     json={"message": f"Get the full content of document: {doc_id}"},
-                    headers=auth_headers,
                 )
                 if response.status_code == 200:
                     data = response.json()
                     result = data.get("response", "")
                     context = data.get("context", [])
                     if context:
-                        # Include source info
                         sources = "\n\n---\nSource: " + ", ".join(
                             c.get("document_id", "unknown") for c in context[:3]
                         )
                         result += sources
                     return [TextContent(type="text", text=result)]
-
                 return [TextContent(type="text", text=f"Document '{doc_id}' not found")]
 
             elif name == "upload_document":
@@ -295,25 +337,19 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 content = arguments.get("content", "")
                 title = arguments.get("title", "")
                 tags = arguments.get("tags", [])
-
-                # Derive parent_id from path (e.g. "docs/test/file.md" → "docs/test")
                 parent_id = "/".join(path.split("/")[:-1]) if "/" in path else ""
-
+                if not title:
+                    title = path.rsplit("/", 1)[-1] if "/" in path else path
                 body = {
                     "document_id": path,
                     "parent_id": parent_id,
                     "content": {"mime_type": "text/markdown", "body": content},
-                    "metadata": {},
+                    "metadata": {"title": title},
                 }
-                if title:
-                    body["metadata"]["title"] = title
                 if tags:
                     body["metadata"]["tags"] = tags
-
-                response = await client.post(
-                    f"{AGENT_DATA_URL}/documents",
-                    json=body,
-                    headers=auth_headers,
+                response = await _request_with_fallback(
+                    client, "POST", "/documents", json=body,
                 )
                 if response.status_code in (200, 201):
                     data = response.json()
@@ -326,7 +362,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 content = arguments.get("content", "")
                 title = arguments.get("title", "")
                 tags = arguments.get("tags", [])
-
                 patch = {"content": {"mime_type": "text/markdown", "body": content}}
                 update_mask = ["content"]
                 metadata = {}
@@ -337,17 +372,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 if metadata:
                     patch["metadata"] = metadata
                     update_mask.append("metadata")
-
                 body = {
                     "document_id": path,
                     "patch": patch,
                     "update_mask": update_mask,
                 }
-
-                response = await client.put(
-                    f"{AGENT_DATA_URL}/documents/{path}",
-                    json=body,
-                    headers=auth_headers,
+                response = await _request_with_fallback(
+                    client, "PUT", f"/documents/{path}", json=body,
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -357,10 +388,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             elif name == "delete_document":
                 path = arguments.get("path", "")
-
-                response = await client.delete(
-                    f"{AGENT_DATA_URL}/documents/{path}",
-                    headers=auth_headers,
+                response = await _request_with_fallback(
+                    client, "DELETE", f"/documents/{path}",
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -371,11 +400,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             elif name == "move_document":
                 path = arguments.get("path", "")
                 new_path = arguments.get("new_path", "")
-
-                response = await client.post(
-                    f"{AGENT_DATA_URL}/documents/{path}/move",
+                response = await _request_with_fallback(
+                    client, "POST", f"/documents/{path}/move",
                     json={"new_parent_id": new_path},
-                    headers=auth_headers,
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -385,11 +412,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             elif name == "ingest_document":
                 source = arguments.get("source", "")
-
-                response = await client.post(
-                    f"{AGENT_DATA_URL}/ingest",
-                    json={"text": source},
-                    headers=auth_headers,
+                response = await _request_with_fallback(
+                    client, "POST", "/ingest", json={"text": source},
                 )
                 if response.status_code in (200, 202):
                     data = response.json()
@@ -401,8 +425,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             else:
                 return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
+        except httpx.ConnectError as e:
+            return [TextContent(type="text", text=f"Connection error: {str(e)}. Both local and cloud endpoints unavailable.")]
         except httpx.RequestError as e:
-            return [TextContent(type="text", text=f"Connection error: {str(e)}. Is Agent Data running at {AGENT_DATA_URL}?")]
+            return [TextContent(type="text", text=f"Request error: {str(e)}")]
         except Exception as e:
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
@@ -422,26 +448,28 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
         async def test():
             tools = await list_tools()
-            print(f"MCP STDIO Server Test")
-            print(f"=====================")
-            print(f"Agent Data URL: {AGENT_DATA_URL}")
-            print(f"Tools available: {len(tools)}")
+            print(f"MCP STDIO Server Test (Hybrid)")
+            print(f"==============================")
+            print(f"Local URL:  {AGENT_DATA_URL}")
+            print(f"Cloud URL:  {AGENT_DATA_URL_CLOUD}")
+            print(f"Prefer:     {AGENT_DATA_PREFER}")
+            print(f"Tools:      {len(tools)}")
             for tool in tools:
                 print(f"  - {tool.name}: {tool.description[:50]}...")
 
-            # Test connection to Agent Data
+            # Test connection with hybrid fallback
             import httpx
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
-                    resp = await client.get(f"{AGENT_DATA_URL}/info")
+                    resp = await _request_with_fallback(client, "GET", "/info")
                     if resp.status_code == 200:
-                        print(f"Agent Data connection: OK")
+                        print(f"Agent Data connection: OK (via {_active_url})")
                     else:
                         print(f"Agent Data connection: ERROR ({resp.status_code})")
             except Exception as e:
                 print(f"Agent Data connection: FAILED ({e})")
 
-            print("=====================")
+            print("==============================")
             print("Test completed successfully!")
 
         asyncio.run(test())
