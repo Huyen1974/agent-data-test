@@ -144,9 +144,7 @@ class TestResilientCaller:
 
     def test_health_check_returns_status(self):
         async def _run():
-            caller = ResilientCaller(
-                service_name="test-hc", base_url="http://fake"
-            )
+            caller = ResilientCaller(service_name="test-hc", base_url="http://fake")
             mock_client = AsyncMock()
             mock_client.is_closed = False
             mock_response = MagicMock()
