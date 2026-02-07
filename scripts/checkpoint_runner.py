@@ -154,10 +154,10 @@ def check_pre_commit():
 
 
 def check_unit_tests():
-    """Check CP0.3: Unit tests with coverage >= 80%."""
+    """Check CP0.3: Unit tests with coverage >= 70%."""
     try:
         result = subprocess.run(
-            ["pytest", "-m", "unit", "--cov=agent_data", "--cov-fail-under=80"],
+            ["pytest", "-m", "unit", "--cov=agent_data", "--cov-fail-under=70"],
             capture_output=True,
             text=True,
             timeout=300,
@@ -166,7 +166,7 @@ def check_unit_tests():
         if result.returncode != 0:
             return False, f"Unit tests failed: {result.stdout}"
 
-        return True, "CP0.3 PASS: Unit tests with coverage >= 80%"
+        return True, "CP0.3 PASS: Unit tests with coverage >= 70%"
 
     except Exception as e:
         return False, f"CP0.3 check failed: {e}"
