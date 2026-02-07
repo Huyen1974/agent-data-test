@@ -1,0 +1,77 @@
+#!/bin/bash
+# dot-ai-start - Start entire AI infrastructure locally
+# Usage: dot-ai-start [--skip-tests]
+
+AGENT_DATA_DIR="/Users/nmhuyen/Documents/Manual Deploy/agent-data-test"
+SKIP_TESTS="${1:-}"
+
+echo "🚀 Starting AI Infrastructure..."
+echo ""
+
+cd "$AGENT_DATA_DIR"
+mkdir -p logs
+
+# Activate venv
+VENV_PYTHON="$AGENT_DATA_DIR/venv/bin/python"
+
+# Check if Agent Data already running
+if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+    echo "✅ Agent Data already running"
+else
+    echo "📦 Starting Agent Data..."
+    # Start in background
+    nohup "$VENV_PYTHON" -m uvicorn agent_data.server:app --host 0.0.0.0 --port 8000 > logs/agent_data.log 2>&1 &
+    sleep 5
+
+    # Verify it started
+    for i in {1..10}; do
+        if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+            echo "✅ Agent Data started"
+            break
+        fi
+        if [ $i -eq 10 ]; then
+            echo "❌ Agent Data failed to start. Check logs/agent_data.log"
+            exit 1
+        fi
+        sleep 1
+    done
+fi
+
+# Check if MCP Server already running
+if curl -s http://localhost:8001/mcp > /dev/null 2>&1; then
+    echo "✅ MCP Server already running"
+else
+    echo "📦 Starting MCP Server..."
+    nohup "$VENV_PYTHON" -m uvicorn mcp_server.server:app --host 0.0.0.0 --port 8001 > logs/mcp_server.log 2>&1 &
+    sleep 3
+
+    # Verify it started
+    for i in {1..10}; do
+        if curl -s http://localhost:8001/mcp > /dev/null 2>&1; then
+            echo "✅ MCP Server started"
+            break
+        fi
+        if [ $i -eq 10 ]; then
+            echo "⚠️ MCP HTTP Server not responding (optional)"
+        fi
+        sleep 1
+    done
+fi
+
+# Run verification tests unless skipped
+if [ "$SKIP_TESTS" != "--skip-tests" ]; then
+    echo ""
+    echo "🧪 Running verification tests..."
+    "$VENV_PYTHON" tests/test_ai_connections.py
+fi
+
+echo ""
+echo "📋 Endpoints:"
+echo "   Agent Data: http://localhost:8000"
+echo "   MCP Server: http://localhost:8001"
+echo "   Cloud:      https://agent-data-test-pfne2mqwja-as.a.run.app"
+echo ""
+echo "📌 DOT Commands:"
+echo "   dot-ai-stop      - Stop all services"
+echo "   dot-ai-test-all  - Run all tests"
+echo "   dot-mcp-diagnose - Diagnose MCP connection"

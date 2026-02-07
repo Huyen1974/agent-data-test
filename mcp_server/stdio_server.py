@@ -285,26 +285,39 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             elif name == "list_documents":
                 path = arguments.get("path", "docs")
+                # Primary: list from Firestore KB (where documents are actually stored)
                 response = await _request_with_fallback(
-                    client, "GET", "/api/docs/tree", params={"path": path},
+                    client, "GET", "/kb/list", params={"prefix": path},
                 )
                 if response.status_code == 200:
                     data = response.json()
                     items = data.get("items", [])
                     if items:
-                        result = f"Documents in '{path}':\n\n"
+                        result = f"Documents in '{path}' ({len(items)} items):\n\n"
                         for item in items:
-                            item_type = "📁" if item.get("type") == "dir" else "📄"
-                            item_name = item.get("name", "unknown")
-                            item_path = item.get("path", "")
-                            result += f"{item_type} {item_name}\n   Path: {item_path}\n"
+                            tags = item.get("tags", [])
+                            tag_str = f" [{', '.join(tags)}]" if tags else ""
+                            result += f"- {item.get('document_id', '?')}{tag_str}\n"
                         return [TextContent(type="text", text=result)]
                     else:
-                        return [TextContent(type="text", text=f"No documents found in '{path}'")]
+                        return [TextContent(type="text", text=f"No documents found with prefix '{path}'")]
                 return [TextContent(type="text", text=f"Error listing documents: HTTP {response.status_code}")]
 
             elif name == "get_document":
                 doc_id = arguments.get("document_id", "")
+                # Primary: get from Firestore KB
+                response = await _request_with_fallback(
+                    client, "GET", f"/kb/get/{doc_id}",
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data.get("content", "")
+                    if content:
+                        meta = data.get("metadata", {})
+                        title = meta.get("title", doc_id)
+                        return [TextContent(type="text", text=f"# {title}\n\n{content}")]
+
+                # Fallback: try GitHub docs
                 doc_path = doc_id if doc_id.startswith("docs/") else f"docs/{doc_id}"
                 response = await _request_with_fallback(
                     client, "GET", "/api/docs/file", params={"path": doc_path},
@@ -315,21 +328,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     if content:
                         return [TextContent(type="text", text=f"# Document: {doc_id}\n\n{content}")]
 
-                # Fallback: search in Qdrant via chat
-                response = await _request_with_fallback(
-                    client, "POST", "/chat",
-                    json={"message": f"Get the full content of document: {doc_id}"},
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    result = data.get("response", "")
-                    context = data.get("context", [])
-                    if context:
-                        sources = "\n\n---\nSource: " + ", ".join(
-                            c.get("document_id", "unknown") for c in context[:3]
-                        )
-                        result += sources
-                    return [TextContent(type="text", text=result)]
                 return [TextContent(type="text", text=f"Document '{doc_id}' not found")]
 
             elif name == "upload_document":

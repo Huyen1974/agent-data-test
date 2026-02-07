@@ -26,8 +26,10 @@ Complete API reference for the Agent Data service — the central knowledge hub.
 | Tool | Description | Endpoint |
 |------|-------------|----------|
 | `search_knowledge` | RAG semantic search | POST /chat |
-| `list_documents` | List docs in tree | GET /api/docs/tree |
-| `get_document` | Get document content | GET /api/docs/file |
+| `list_documents` | List KB documents | GET /kb/list |
+| `get_document` | Get document content | GET /kb/get/{doc_id} |
+
+> Note: Legacy endpoints `/api/docs/tree` and `/api/docs/file` still work for GitHub-synced docs.
 
 ### Write Tools (5) — Require API Key
 | Tool | Description | Endpoint |
@@ -122,6 +124,12 @@ docs/
 - Collection: `{APP_ENV}_documents` (e.g., `development_documents`)
 - Embeddings via OpenAI
 - `vector_status` field tracks sync state: pending → synced/error/skipped
+
+## MCP Protocol Endpoints (for AI Connectors)
+Cloud Run serves MCP protocol directly — no separate MCP server needed:
+- `GET /mcp` — Server info + tool definitions
+- `POST /mcp/tools/{tool_name}` — Execute any tool by name
+- Claude.ai connector URL: `https://agent-data-test-pfne2mqwja-as.a.run.app/mcp`
 
 ## OpenAPI Spec
 Location: `docs/api/openapi.yaml`

@@ -169,39 +169,38 @@ async def search_knowledge(query: str, limit: int = 5) -> dict[str, Any]:
 
 
 async def list_documents(path: str = "") -> dict[str, Any]:
-    """List documents (hybrid) - uses /docs/list endpoint if available"""
+    """List documents from Firestore KB (hybrid)"""
     try:
         response = await _hybrid_request(
-            "GET", "/docs/list", params={"path": path} if path else {},
+            "GET", "/kb/list", params={"prefix": path} if path else {},
         )
         if response.status_code == 200:
             return response.json()
     except httpx.HTTPError:
         pass
 
-    # Fallback to /info
-    try:
-        response = await _hybrid_request("GET", "/info")
-        return {
-            "status": "list_endpoint_not_available",
-            "message": "Use search_knowledge to find documents",
-            "server_info": response.json(),
-        }
-    except httpx.HTTPError as e:
-        return {"error": str(e)}
+    return {"items": [], "error": "Failed to list documents"}
 
 
 async def get_document(document_id: str) -> dict[str, Any]:
-    """Get specific document content (hybrid)"""
+    """Get document content from Firestore KB (hybrid)"""
     try:
-        response = await _hybrid_request("GET", f"/docs/{document_id}")
+        response = await _hybrid_request("GET", f"/kb/get/{document_id}")
         if response.status_code == 200:
             return response.json()
     except httpx.HTTPError:
         pass
 
-    # Fallback: use chat to retrieve document context
-    return await search_knowledge(f"Get document content: {document_id}")
+    # Fallback: try GitHub docs
+    doc_path = document_id if document_id.startswith("docs/") else f"docs/{document_id}"
+    try:
+        response = await _hybrid_request("GET", "/api/docs/file", params={"path": doc_path})
+        if response.status_code == 200:
+            return response.json()
+    except httpx.HTTPError:
+        pass
+
+    return {"error": f"Document '{document_id}' not found"}
 
 
 def _auth_headers(url: str | None = None) -> dict[str, str]:

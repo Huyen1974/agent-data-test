@@ -9,8 +9,9 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Path
+from fastapi import Depends, FastAPI, Header, HTTPException, Path, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_client import Counter, Histogram
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette_prometheus import PrometheusMiddleware, metrics
@@ -623,9 +624,7 @@ def query_knowledge(payload: QueryKnowledgeRequest):
                 except Exception:
                     pass
 
-        noop_qdrant = (
-            routing.noop_qdrant or getattr(agent.config, "vecdb", None) is None
-        )
+        noop_qdrant = routing.noop_qdrant
         _t0 = time.perf_counter()
         contexts: list[QueryContextEntry] = []
         if not noop_qdrant:
@@ -635,7 +634,7 @@ def query_knowledge(payload: QueryKnowledgeRequest):
                 top_k=payload.top_k,
             )
 
-        qdrant_hits = len(contexts) if not noop_qdrant else 0
+        qdrant_hits = len(contexts)
 
         if contexts:
             context_text = "\n\n".join(
@@ -753,10 +752,32 @@ def _retrieve_query_context(
 ) -> list[QueryContextEntry]:
     """Fetch candidate documents to ground the knowledge query.
 
-    Aims for graceful degradation when Firestore/Qdrant are unavailable by
-    returning an empty context instead of bubbling internal errors.
+    Strategy: Use Qdrant vector search first (semantic similarity).
+    Falls back to Firestore keyword scan if vector store is unavailable.
     """
 
+    # --- Strategy 1: Qdrant vector search ---
+    try:
+        store = vector_store.get_vector_store()
+        if store.enabled:
+            filter_tags = filters.tags if filters and filters.tags else None
+            hits = store.search(query=query, top_k=top_k, filter_tags=filter_tags)
+            if hits:
+                contexts = []
+                for hit in hits:
+                    contexts.append(
+                        QueryContextEntry(
+                            document_id=hit["document_id"],
+                            snippet=hit.get("snippet"),
+                            score=hit.get("score", 0.0),
+                            metadata=hit.get("metadata"),
+                        )
+                    )
+                return contexts
+    except Exception as exc:
+        logger.warning("Vector search failed, falling back to Firestore: %s", exc)
+
+    # --- Strategy 2: Firestore keyword scan (fallback) ---
     try:
         db = _firestore()
     except HTTPException:
@@ -764,12 +785,6 @@ def _retrieve_query_context(
 
     try:
         collection = db.collection(KB_COLLECTION)
-    except Exception as exc:
-        logger.warning("Failed to access collection for query context: %s", exc)
-        return []
-
-    # Prefer Firestore cursor `.stream()`; fall back to empty if unsupported.
-    try:
         stream_fn = getattr(collection, "stream", None)
         snapshots = list(stream_fn()) if callable(stream_fn) else []
     except Exception as exc:
@@ -777,7 +792,7 @@ def _retrieve_query_context(
         return []
 
     contexts: list[QueryContextEntry] = []
-    query_lc = query.lower()
+    query_words = [w.lower() for w in query.lower().split() if len(w) > 2]
     for snap in snapshots:
         try:
             data = snap.to_dict() if hasattr(snap, "to_dict") else {}
@@ -801,27 +816,30 @@ def _retrieve_query_context(
 
         content = data.get("content") or {}
         body = content.get("body") if isinstance(content, dict) else None
-        if isinstance(body, str):
-            snippet = body[:200]
-        else:
-            snippet = None
+        if not isinstance(body, str):
+            continue
 
-        # Simple heuristic: ensure snippet loosely matches query keywords.
-        if snippet and query_lc not in snippet.lower():
-            # Allow fallback if no better context collected yet.
-            if contexts:
-                continue
+        # Score by keyword overlap (check full body, not just first 200 chars)
+        body_lc = body.lower()
+        title_lc = (metadata.get("title", "") if isinstance(metadata, dict) else "").lower()
+        searchable = f"{body_lc} {title_lc}"
+        matched = sum(1 for w in query_words if w in searchable)
+        if matched == 0:
+            continue
 
+        score = matched / max(len(query_words), 1)
         contexts.append(
             QueryContextEntry(
                 document_id=data.get("document_id") or getattr(snap, "id", "unknown"),
-                snippet=snippet,
-                score=data.get("score") or 0.0,
+                snippet=body[:500],
+                score=score,
                 metadata=metadata if isinstance(metadata, dict) else None,
             )
         )
-        if len(contexts) >= top_k:
-            break
+
+    # Sort by score descending, return top_k
+    contexts.sort(key=lambda c: c.score or 0.0, reverse=True)
+    contexts = contexts[:top_k]
 
     if not contexts:
         fallback_text = getattr(agent, "last_ingested_text", None)
@@ -894,12 +912,14 @@ async def create_document(payload: DocumentCreate, _=Depends(require_api_key)):
         doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
         snapshot = doc_ref.get()
         if getattr(snapshot, "exists", False):
-            raise _error(
-                status=409,
-                code="CONFLICT",
-                message="Document already exists",
-                document_id=doc_id,
-            )
+            existing = snapshot.to_dict() or {}
+            if existing.get("deleted_at") is None:
+                raise _error(
+                    status=409,
+                    code="CONFLICT",
+                    message="Document already exists",
+                    document_id=doc_id,
+                )
 
         created_at = payload.created_at or datetime.now(UTC)
         now_iso = created_at.isoformat()
@@ -1186,6 +1206,436 @@ async def delete_document(
                 "details": {"error": str(e)},
             },
         ) from e
+
+
+# ---------------- KB Document Read Endpoints ----------------
+# These expose Firestore KB documents for MCP tools (list + get).
+# Distinct from /api/docs/* which serves GitHub-synced content.
+
+
+@app.get("/kb/list")
+async def list_kb_documents(prefix: str = ""):
+    """List KB documents from Firestore, optionally filtered by path prefix."""
+    try:
+        db = _firestore()
+        docs = list(db.collection(KB_COLLECTION).stream())
+        items = []
+        for snap in docs:
+            data = snap.to_dict() or {}
+            if data.get("deleted_at") is not None:
+                continue
+            doc_id = data.get("document_id", snap.id)
+            if prefix and not doc_id.startswith(prefix):
+                continue
+            items.append({
+                "document_id": doc_id,
+                "parent_id": data.get("parent_id", ""),
+                "title": (data.get("metadata") or {}).get("title", ""),
+                "tags": (data.get("metadata") or {}).get("tags", []),
+                "revision": data.get("revision", 0),
+            })
+        items.sort(key=lambda x: x["document_id"])
+        return {"items": items, "count": len(items)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"List KB documents failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/kb/get/{doc_id:path}")
+async def get_kb_document(doc_id: str = Path(..., min_length=1)):
+    """Get a single KB document's full content from Firestore."""
+    try:
+        db = _firestore()
+        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
+        snap = doc_ref.get()
+        if not getattr(snap, "exists", False):
+            raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
+        data = snap.to_dict() or {}
+        if data.get("deleted_at") is not None:
+            raise _error(404, "NOT_FOUND", "Document deleted", document_id=doc_id)
+        content = data.get("content", {})
+        body = content.get("body", "") if isinstance(content, dict) else ""
+        return {
+            "document_id": data.get("document_id", doc_id),
+            "content": body,
+            "metadata": data.get("metadata", {}),
+            "revision": data.get("revision", 0),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get KB document failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/kb/reindex", dependencies=[Depends(require_api_key)])
+async def reindex_kb_documents():
+    """Re-index all Firestore KB documents into Qdrant vector store.
+
+    Iterates every non-deleted document in KB_COLLECTION, upserts each
+    into Qdrant with embeddings.  Returns counts of indexed/skipped/errors.
+    """
+    store = vector_store.get_vector_store(refresh=True)
+    if not store.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Vector store not available (missing QDRANT_URL/API_KEY/OPENAI_API_KEY)",
+        )
+
+    db = _firestore()
+    docs = list(db.collection(KB_COLLECTION).stream())
+
+    indexed = 0
+    skipped = 0
+    errors = []
+    for snap in docs:
+        data = snap.to_dict() or {}
+        if data.get("deleted_at") is not None:
+            skipped += 1
+            continue
+
+        doc_id = data.get("document_id", snap.id)
+        content = data.get("content") or {}
+        body = content.get("body", "") if isinstance(content, dict) else ""
+        if not body.strip():
+            skipped += 1
+            continue
+
+        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        parent_id = data.get("parent_id", "")
+        is_hr = data.get("is_human_readable", False)
+
+        result = store.upsert_document(
+            document_id=doc_id,
+            content=body,
+            metadata=metadata,
+            parent_id=parent_id,
+            is_human_readable=is_hr,
+        )
+
+        if result.status == "error":
+            errors.append({"document_id": doc_id, "error": result.error})
+        elif result.status == "skipped":
+            skipped += 1
+        else:
+            indexed += 1
+
+            # Update Firestore vector_status
+            try:
+                doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
+                doc_ref.update({"vector_status": "ready"})
+            except Exception:
+                pass
+
+    vector_count = store.count()
+    return {
+        "status": "completed",
+        "firestore_total": len(docs),
+        "indexed": indexed,
+        "skipped": skipped,
+        "errors": errors,
+        "error_count": len(errors),
+        "qdrant_vectors": vector_count,
+    }
+
+
+# ---- MCP Protocol Endpoints ----
+# These allow Claude.ai and other AI connectors to discover and call tools
+# directly on Cloud Run without needing the separate mcp_server process.
+
+MCP_TOOLS = [
+    {
+        "name": "search_knowledge",
+        "description": "Search the knowledge base using semantic/RAG query. Returns relevant documents and context from the vector database.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The search query in natural language (Vietnamese or English)"},
+                "limit": {"type": "integer", "description": "Maximum number of results (default: 5)", "default": 5},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "list_documents",
+        "description": "List available documents in the knowledge base",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Optional path prefix to filter (e.g., 'docs/')", "default": ""},
+            },
+        },
+    },
+    {
+        "name": "get_document",
+        "description": "Get full content of a specific document by its ID or path",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "string", "description": "The document ID or path"},
+            },
+            "required": ["document_id"],
+        },
+    },
+    {
+        "name": "upload_document",
+        "description": "Upload/create a new document in the knowledge base.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Document path, e.g. 'docs/operations/sessions/report.md'"},
+                "content": {"type": "string", "description": "Document content (markdown or plain text)"},
+                "title": {"type": "string", "description": "Optional document title"},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "update_document",
+        "description": "Update an existing document's content and/or metadata.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Document path to update"},
+                "content": {"type": "string", "description": "New document content"},
+                "title": {"type": "string", "description": "Optional new title"},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional new tags"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "delete_document",
+        "description": "Delete a document from the knowledge base.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Document path to delete"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "move_document",
+        "description": "Move a document to a new parent. Use 'root' for top level.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Current document path"},
+                "new_path": {"type": "string", "description": "New parent path, or 'root' for top level"},
+            },
+            "required": ["path", "new_path"],
+        },
+    },
+    {
+        "name": "ingest_document",
+        "description": "Ingest a document from GCS URI or URL into the knowledge base for vector processing",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "GCS URI (gs://bucket/path) or URL to ingest"},
+            },
+            "required": ["source"],
+        },
+    },
+]
+
+
+@app.get("/mcp")
+async def mcp_info():
+    """MCP Server info — returns capabilities and tool definitions."""
+    return {
+        "name": "agent-data-mcp",
+        "version": "1.0.0",
+        "description": "MCP Server for Agent Data Knowledge Base",
+        "protocol_version": "2024-11-05",
+        "capabilities": {"tools": True, "resources": False, "prompts": False},
+        "tools": MCP_TOOLS,
+    }
+
+
+async def _dispatch_mcp_tool(tool_name: str, args: dict) -> dict:
+    """Internal dispatch: call Python functions directly, NO HTTP.
+
+    This is the single dispatch point for all MCP tool calls, used by
+    both POST /mcp (JSON-RPC) and POST /mcp/tools/{name} endpoints.
+    """
+    if tool_name == "search_knowledge":
+        import asyncio
+
+        payload = QueryKnowledgeRequest(message=args.get("query", ""))
+        # query_knowledge is sync (uses asyncio.run internally via langroid)
+        # Must run in thread to avoid event loop conflict with async caller
+        result = await asyncio.to_thread(query_knowledge, payload)
+        return result.model_dump()
+
+    if tool_name == "list_documents":
+        return await list_kb_documents(prefix=args.get("path", "docs"))
+
+    if tool_name == "get_document":
+        doc_id = args.get("document_id", "")
+        try:
+            return await get_kb_document(doc_id=doc_id)
+        except HTTPException:
+            return {"error": f"Document '{doc_id}' not found"}
+
+    if tool_name == "upload_document":
+        path = args.get("path", "")
+        content_text = args.get("content", "")
+        title = args.get("title", "") or (path.rsplit("/", 1)[-1] if "/" in path else path)
+        tags = args.get("tags")
+        parent_id = "/".join(path.split("/")[:-1]) if "/" in path else ""
+        payload = DocumentCreate(
+            document_id=path,
+            parent_id=parent_id,
+            content=DocumentContent(mime_type="text/markdown", body=content_text),
+            metadata=DocumentMetadata(title=title, tags=tags),
+        )
+        result = await create_document(payload)
+        return result.model_dump()
+
+    if tool_name == "update_document":
+        path = args.get("path", "")
+        content_text = args.get("content", "")
+        title = args.get("title", "")
+        tags = args.get("tags")
+        metadata = DocumentMetadata(title=title or path, tags=tags) if (title or tags) else None
+        patch = DocumentUpdatePatch(
+            content=DocumentContent(mime_type="text/markdown", body=content_text),
+            metadata=metadata,
+        )
+        update_mask = ["content"] + (["metadata"] if metadata else [])
+        payload = DocumentUpdate(document_id=path, patch=patch, update_mask=update_mask)
+        result = await update_document(doc_id=path, payload=payload)
+        return result.model_dump()
+
+    if tool_name == "delete_document":
+        result = await delete_document(doc_id=args.get("path", ""))
+        return result.model_dump()
+
+    if tool_name == "move_document":
+        payload = DocumentMoveRequest(new_parent_id=args.get("new_path", ""))
+        result = await move_document(doc_id=args.get("path", ""), payload=payload)
+        return result.model_dump()
+
+    if tool_name == "ingest_document":
+        msg = ChatMessage(text=args.get("source", ""))
+        result = await ingest(msg)
+        return result.model_dump()
+
+    raise ValueError(f"Unknown tool: {tool_name}")
+
+
+@app.post("/mcp")
+async def mcp_jsonrpc(request: Request):
+    """MCP JSON-RPC protocol handler for Claude.ai connector.
+
+    Handles the Streamable HTTP transport: initialize, tools/list, tools/call.
+    All tool calls dispatch to internal Python functions — NO HTTP self-calls.
+    """
+    # Validate API key for MCP access
+    api_key = request.headers.get("x-api-key")
+    expected = os.getenv("API_KEY")
+    if expected and api_key != expected:
+        return JSONResponse(
+            status_code=401,
+            content={"jsonrpc": "2.0", "error": {"code": -32000, "message": "Invalid API key"}},
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return {"jsonrpc": "2.0", "error": {"code": -32700, "message": "Parse error"}, "id": None}
+
+    method = body.get("method", "")
+    params = body.get("params", {})
+    req_id = body.get("id")
+
+    logger.info("MCP JSON-RPC: method=%s id=%s", method, req_id)
+
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "agent-data-mcp", "version": "1.0.0"},
+            },
+        }
+
+    if method == "notifications/initialized":
+        return {"jsonrpc": "2.0", "id": req_id, "result": {}}
+
+    if method == "tools/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {"tools": MCP_TOOLS},
+        }
+
+    if method == "tools/call":
+        tool_name = params.get("name", "")
+        arguments = params.get("arguments", {})
+        try:
+            result = await _dispatch_mcp_tool(tool_name, arguments)
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps(result, default=str)}],
+                },
+            }
+        except HTTPException as he:
+            detail = he.detail if isinstance(he.detail, str) else json.dumps(he.detail)
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps({"error": detail})}],
+                    "isError": True,
+                },
+            }
+        except Exception as e:
+            logger.error("MCP tools/call %s error: %s", tool_name, e)
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps({"error": str(e)})}],
+                    "isError": True,
+                },
+            }
+
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "error": {"code": -32601, "message": f"Unknown method: {method}"},
+    }
+
+
+@app.post("/mcp/tools/{tool_name}")
+async def mcp_execute_tool(tool_name: str, request: Request):
+    """Execute an MCP tool by name. Dispatches to internal handlers directly."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    logger.info("MCP tool call: %s params=%s", tool_name, body)
+
+    try:
+        result = await _dispatch_mcp_tool(tool_name, body)
+        return {"result": result}
+    except HTTPException as he:
+        detail = he.detail if isinstance(he.detail, str) else json.dumps(he.detail)
+        return {"result": {"error": detail, "status_code": he.status_code}}
+    except Exception as e:
+        logger.error("MCP tool %s error: %s", tool_name, e)
+        return {"result": {"error": str(e)}}
 
 
 if __name__ == "__main__":

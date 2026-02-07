@@ -52,10 +52,14 @@ The system operates under "Agents First" philosophy:
 
 ## Hybrid Principle (Applies Everywhere)
 ```
-Priority: Local (fast, free) → Fallback: Cloud (when local unavailable)
+Priority: Local SERVICES (fast, free) → Fallback: Cloud SERVICES (when local unavailable)
+Cloud for DATA (Firestore, Qdrant, GCS) — ONE SOURCE shared by local + cloud.
 NEVER only one path. NEVER delete one when adding the other.
 ```
 This applies to: MCP config, Agent Data connections, all service connections, all future designs.
+- Local and Cloud Run share the SAME Firestore (`github-chatgpt-ggcloud`)
+- Config must have fallback: local → cloud for services
+- Data is always centralized in cloud (Firestore/Qdrant/GCS)
 
 ## Related Documents
 - `docs/foundation/constitution` — Full constitution text
