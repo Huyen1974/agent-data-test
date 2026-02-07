@@ -1,7 +1,6 @@
 """Tests for agent_data.resilient_client — retry, health tracking, discovery."""
 
 import os
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,7 +10,6 @@ from agent_data.resilient_client import (
     ServiceHealthRegistry,
     ServiceStatus,
     discover_services,
-    health_registry,
     probe_openai,
     probe_qdrant,
     sync_retry,

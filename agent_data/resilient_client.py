@@ -10,10 +10,11 @@ import asyncio
 import logging
 import os
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Callable
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any
 
 import httpx
 from tenacity import (
@@ -46,7 +47,7 @@ _TESTING = os.getenv("TESTING") == "1"
 # ---------------------------------------------------------------------------
 # ServiceHealthRegistry — per-service status with TTL cache
 # ---------------------------------------------------------------------------
-class ServiceStatus(str, Enum):
+class ServiceStatus(StrEnum):
     OK = "ok"
     DEGRADED = "degraded"
     DOWN = "down"
@@ -452,7 +453,7 @@ async def resilient_lifespan(app: Any):  # noqa: ANN401
     )
 
     probe_names = ["qdrant", "firestore", "openai"]
-    for name, result in zip(probe_names, results):
+    for name, result in zip(probe_names, results, strict=False):
         if isinstance(result, Exception):
             logger.warning("Probe %s raised: %s", name, result)
 

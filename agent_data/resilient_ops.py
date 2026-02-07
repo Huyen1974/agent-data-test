@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class TaskState(str, Enum):
+class TaskState(StrEnum):
     """Lifecycle states for a resilient operation task."""
 
     ACKED = "ACKED"
@@ -17,7 +17,7 @@ class TaskState(str, Enum):
     COMPENSATED = "COMPENSATED"
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     ACCEPTED = "accepted"
     RUNNING = "running"
     DONE = "done"
