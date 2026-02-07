@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-from uuid import uuid5, NAMESPACE_DNS
+from uuid import NAMESPACE_DNS, uuid5
 
 # Chunking configuration (configurable via environment variables)
 CHUNK_SIZE = int(os.getenv("QDRANT_CHUNK_SIZE", "4000"))
@@ -225,6 +225,80 @@ class QdrantVectorStore:
         except Exception as exc:  # pragma: no cover - network/SDK errors
             logger.error("Failed to upsert vector for %s: %s", document_id, exc)
             return VectorSyncResult(status="error", error=str(exc))
+
+    def search(
+        self,
+        *,
+        query: str,
+        top_k: int = 5,
+        filter_tags: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search for documents using vector similarity.
+
+        Returns a list of dicts with keys: document_id, snippet, score, metadata.
+        """
+        if not self.enabled:
+            return []
+        try:
+            self._ensure_client()
+            if self._client is None:
+                raise RuntimeError("Qdrant client unavailable")
+
+            embedding = self._embed(query)
+
+            query_filter = None
+            if filter_tags:
+                query_filter = qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(
+                            key="metadata.tags",
+                            match=qmodels.MatchAny(any=filter_tags),
+                        )
+                    ]
+                )
+
+            results = self._client.search(
+                collection_name=self.collection,
+                query_vector=embedding,
+                limit=top_k * 2,  # Fetch extra to deduplicate by document_id
+                query_filter=query_filter,
+                with_payload=True,
+            )
+
+            # Deduplicate by document_id (multiple chunks may match)
+            seen_docs: dict[str, dict[str, Any]] = {}
+            for hit in results:
+                payload = hit.payload or {}
+                doc_id = payload.get("document_id", "")
+                if not doc_id or doc_id in seen_docs:
+                    continue
+                seen_docs[doc_id] = {
+                    "document_id": doc_id,
+                    "snippet": (payload.get("content") or "")[:500],
+                    "score": hit.score,
+                    "metadata": payload.get("metadata") or {},
+                }
+                if len(seen_docs) >= top_k:
+                    break
+
+            return list(seen_docs.values())
+        except Exception as exc:
+            logger.error("Vector search failed: %s", exc)
+            return []
+
+    def count(self) -> int:
+        """Return the number of vectors in the collection."""
+        if not self.enabled:
+            return -1
+        try:
+            self._ensure_client()
+            if self._client is None:
+                return -1
+            info = self._client.get_collection(self.collection)
+            return info.points_count or 0
+        except Exception as exc:
+            logger.error("Vector count failed: %s", exc)
+            return -1
 
     def delete_document(self, document_id: str) -> VectorSyncResult:
         """Delete all chunks for a document.

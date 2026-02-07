@@ -1,0 +1,27 @@
+#!/bin/bash
+# dot-ai-stop - Stop AI infrastructure
+# Usage: dot-ai-stop
+
+echo "🛑 Stopping AI Infrastructure..."
+echo ""
+
+# Find and kill processes on our ports
+PORT_8000_PID=$(lsof -ti:8000 2>/dev/null)
+PORT_8001_PID=$(lsof -ti:8001 2>/dev/null)
+
+if [ -n "$PORT_8000_PID" ]; then
+    kill -9 $PORT_8000_PID 2>/dev/null
+    echo "✅ Agent Data stopped (PID: $PORT_8000_PID)"
+else
+    echo "ℹ️  Agent Data not running"
+fi
+
+if [ -n "$PORT_8001_PID" ]; then
+    kill -9 $PORT_8001_PID 2>/dev/null
+    echo "✅ MCP Server stopped (PID: $PORT_8001_PID)"
+else
+    echo "ℹ️  MCP Server not running"
+fi
+
+echo ""
+echo "Done. Use 'dot-ai-start' to restart services."

@@ -1,0 +1,131 @@
+# ChatGPT Custom GPT Actions Setup Guide
+
+## Overview
+
+This guide explains how to create a Custom GPT that connects to Agent Data Knowledge Manager API for RAG-based knowledge search.
+
+## Prerequisites
+
+- ChatGPT Plus or Enterprise subscription
+- Access to Agent Data API (cloud endpoint)
+- API Key (optional, for protected endpoints)
+
+## Step 1: Create Custom GPT
+
+1. Go to [https://chat.openai.com](https://chat.openai.com)
+2. Click **"Explore GPTs"** in the sidebar
+3. Click **"Create"** button (top right)
+4. Configure basic settings:
+   - **Name**: "Agent Data Knowledge Assistant"
+   - **Description**: "Search and retrieve knowledge from Agent Data knowledge base"
+   - **Instructions**:
+     ```
+     You are a helpful assistant that searches the Agent Data knowledge base.
+     When users ask questions, use the searchKnowledge action to find relevant information.
+     Always cite the sources returned by the search.
+     For listing documents, use listDocuments action.
+     For getting full document content, use getDocument action.
+     ```
+
+## Step 2: Configure Actions
+
+1. Click **"Configure"** tab
+2. Scroll down to **"Actions"**
+3. Click **"Create new action"**
+4. Click **"Import from URL"**
+5. Enter the OpenAPI spec URL:
+   ```
+   https://raw.githubusercontent.com/user/agent-data-test/main/specs/agent-data-openapi.yaml
+   ```
+
+   Or paste the spec manually from: `/specs/agent-data-openapi.yaml`
+
+## Step 3: Available Actions
+
+After import, these actions will be available:
+
+| Action | Description | Endpoint |
+|--------|-------------|----------|
+| `searchKnowledge` | RAG search in knowledge base | POST /chat |
+| `healthCheck` | Check API health | GET /health |
+| `getSystemInfo` | Get system info | GET /info |
+| `listDocuments` | List documents (tree) | GET /api/docs/tree |
+| `getDocument` | Get document content | GET /api/docs/file |
+
+## Step 4: Authentication (If Required)
+
+For endpoints that require authentication:
+
+1. In Actions configuration, click **"Authentication"**
+2. Select **"API Key"**
+3. Configure:
+   - **Auth Type**: Custom
+   - **Custom Header Name**: `X-API-Key`
+   - **API Key**: (Get from Google Secret Manager: `agent-data-api-key`)
+
+## Step 5: Test Your GPT
+
+Try these prompts:
+
+1. **Search Test**:
+   ```
+   Search for "Hiến pháp Agent Data" in the knowledge base
+   ```
+
+2. **List Documents**:
+   ```
+   List all documents in the knowledge base
+   ```
+
+3. **Get Document**:
+   ```
+   Get the full content of AGENCY_OS_E1_BLUEPRINT.md
+   ```
+
+## Troubleshooting
+
+### Error: 401 Unauthorized
+- Check if API key is configured correctly
+- Verify the key matches the one in Google Secret Manager
+
+### Error: 403 Forbidden
+- API key may be invalid or revoked
+- Contact administrator for new key
+
+### Error: Timeout
+- Cloud Run may be cold starting
+- Wait 30 seconds and retry
+- Consider warming up the endpoint first
+
+### Error: "Unable to import schema"
+- Check if the OpenAPI spec URL is accessible
+- Try pasting the spec content directly instead of importing from URL
+
+## API Endpoints
+
+- **Production**: `https://agent-data-test-pfne2mqwja-as.a.run.app`
+- **Local Dev**: `http://localhost:8000`
+
+## Example Conversations
+
+### User
+> What are the principles in the infrastructure constitution?
+
+### GPT Response
+> Let me search the knowledge base for that information.
+>
+> [Calls searchKnowledge with query: "infrastructure constitution principles"]
+>
+> Based on the search results, the Hiến Pháp Hạ Tầng Agent Data v1.11e contains these principles:
+> - HP-01: Single Project Architecture
+> - HP-02: Terraform IaC
+> - HP-03: Minimal Resources
+> ...
+>
+> Source: constitution-v1.11e
+
+## Support
+
+For issues or questions:
+- GitHub Issues: https://github.com/user/agent-data-test/issues
+- Email: ai-platform@example.com

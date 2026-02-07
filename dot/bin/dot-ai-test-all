@@ -1,0 +1,23 @@
+#!/bin/bash
+# dot-ai-test-all - Run comprehensive AI connection tests
+# Usage: dot-ai-test-all
+
+AGENT_DATA_DIR="/Users/nmhuyen/Documents/Manual Deploy/agent-data-test"
+
+echo "🧪 Running AI Connection Tests..."
+echo ""
+
+cd "$AGENT_DATA_DIR"
+"$AGENT_DATA_DIR/venv/bin/python" tests/test_ai_connections.py
+
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    echo ""
+    echo "✅ All systems operational!"
+else
+    echo ""
+    echo "❌ Some tests failed. Check output above."
+fi
+
+exit $exit_code

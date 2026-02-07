@@ -163,7 +163,9 @@ def test_split_text_long():
 def test_split_text_overlap():
     """Chunks should have overlapping content."""
     # Create text with clear markers
-    text = "MARKER_START " + ("x" * 3800) + " MARKER_MID " + ("y" * 3800) + " MARKER_END"
+    text = (
+        "MARKER_START " + ("x" * 3800) + " MARKER_MID " + ("y" * 3800) + " MARKER_END"
+    )
 
     chunks = vector_store._split_text(text, chunk_size=4000, overlap=400)
 
@@ -186,6 +188,7 @@ def test_upsert_long_document_creates_multiple_chunks(monkeypatch: pytest.Monkey
 
     # Force reload with new chunk settings
     import importlib
+
     importlib.reload(vector_store)
 
     captured_points: list = []

@@ -11,7 +11,7 @@ Deployed as Cloud Function with Cloud Scheduler trigger (*/1 * * * *)
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import functions_framework
 import requests
@@ -21,7 +21,9 @@ logging.basicConfig(format="%(message)s")
 logger = logging.getLogger(__name__)
 
 # Environment variables
-DIRECTUS_URL = os.getenv("DIRECTUS_URL", "https://directus-test-pfne2mqwja-as.a.run.app")
+DIRECTUS_URL = os.getenv(
+    "DIRECTUS_URL", "https://directus-test-pfne2mqwja-as.a.run.app"
+)
 DIRECTUS_ADMIN_TOKEN = os.getenv("DIRECTUS_ADMIN_TOKEN", "")
 TIMER_MINUTES = int(os.getenv("TIMER_MINUTES", "5"))
 ALERT_EMAIL = os.getenv("ALERT_EMAIL", "")
@@ -39,7 +41,7 @@ def get_expired_discussions():
     """Query Directus for discussions that have exceeded the timer."""
     try:
         # Calculate the cutoff time (5 minutes ago)
-        cutoff_time = datetime.now(timezone.utc)
+        cutoff_time = datetime.now(UTC)
 
         # Query pending_human discussions
         response = requests.get(
@@ -114,8 +116,7 @@ def check_ai_failure(discussion_id: str) -> bool:
             f"{DIRECTUS_URL}/items/ai_discussion_comments",
             params={
                 "filter[discussion_id][_eq]": discussion_id,
-                "filter[comment_type][_neq]": "human",
-                "filter[comment_type][_neq]": "human_supreme",
+                "filter[comment_type][_nin]": "human,human_supreme",
             },
             headers=get_directus_headers(),
         )
@@ -127,7 +128,9 @@ def check_ai_failure(discussion_id: str) -> bool:
 
         # If no AI comments at all after timer expires, it's a total failure
         ai_comments = [
-            c for c in comments if c.get("comment_type") not in ["human", "human_supreme"]
+            c
+            for c in comments
+            if c.get("comment_type") not in ["human", "human_supreme"]
         ]
 
         return len(ai_comments) == 0
@@ -179,7 +182,7 @@ def auto_approve_discussion(discussion: dict) -> dict:
             json={
                 "status": new_status,
                 "auto_approved": not is_total_failure,
-                "timer_expired_at": datetime.now(timezone.utc).isoformat(),
+                "timer_expired_at": datetime.now(UTC).isoformat(),
             },
         )
 
@@ -197,7 +200,7 @@ def auto_approve_discussion(discussion: dict) -> dict:
             return {"id": discussion_id, "success": False, "error": "Update failed"}
 
         # Create system comment
-        comment_response = requests.post(
+        requests.post(
             f"{DIRECTUS_URL}/items/ai_discussion_comments",
             headers=get_directus_headers(),
             json={
@@ -271,7 +274,7 @@ def handle(request):
             {
                 "action": "timer_callback_start",
                 "timer_minutes": TIMER_MINUTES,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
         )
     )

@@ -1,0 +1,295 @@
+openapi: 3.1.0
+info:
+  title: Agent Data Knowledge API
+  description: |
+    API to query the Agent Data knowledge base.
+    Supports semantic search (RAG), document management, and MCP protocol.
+  version: 2.0.0
+  contact:
+    name: Incomex Tech Team
+
+servers:
+  - url: http://localhost:8000
+    description: Local Development
+  - url: https://agent-data-test-pfne2mqwja-as.a.run.app
+    description: Cloud Run Test
+
+paths:
+  /chat:
+    post:
+      operationId: searchKnowledge
+      summary: Search the knowledge base
+      description: |
+        Uses RAG (Retrieval Augmented Generation) to search
+        the knowledge base and answer questions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  description: Question or search query
+                  example: "What are the system constitution principles?"
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    type: string
+                    description: Answer from the system
+                  content:
+                    type: string
+                    description: Full content response
+                  context:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                        snippet:
+                          type: string
+                        score:
+                          type: number
+                    description: Source documents found
+                  usage:
+                    type: object
+                    properties:
+                      latency_ms:
+                        type: integer
+                      qdrant_hits:
+                        type: integer
+                    description: Query statistics
+
+  /kb/list:
+    get:
+      operationId: listDocuments
+      summary: List documents in the knowledge base
+      description: |
+        Lists all documents from the Firestore knowledge base.
+        Use the prefix parameter to filter by path (e.g., 'docs/context-packs').
+      parameters:
+        - name: prefix
+          in: query
+          required: false
+          schema:
+            type: string
+            default: ""
+          description: Path prefix to filter documents
+          example: "docs/context-packs"
+      responses:
+        '200':
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        document_id:
+                          type: string
+                        parent_id:
+                          type: string
+                        title:
+                          type: string
+                        tags:
+                          type: array
+                          items:
+                            type: string
+                        revision:
+                          type: integer
+                  count:
+                    type: integer
+
+  /kb/get/{doc_id}:
+    get:
+      operationId: getDocument
+      summary: Get a specific document by ID
+      description: |
+        Retrieves full content of a document from the Firestore knowledge base.
+        Document IDs can contain slashes (e.g., 'docs/context-packs/governance.md').
+      parameters:
+        - name: doc_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Document ID or path
+          example: "docs/context-packs/governance.md"
+      responses:
+        '200':
+          description: Document content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document_id:
+                    type: string
+                  content:
+                    type: string
+                    description: Document body (markdown)
+                  metadata:
+                    type: object
+                    properties:
+                      title:
+                        type: string
+                      tags:
+                        type: array
+                        items:
+                          type: string
+                  revision:
+                    type: integer
+        '404':
+          description: Document not found
+
+  /mcp:
+    get:
+      operationId: mcpInfo
+      summary: MCP Server info and tool definitions
+      description: |
+        Returns MCP protocol server info including available tools.
+        Used by AI connectors (Claude.ai, etc.) for tool discovery.
+      responses:
+        '200':
+          description: MCP server info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+                  tools:
+                    type: array
+                    items:
+                      type: object
+
+  /mcp/tools/{tool_name}:
+    post:
+      operationId: mcpExecuteTool
+      summary: Execute an MCP tool by name
+      description: |
+        Dispatches to internal tool handlers. Available tools:
+        search_knowledge, list_documents, get_document,
+        upload_document, update_document, delete_document,
+        move_document, ingest_document.
+      parameters:
+        - name: tool_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - search_knowledge
+              - list_documents
+              - get_document
+              - upload_document
+              - update_document
+              - delete_document
+              - move_document
+              - ingest_document
+          description: Name of the MCP tool to execute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Tool-specific parameters (see /mcp for schemas)
+      responses:
+        '200':
+          description: Tool execution result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: object
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Check system health
+      responses:
+        '200':
+          description: System healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+
+  /info:
+    get:
+      operationId: getSystemInfo
+      summary: Get system information
+      responses:
+        '200':
+          description: System information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+                  langroid_available:
+                    type: boolean
+                  langroid_version:
+                    type: string
+                  dependencies:
+                    type: object
+
+  /ingest:
+    post:
+      operationId: ingestDocument
+      summary: Ingest document into knowledge base
+      description: Upload and vectorize a new document
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - source
+              properties:
+                source:
+                  type: string
+                  description: File path on GCS or URL
+                  example: "gs://bucket/docs/file.pdf"
+      responses:
+        '202':
+          description: Ingestion started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "processing"
+                  task_id:
+                    type: string
