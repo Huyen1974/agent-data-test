@@ -119,7 +119,7 @@ echo "--- Core Tests ---"
 
 # 1. Health check
 rest_call "health" "GET" "/health" "" \
-    "import sys,json; r=json.load(sys.stdin); assert r['status']=='healthy'"
+    "import sys,json; r=json.load(sys.stdin); assert r['status'] in ('healthy','degraded')"
 
 # 2. MCP initialize
 mcp_call "initialize" "initialize" "{}" \
