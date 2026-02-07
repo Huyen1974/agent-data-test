@@ -5,6 +5,7 @@ Agent Data Langroid Server - FastAPI server for agent data operations
 import json
 import logging
 import os
+import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
@@ -797,7 +798,7 @@ def _retrieve_query_context(
         return []
 
     contexts: list[QueryContextEntry] = []
-    query_words = [w.lower() for w in query.lower().split() if len(w) > 2]
+    query_words = [w for w in re.findall(r"\w+", query.lower()) if len(w) > 2]
     for snap in snapshots:
         try:
             data = snap.to_dict() if hasattr(snap, "to_dict") else {}
