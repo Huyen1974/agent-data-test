@@ -874,12 +874,23 @@ def _assert_move_target_valid(*, db, document_id: str, new_parent_id: str) -> No
     parent_ref = db.collection(KB_COLLECTION).document(_fs_key(new_parent_id))
     parent_snapshot = parent_ref.get()
     if not getattr(parent_snapshot, "exists", False):
-        raise _error(
-            404,
-            "NOT_FOUND",
-            "Parent document not found",
-            parent_id=new_parent_id,
+        # Auto-create parent as a folder document
+        now_iso = datetime.now(UTC).isoformat()
+        parent_ref.set(
+            {
+                "document_id": new_parent_id,
+                "parent_id": "/".join(new_parent_id.split("/")[:-1]) or "root",
+                "content": {"mime_type": "text/plain", "body": ""},
+                "metadata": {"title": new_parent_id.rsplit("/", 1)[-1], "type": "folder"},
+                "is_human_readable": False,
+                "created_at": now_iso,
+                "updated_at": now_iso,
+                "deleted_at": None,
+                "revision": 1,
+                "vector_status": "none",
+            }
         )
+        logger.info("Auto-created folder document: %s", new_parent_id)
 
     lineage_seen: set[str] = set()
     current_id: str | None = new_parent_id
@@ -1054,6 +1065,8 @@ async def update_document(
         merged_hr = new_is_hr
 
         try:
+            # Delete old vectors first to avoid stale chunks when content shrinks
+            _delete_vector_entry(doc_id)
             _sync_vector_entry(
                 doc_ref=doc_ref,
                 document_id=doc_id,
@@ -1350,6 +1363,49 @@ async def reindex_kb_documents():
         "errors": errors,
         "error_count": len(errors),
         "qdrant_vectors": vector_count,
+    }
+
+
+@app.post("/kb/cleanup-orphans", dependencies=[Depends(require_api_key)])
+async def cleanup_orphan_vectors():
+    """Remove Qdrant vectors whose documents no longer exist in Firestore.
+
+    Compares document_ids in Qdrant against Firestore KB and deletes orphans.
+    """
+    store = vector_store.get_vector_store(refresh=True)
+    if not store.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Vector store not available",
+        )
+
+    qdrant_doc_ids = store.list_document_ids()
+    if not qdrant_doc_ids:
+        return {"removed": 0, "remaining": 0, "qdrant_vectors": store.count()}
+
+    db = _firestore()
+    orphan_ids: list[str] = []
+    for doc_id in qdrant_doc_ids:
+        try:
+            ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
+            snap = ref.get()
+            if not getattr(snap, "exists", False):
+                orphan_ids.append(doc_id)
+            else:
+                data = snap.to_dict() or {}
+                if data.get("deleted_at") is not None:
+                    orphan_ids.append(doc_id)
+        except Exception:
+            pass
+
+    for doc_id in orphan_ids:
+        store.delete_document(doc_id)
+
+    return {
+        "removed": len(orphan_ids),
+        "removed_ids": orphan_ids,
+        "remaining": len(qdrant_doc_ids) - len(orphan_ids),
+        "qdrant_vectors": store.count(),
     }
 
 
