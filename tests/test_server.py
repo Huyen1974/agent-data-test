@@ -10,6 +10,7 @@ from agent_data.vector_store import VectorSyncResult
 @pytest.fixture(autouse=True)
 def stub_vector_store(monkeypatch: pytest.MonkeyPatch):
     store = MagicMock()
+    store.enabled = False
     store.upsert_document.return_value = VectorSyncResult(status="skipped")
     store.delete_document.return_value = VectorSyncResult(status="deleted")
 
@@ -188,6 +189,7 @@ def test_create_document_conflict_returns_error(
 
     doc_snapshot = MagicMock()
     doc_snapshot.exists = True
+    doc_snapshot.to_dict.return_value = {"document_id": "doc-123"}
     doc_ref = MagicMock()
     doc_ref.get.return_value = doc_snapshot
     mock_fs.return_value.collection.return_value.document.return_value = doc_ref
