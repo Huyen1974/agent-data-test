@@ -118,7 +118,7 @@ async def get_docs_tree(
             )
     except httpx.RequestError as exc:
         logger.error("GitHub API request failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Failed to connect to GitHub API")
+        raise HTTPException(status_code=502, detail="Failed to connect to GitHub API") from exc
 
     if response.status_code == 404:
         raise HTTPException(
@@ -205,7 +205,7 @@ async def get_docs_file(
             )
     except httpx.RequestError as exc:
         logger.error("GitHub API request failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Failed to connect to GitHub API")
+        raise HTTPException(status_code=502, detail="Failed to connect to GitHub API") from exc
 
     if response.status_code == 404:
         raise HTTPException(
@@ -244,7 +244,7 @@ async def get_docs_file(
         content = base64.b64decode(encoded_content).decode("utf-8")
     except Exception as exc:
         logger.error("Failed to decode file content: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to decode file content")
+        raise HTTPException(status_code=500, detail="Failed to decode file content") from exc
 
     result = FileResponse(
         path=path,

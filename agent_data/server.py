@@ -509,7 +509,6 @@ async def ingest(message: ChatMessage):
         ack = f"Accepted ingest request for {gcs_uri}. MessageId={msg_id or 'pending'}"
         # Best-effort: immediately persist metadata to aid async E2E verification
         try:
-            from datetime import datetime
             from urllib.parse import urlparse
 
             # derive document_id from GCS path (filename)

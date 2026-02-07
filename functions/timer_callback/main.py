@@ -114,8 +114,7 @@ def check_ai_failure(discussion_id: str) -> bool:
             f"{DIRECTUS_URL}/items/ai_discussion_comments",
             params={
                 "filter[discussion_id][_eq]": discussion_id,
-                "filter[comment_type][_neq]": "human",
-                "filter[comment_type][_neq]": "human_supreme",
+                "filter[comment_type][_nin]": "human,human_supreme",
             },
             headers=get_directus_headers(),
         )
@@ -197,7 +196,7 @@ def auto_approve_discussion(discussion: dict) -> dict:
             return {"id": discussion_id, "success": False, "error": "Update failed"}
 
         # Create system comment
-        comment_response = requests.post(
+        requests.post(
             f"{DIRECTUS_URL}/items/ai_discussion_comments",
             headers=get_directus_headers(),
             json={
