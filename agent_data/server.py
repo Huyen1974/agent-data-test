@@ -881,7 +881,10 @@ def _assert_move_target_valid(*, db, document_id: str, new_parent_id: str) -> No
                 "document_id": new_parent_id,
                 "parent_id": "/".join(new_parent_id.split("/")[:-1]) or "root",
                 "content": {"mime_type": "text/plain", "body": ""},
-                "metadata": {"title": new_parent_id.rsplit("/", 1)[-1], "type": "folder"},
+                "metadata": {
+                    "title": new_parent_id.rsplit("/", 1)[-1],
+                    "type": "folder",
+                },
                 "is_human_readable": False,
                 "created_at": now_iso,
                 "updated_at": now_iso,
