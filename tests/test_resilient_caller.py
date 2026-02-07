@@ -1,5 +1,6 @@
 """Tests for agent_data.resilient_client — retry, health tracking, discovery."""
 
+import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -119,40 +120,46 @@ class TestServiceHealthRegistry:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestResilientCaller:
-    @pytest.mark.asyncio
-    async def test_retries_on_timeout(self):
+    def test_retries_on_timeout(self):
         import httpx
 
-        caller = ResilientCaller(
-            service_name="test-svc", base_url="http://fake", max_retries=2
-        )
-        mock_client = AsyncMock()
-        mock_client.is_closed = False
-        mock_client.request = AsyncMock(
-            side_effect=httpx.ConnectError("connection failed")
-        )
-        caller._client = mock_client
+        async def _run():
+            caller = ResilientCaller(
+                service_name="test-svc", base_url="http://fake", max_retries=2
+            )
+            mock_client = AsyncMock()
+            mock_client.is_closed = False
+            mock_client.request = AsyncMock(
+                side_effect=httpx.ConnectError("connection failed")
+            )
+            caller._client = mock_client
 
-        with pytest.raises(httpx.ConnectError):
-            await caller.get("/test")
+            with pytest.raises(httpx.ConnectError):
+                await caller.get("/test")
 
-        # Should have been called max_retries times
-        assert mock_client.request.call_count == 2
+            # Should have been called max_retries times
+            assert mock_client.request.call_count == 2
 
-    @pytest.mark.asyncio
-    async def test_health_check_returns_status(self):
-        caller = ResilientCaller(service_name="test-hc", base_url="http://fake")
-        mock_client = AsyncMock()
-        mock_client.is_closed = False
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_client.request = AsyncMock(return_value=mock_response)
-        caller._client = mock_client
+        asyncio.run(_run())
 
-        result = await caller.health_check()
-        assert result["service"] == "test-hc"
-        assert result["status"] == "ok"
-        assert "latency_ms" in result
+    def test_health_check_returns_status(self):
+        async def _run():
+            caller = ResilientCaller(
+                service_name="test-hc", base_url="http://fake"
+            )
+            mock_client = AsyncMock()
+            mock_client.is_closed = False
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_client.request = AsyncMock(return_value=mock_response)
+            caller._client = mock_client
+
+            result = await caller.health_check()
+            assert result["service"] == "test-hc"
+            assert result["status"] == "ok"
+            assert "latency_ms" in result
+
+        asyncio.run(_run())
 
 
 # ---------------------------------------------------------------------------
@@ -160,45 +167,58 @@ class TestResilientCaller:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestProbes:
-    @pytest.mark.asyncio
-    async def test_probe_qdrant_healthy(self):
+    def test_probe_qdrant_healthy(self):
         mock_store = MagicMock()
         mock_store.enabled = True
         mock_store.count.return_value = 42
 
-        with patch("agent_data.vector_store.get_vector_store", return_value=mock_store):
-            result = await probe_qdrant()
+        async def _run():
+            with patch(
+                "agent_data.vector_store.get_vector_store",
+                return_value=mock_store,
+            ):
+                return await probe_qdrant()
+
+        result = asyncio.run(_run())
         assert result is True
 
-    @pytest.mark.asyncio
-    async def test_probe_qdrant_disabled(self):
+    def test_probe_qdrant_disabled(self):
         mock_store = MagicMock()
         mock_store.enabled = False
 
-        with patch("agent_data.vector_store.get_vector_store", return_value=mock_store):
-            result = await probe_qdrant()
+        async def _run():
+            with patch(
+                "agent_data.vector_store.get_vector_store",
+                return_value=mock_store,
+            ):
+                return await probe_qdrant()
+
+        result = asyncio.run(_run())
         assert result is True
 
-    @pytest.mark.asyncio
-    async def test_probe_qdrant_failure(self):
+    def test_probe_qdrant_failure(self):
         mock_store = MagicMock()
         mock_store.enabled = True
         mock_store.count.side_effect = ConnectionError("refused")
 
-        with patch("agent_data.vector_store.get_vector_store", return_value=mock_store):
-            result = await probe_qdrant()
+        async def _run():
+            with patch(
+                "agent_data.vector_store.get_vector_store",
+                return_value=mock_store,
+            ):
+                return await probe_qdrant()
+
+        result = asyncio.run(_run())
         assert result is False
 
-    @pytest.mark.asyncio
-    async def test_probe_openai_with_key(self, monkeypatch):
+    def test_probe_openai_with_key(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-        result = await probe_openai()
+        result = asyncio.run(probe_openai())
         assert result is True
 
-    @pytest.mark.asyncio
-    async def test_probe_openai_without_key(self, monkeypatch):
+    def test_probe_openai_without_key(self, monkeypatch):
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        result = await probe_openai()
+        result = asyncio.run(probe_openai())
         assert result is False
 
 
