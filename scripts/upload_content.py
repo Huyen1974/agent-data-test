@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Upload all content files (context packs, playbooks, status docs) to Agent Data."""
 
-import json
 import sys
 from pathlib import Path
 
@@ -13,21 +12,86 @@ CONTENT_DIR = Path(__file__).parent.parent / "content"
 
 DOCUMENTS = [
     # Context Packs
-    ("docs/context-packs/governance.md", "context-packs/governance.md", "Context Pack: Governance", ["context-pack", "governance", "v3"]),
-    ("docs/context-packs/web-frontend.md", "context-packs/web-frontend.md", "Context Pack: Web Frontend", ["context-pack", "frontend", "v3"]),
-    ("docs/context-packs/infrastructure.md", "context-packs/infrastructure.md", "Context Pack: Infrastructure", ["context-pack", "infrastructure", "v3"]),
-    ("docs/context-packs/agent-data.md", "context-packs/agent-data.md", "Context Pack: Agent Data", ["context-pack", "agent-data", "v3"]),
-    ("docs/context-packs/directus.md", "context-packs/directus.md", "Context Pack: Directus", ["context-pack", "directus", "v3"]),
-    ("docs/context-packs/current-sprint.md", "context-packs/current-sprint.md", "Context Pack: Current Sprint", ["context-pack", "sprint", "v3"]),
+    (
+        "docs/context-packs/governance.md",
+        "context-packs/governance.md",
+        "Context Pack: Governance",
+        ["context-pack", "governance", "v3"],
+    ),
+    (
+        "docs/context-packs/web-frontend.md",
+        "context-packs/web-frontend.md",
+        "Context Pack: Web Frontend",
+        ["context-pack", "frontend", "v3"],
+    ),
+    (
+        "docs/context-packs/infrastructure.md",
+        "context-packs/infrastructure.md",
+        "Context Pack: Infrastructure",
+        ["context-pack", "infrastructure", "v3"],
+    ),
+    (
+        "docs/context-packs/agent-data.md",
+        "context-packs/agent-data.md",
+        "Context Pack: Agent Data",
+        ["context-pack", "agent-data", "v3"],
+    ),
+    (
+        "docs/context-packs/directus.md",
+        "context-packs/directus.md",
+        "Context Pack: Directus",
+        ["context-pack", "directus", "v3"],
+    ),
+    (
+        "docs/context-packs/current-sprint.md",
+        "context-packs/current-sprint.md",
+        "Context Pack: Current Sprint",
+        ["context-pack", "sprint", "v3"],
+    ),
     # Playbooks
-    ("docs/playbooks/assembly-task.md", "playbooks/assembly-task.md", "Playbook: Assembly Task", ["playbook", "frontend", "v3"]),
-    ("docs/playbooks/infrastructure-change.md", "playbooks/infrastructure-change.md", "Playbook: Infrastructure Change", ["playbook", "infrastructure", "v3"]),
-    ("docs/playbooks/investigation.md", "playbooks/investigation.md", "Playbook: Investigation", ["playbook", "investigation", "v3"]),
-    ("docs/playbooks/new-integration.md", "playbooks/new-integration.md", "Playbook: New Integration", ["playbook", "integration", "v3"]),
+    (
+        "docs/playbooks/assembly-task.md",
+        "playbooks/assembly-task.md",
+        "Playbook: Assembly Task",
+        ["playbook", "frontend", "v3"],
+    ),
+    (
+        "docs/playbooks/infrastructure-change.md",
+        "playbooks/infrastructure-change.md",
+        "Playbook: Infrastructure Change",
+        ["playbook", "infrastructure", "v3"],
+    ),
+    (
+        "docs/playbooks/investigation.md",
+        "playbooks/investigation.md",
+        "Playbook: Investigation",
+        ["playbook", "investigation", "v3"],
+    ),
+    (
+        "docs/playbooks/new-integration.md",
+        "playbooks/new-integration.md",
+        "Playbook: New Integration",
+        ["playbook", "integration", "v3"],
+    ),
     # Status Documents
-    ("docs/status/system-inventory.md", "status/system-inventory.md", "System Inventory", ["status", "inventory", "v3"]),
-    ("docs/status/dot-tools-registry.md", "status/dot-tools-registry.md", "DOT Tools Registry", ["status", "tools", "v3"]),
-    ("docs/status/connection-matrix.md", "status/connection-matrix.md", "Connection Matrix", ["status", "connections", "v3"]),
+    (
+        "docs/status/system-inventory.md",
+        "status/system-inventory.md",
+        "System Inventory",
+        ["status", "inventory", "v3"],
+    ),
+    (
+        "docs/status/dot-tools-registry.md",
+        "status/dot-tools-registry.md",
+        "DOT Tools Registry",
+        ["status", "tools", "v3"],
+    ),
+    (
+        "docs/status/connection-matrix.md",
+        "status/connection-matrix.md",
+        "Connection Matrix",
+        ["status", "connections", "v3"],
+    ),
 ]
 
 
@@ -61,7 +125,12 @@ def upload_or_update(client, doc_id, file_path, title, tags):
             },
             "update_mask": ["content", "metadata"],
         }
-        resp2 = client.put(f"{BASE_URL}/documents/{doc_id}", json=update_body, headers=headers, timeout=30)
+        resp2 = client.put(
+            f"{BASE_URL}/documents/{doc_id}",
+            json=update_body,
+            headers=headers,
+            timeout=30,
+        )
         if resp2.status_code == 200:
             data = resp2.json()
             print(f"  ~ {doc_id} — updated (rev {data.get('revision', '?')})")

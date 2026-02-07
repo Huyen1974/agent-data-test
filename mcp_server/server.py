@@ -37,7 +37,9 @@ app.add_middleware(
 # --- Hybrid config: local priority, cloud fallback ---
 AGENT_DATA_URL = os.getenv("AGENT_DATA_URL", "http://localhost:8000")
 AGENT_DATA_URL_CLOUD = os.getenv("AGENT_DATA_URL_CLOUD", "")
-AGENT_DATA_API_KEY_LOCAL = os.getenv("AGENT_DATA_API_KEY_LOCAL", os.getenv("AGENT_DATA_API_KEY", ""))
+AGENT_DATA_API_KEY_LOCAL = os.getenv(
+    "AGENT_DATA_API_KEY_LOCAL", os.getenv("AGENT_DATA_API_KEY", "")
+)
 AGENT_DATA_API_KEY_CLOUD = os.getenv("AGENT_DATA_API_KEY_CLOUD", "")
 AGENT_DATA_PREFER = os.getenv("AGENT_DATA_PREFER", "local")
 
@@ -97,10 +99,20 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Document path, e.g. 'docs/operations/sessions/web-50-report.md'"},
-                "content": {"type": "string", "description": "Document content (markdown or plain text)"},
+                "path": {
+                    "type": "string",
+                    "description": "Document path, e.g. 'docs/operations/sessions/web-50-report.md'",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Document content (markdown or plain text)",
+                },
                 "title": {"type": "string", "description": "Optional document title"},
-                "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags"},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional tags",
+                },
             },
             "required": ["path", "content"],
         },
@@ -114,7 +126,11 @@ MCP_TOOLS = [
                 "path": {"type": "string", "description": "Document path to update"},
                 "content": {"type": "string", "description": "New document content"},
                 "title": {"type": "string", "description": "Optional new title"},
-                "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional new tags"},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional new tags",
+                },
             },
             "required": ["path", "content"],
         },
@@ -137,7 +153,10 @@ MCP_TOOLS = [
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Current document path"},
-                "new_path": {"type": "string", "description": "New parent path, or 'root' for top level"},
+                "new_path": {
+                    "type": "string",
+                    "description": "New parent path, or 'root' for top level",
+                },
             },
             "required": ["path", "new_path"],
         },
@@ -148,7 +167,10 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "source": {"type": "string", "description": "GCS URI (gs://bucket/path) or URL to ingest"},
+                "source": {
+                    "type": "string",
+                    "description": "GCS URI (gs://bucket/path) or URL to ingest",
+                },
             },
             "required": ["source"],
         },
@@ -172,7 +194,9 @@ async def list_documents(path: str = "") -> dict[str, Any]:
     """List documents from Firestore KB (hybrid)"""
     try:
         response = await _hybrid_request(
-            "GET", "/kb/list", params={"prefix": path} if path else {},
+            "GET",
+            "/kb/list",
+            params={"prefix": path} if path else {},
         )
         if response.status_code == 200:
             return response.json()
@@ -194,7 +218,9 @@ async def get_document(document_id: str) -> dict[str, Any]:
     # Fallback: try GitHub docs
     doc_path = document_id if document_id.startswith("docs/") else f"docs/{document_id}"
     try:
-        response = await _hybrid_request("GET", "/api/docs/file", params={"path": doc_path})
+        response = await _hybrid_request(
+            "GET", "/api/docs/file", params={"path": doc_path}
+        )
         if response.status_code == 200:
             return response.json()
     except httpx.HTTPError:
@@ -222,7 +248,8 @@ async def _hybrid_request(method: str, path: str, **kwargs) -> httpx.Response:
             try:
                 headers = {**_auth_headers(url), **kwargs.pop("headers", {})}
                 resp = await client.request(
-                    method, f"{url}{path}",
+                    method,
+                    f"{url}{path}",
                     headers=headers,
                     timeout=kwargs.pop("timeout", 30.0),
                     **kwargs,
@@ -237,7 +264,9 @@ async def _hybrid_request(method: str, path: str, **kwargs) -> httpx.Response:
     raise httpx.ConnectError("Both LOCAL and CLOUD endpoints unavailable")
 
 
-async def upload_document(path: str, content: str, title: str = "", tags: list[str] | None = None) -> dict[str, Any]:
+async def upload_document(
+    path: str, content: str, title: str = "", tags: list[str] | None = None
+) -> dict[str, Any]:
     """Create a new document via POST /documents (hybrid)"""
     parent_id = "/".join(path.split("/")[:-1]) if "/" in path else ""
     if not title:
@@ -262,7 +291,9 @@ async def upload_document(path: str, content: str, title: str = "", tags: list[s
         return {"error": str(e)}
 
 
-async def update_document(path: str, content: str, title: str = "", tags: list[str] | None = None) -> dict[str, Any]:
+async def update_document(
+    path: str, content: str, title: str = "", tags: list[str] | None = None
+) -> dict[str, Any]:
     """Update a document via PUT /documents/{id} (hybrid)"""
     patch: dict[str, Any] = {"content": {"mime_type": "text/markdown", "body": content}}
     update_mask = ["content"]
@@ -303,7 +334,9 @@ async def move_document(path: str, new_path: str) -> dict[str, Any]:
     """Move a document via POST /documents/{id}/move (hybrid)"""
     try:
         response = await _hybrid_request(
-            "POST", f"/documents/{path}/move", json={"new_parent_id": new_path},
+            "POST",
+            f"/documents/{path}/move",
+            json={"new_parent_id": new_path},
         )
         if response.status_code == 200:
             return response.json()
@@ -388,7 +421,10 @@ async def execute_tool(tool_name: str, request: Request):
     else:
         return JSONResponse(
             status_code=404,
-            content={"error": f"Unknown tool: {tool_name}", "available_tools": [t["name"] for t in MCP_TOOLS]},
+            content={
+                "error": f"Unknown tool: {tool_name}",
+                "available_tools": [t["name"] for t in MCP_TOOLS],
+            },
         )
 
     return {"result": result}
@@ -417,7 +453,10 @@ async def mcp_sse(request: Request):
             if await request.is_disconnected():
                 logger.info("SSE client disconnected")
                 break
-            yield {"event": "ping", "data": json.dumps({"timestamp": asyncio.get_event_loop().time()})}
+            yield {
+                "event": "ping",
+                "data": json.dumps({"timestamp": asyncio.get_event_loop().time()}),
+            }
             await asyncio.sleep(30)
 
     return EventSourceResponse(event_generator())
@@ -431,14 +470,20 @@ async def health():
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(f"{AGENT_DATA_URL}/info")
-            local_status = "connected" if resp.status_code == 200 else f"error:{resp.status_code}"
+            local_status = (
+                "connected" if resp.status_code == 200 else f"error:{resp.status_code}"
+            )
     except Exception as e:
         local_status = f"unavailable:{type(e).__name__}"
     if AGENT_DATA_URL_CLOUD:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(f"{AGENT_DATA_URL_CLOUD}/info")
-                cloud_status = "connected" if resp.status_code == 200 else f"error:{resp.status_code}"
+                cloud_status = (
+                    "connected"
+                    if resp.status_code == 200
+                    else f"error:{resp.status_code}"
+                )
         except Exception as e:
             cloud_status = f"unavailable:{type(e).__name__}"
     else:

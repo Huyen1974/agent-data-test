@@ -421,7 +421,9 @@ async def ingest(message: ChatMessage):
                         "deleted_at": None,
                         "revision": 1,
                     }
-                    agent.db.collection(kb_collection).document(_fs_key(doc_id)).set(kb_payload)
+                    agent.db.collection(kb_collection).document(_fs_key(doc_id)).set(
+                        kb_payload
+                    )
             except Exception:
                 pass
 
@@ -436,11 +438,15 @@ async def ingest(message: ChatMessage):
                     is_human_readable=True,
                 )
                 if vec_result.status == "error":
-                    logger.warning("Vector sync error for %s: %s", doc_id, vec_result.error)
+                    logger.warning(
+                        "Vector sync error for %s: %s", doc_id, vec_result.error
+                    )
                 elif vec_result.status == "skipped":
                     logger.info("Vector sync skipped for %s (store disabled)", doc_id)
                 else:
-                    logger.info("Vector sync completed for %s: %s", doc_id, vec_result.status)
+                    logger.info(
+                        "Vector sync completed for %s: %s", doc_id, vec_result.status
+                    )
             except Exception as vec_err:
                 logger.warning("Vector sync failed for %s: %s", doc_id, vec_err)
 
@@ -542,9 +548,9 @@ async def ingest(message: ChatMessage):
                             "deleted_at": None,
                             "revision": 1,
                         }
-                        agent.db.collection(kb_collection).document(_fs_key(doc_id)).set(
-                            kb_payload
-                        )
+                        agent.db.collection(kb_collection).document(
+                            _fs_key(doc_id)
+                        ).set(kb_payload)
                 except Exception:
                     pass
         except Exception:
@@ -820,7 +826,9 @@ def _retrieve_query_context(
 
         # Score by keyword overlap (check full body, not just first 200 chars)
         body_lc = body.lower()
-        title_lc = (metadata.get("title", "") if isinstance(metadata, dict) else "").lower()
+        title_lc = (
+            metadata.get("title", "") if isinstance(metadata, dict) else ""
+        ).lower()
         searchable = f"{body_lc} {title_lc}"
         matched = sum(1 for w in query_words if w in searchable)
         if matched == 0:
@@ -1226,13 +1234,15 @@ async def list_kb_documents(prefix: str = ""):
             doc_id = data.get("document_id", snap.id)
             if prefix and not doc_id.startswith(prefix):
                 continue
-            items.append({
-                "document_id": doc_id,
-                "parent_id": data.get("parent_id", ""),
-                "title": (data.get("metadata") or {}).get("title", ""),
-                "tags": (data.get("metadata") or {}).get("tags", []),
-                "revision": data.get("revision", 0),
-            })
+            items.append(
+                {
+                    "document_id": doc_id,
+                    "parent_id": data.get("parent_id", ""),
+                    "title": (data.get("metadata") or {}).get("title", ""),
+                    "tags": (data.get("metadata") or {}).get("tags", []),
+                    "revision": data.get("revision", 0),
+                }
+            )
         items.sort(key=lambda x: x["document_id"])
         return {"items": items, "count": len(items)}
     except HTTPException:
@@ -1302,7 +1312,9 @@ async def reindex_kb_documents():
             skipped += 1
             continue
 
-        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        metadata = (
+            data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        )
         parent_id = data.get("parent_id", "")
         is_hr = data.get("is_human_readable", False)
 
@@ -1351,8 +1363,15 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "The search query in natural language (Vietnamese or English)"},
-                "limit": {"type": "integer", "description": "Maximum number of results (default: 5)", "default": 5},
+                "query": {
+                    "type": "string",
+                    "description": "The search query in natural language (Vietnamese or English)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results (default: 5)",
+                    "default": 5,
+                },
             },
             "required": ["query"],
         },
@@ -1363,7 +1382,11 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Optional path prefix to filter (e.g., 'docs/')", "default": ""},
+                "path": {
+                    "type": "string",
+                    "description": "Optional path prefix to filter (e.g., 'docs/')",
+                    "default": "",
+                },
             },
         },
     },
@@ -1373,7 +1396,10 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "document_id": {"type": "string", "description": "The document ID or path"},
+                "document_id": {
+                    "type": "string",
+                    "description": "The document ID or path",
+                },
             },
             "required": ["document_id"],
         },
@@ -1384,10 +1410,20 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Document path, e.g. 'docs/operations/sessions/report.md'"},
-                "content": {"type": "string", "description": "Document content (markdown or plain text)"},
+                "path": {
+                    "type": "string",
+                    "description": "Document path, e.g. 'docs/operations/sessions/report.md'",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Document content (markdown or plain text)",
+                },
                 "title": {"type": "string", "description": "Optional document title"},
-                "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags"},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional tags",
+                },
             },
             "required": ["path", "content"],
         },
@@ -1401,7 +1437,11 @@ MCP_TOOLS = [
                 "path": {"type": "string", "description": "Document path to update"},
                 "content": {"type": "string", "description": "New document content"},
                 "title": {"type": "string", "description": "Optional new title"},
-                "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional new tags"},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional new tags",
+                },
             },
             "required": ["path", "content"],
         },
@@ -1424,7 +1464,10 @@ MCP_TOOLS = [
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Current document path"},
-                "new_path": {"type": "string", "description": "New parent path, or 'root' for top level"},
+                "new_path": {
+                    "type": "string",
+                    "description": "New parent path, or 'root' for top level",
+                },
             },
             "required": ["path", "new_path"],
         },
@@ -1435,7 +1478,10 @@ MCP_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "source": {"type": "string", "description": "GCS URI (gs://bucket/path) or URL to ingest"},
+                "source": {
+                    "type": "string",
+                    "description": "GCS URI (gs://bucket/path) or URL to ingest",
+                },
             },
             "required": ["source"],
         },
@@ -1484,7 +1530,9 @@ async def _dispatch_mcp_tool(tool_name: str, args: dict) -> dict:
     if tool_name == "upload_document":
         path = args.get("path", "")
         content_text = args.get("content", "")
-        title = args.get("title", "") or (path.rsplit("/", 1)[-1] if "/" in path else path)
+        title = args.get("title", "") or (
+            path.rsplit("/", 1)[-1] if "/" in path else path
+        )
         tags = args.get("tags")
         parent_id = "/".join(path.split("/")[:-1]) if "/" in path else ""
         payload = DocumentCreate(
@@ -1501,7 +1549,11 @@ async def _dispatch_mcp_tool(tool_name: str, args: dict) -> dict:
         content_text = args.get("content", "")
         title = args.get("title", "")
         tags = args.get("tags")
-        metadata = DocumentMetadata(title=title or path, tags=tags) if (title or tags) else None
+        metadata = (
+            DocumentMetadata(title=title or path, tags=tags)
+            if (title or tags)
+            else None
+        )
         patch = DocumentUpdatePatch(
             content=DocumentContent(mime_type="text/markdown", body=content_text),
             metadata=metadata,
@@ -1541,13 +1593,20 @@ async def mcp_jsonrpc(request: Request):
     if expected and api_key != expected:
         return JSONResponse(
             status_code=401,
-            content={"jsonrpc": "2.0", "error": {"code": -32000, "message": "Invalid API key"}},
+            content={
+                "jsonrpc": "2.0",
+                "error": {"code": -32000, "message": "Invalid API key"},
+            },
         )
 
     try:
         body = await request.json()
     except Exception:
-        return {"jsonrpc": "2.0", "error": {"code": -32700, "message": "Parse error"}, "id": None}
+        return {
+            "jsonrpc": "2.0",
+            "error": {"code": -32700, "message": "Parse error"},
+            "id": None,
+        }
 
     method = body.get("method", "")
     params = body.get("params", {})
@@ -1585,7 +1644,9 @@ async def mcp_jsonrpc(request: Request):
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "content": [{"type": "text", "text": json.dumps(result, default=str)}],
+                    "content": [
+                        {"type": "text", "text": json.dumps(result, default=str)}
+                    ],
                 },
             }
         except HTTPException as he:
@@ -1594,7 +1655,9 @@ async def mcp_jsonrpc(request: Request):
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "content": [{"type": "text", "text": json.dumps({"error": detail})}],
+                    "content": [
+                        {"type": "text", "text": json.dumps({"error": detail})}
+                    ],
                     "isError": True,
                 },
             }
@@ -1604,7 +1667,9 @@ async def mcp_jsonrpc(request: Request):
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "content": [{"type": "text", "text": json.dumps({"error": str(e)})}],
+                    "content": [
+                        {"type": "text", "text": json.dumps({"error": str(e)})}
+                    ],
                     "isError": True,
                 },
             }

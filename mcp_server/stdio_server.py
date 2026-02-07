@@ -13,7 +13,7 @@ import sys
 import httpx
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger("mcp-stdio")
@@ -25,7 +25,9 @@ AGENT_DATA_URL_CLOUD = os.getenv("AGENT_DATA_URL_CLOUD", "")
 AGENT_DATA_PREFER = os.getenv("AGENT_DATA_PREFER", "local")
 
 # API keys per environment
-AGENT_DATA_API_KEY_LOCAL = os.getenv("AGENT_DATA_API_KEY_LOCAL", os.getenv("AGENT_DATA_API_KEY", ""))
+AGENT_DATA_API_KEY_LOCAL = os.getenv(
+    "AGENT_DATA_API_KEY_LOCAL", os.getenv("AGENT_DATA_API_KEY", "")
+)
 AGENT_DATA_API_KEY_CLOUD = os.getenv("AGENT_DATA_API_KEY_CLOUD", "")
 
 # Track which endpoint is currently active
@@ -53,9 +55,12 @@ def _get_auth_headers(url: str | None = None) -> dict[str, str]:
     if target.startswith("https://"):
         try:
             import subprocess
+
             result = subprocess.run(
                 ["gcloud", "auth", "print-identity-token"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if result.returncode == 0 and result.stdout.strip():
                 headers["Authorization"] = f"Bearer {result.stdout.strip()}"
@@ -103,7 +108,10 @@ async def _request_with_fallback(
             logger.warning("%s unavailable (%s), trying fallback...", label, e)
             continue
 
-    raise httpx.ConnectError(f"Both LOCAL ({primary}) and CLOUD ({fallback}) unavailable")
+    raise httpx.ConnectError(
+        f"Both LOCAL ({primary}) and CLOUD ({fallback}) unavailable"
+    )
+
 
 # Create MCP server
 server = Server("agent-data")
@@ -268,7 +276,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if name == "search_knowledge":
                 query = arguments.get("query", "")
                 response = await _request_with_fallback(
-                    client, "POST", "/chat", json={"message": query},
+                    client,
+                    "POST",
+                    "/chat",
+                    json={"message": query},
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -281,13 +292,20 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         result += sources
                     return [TextContent(type="text", text=result)]
                 else:
-                    return [TextContent(type="text", text=f"Error: HTTP {response.status_code}")]
+                    return [
+                        TextContent(
+                            type="text", text=f"Error: HTTP {response.status_code}"
+                        )
+                    ]
 
             elif name == "list_documents":
                 path = arguments.get("path", "docs")
                 # Primary: list from Firestore KB (where documents are actually stored)
                 response = await _request_with_fallback(
-                    client, "GET", "/kb/list", params={"prefix": path},
+                    client,
+                    "GET",
+                    "/kb/list",
+                    params={"prefix": path},
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -300,14 +318,26 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                             result += f"- {item.get('document_id', '?')}{tag_str}\n"
                         return [TextContent(type="text", text=result)]
                     else:
-                        return [TextContent(type="text", text=f"No documents found with prefix '{path}'")]
-                return [TextContent(type="text", text=f"Error listing documents: HTTP {response.status_code}")]
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"No documents found with prefix '{path}'",
+                            )
+                        ]
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"Error listing documents: HTTP {response.status_code}",
+                    )
+                ]
 
             elif name == "get_document":
                 doc_id = arguments.get("document_id", "")
                 # Primary: get from Firestore KB
                 response = await _request_with_fallback(
-                    client, "GET", f"/kb/get/{doc_id}",
+                    client,
+                    "GET",
+                    f"/kb/get/{doc_id}",
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -315,18 +345,27 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     if content:
                         meta = data.get("metadata", {})
                         title = meta.get("title", doc_id)
-                        return [TextContent(type="text", text=f"# {title}\n\n{content}")]
+                        return [
+                            TextContent(type="text", text=f"# {title}\n\n{content}")
+                        ]
 
                 # Fallback: try GitHub docs
                 doc_path = doc_id if doc_id.startswith("docs/") else f"docs/{doc_id}"
                 response = await _request_with_fallback(
-                    client, "GET", "/api/docs/file", params={"path": doc_path},
+                    client,
+                    "GET",
+                    "/api/docs/file",
+                    params={"path": doc_path},
                 )
                 if response.status_code == 200:
                     data = response.json()
                     content = data.get("content", "")
                     if content:
-                        return [TextContent(type="text", text=f"# Document: {doc_id}\n\n{content}")]
+                        return [
+                            TextContent(
+                                type="text", text=f"# Document: {doc_id}\n\n{content}"
+                            )
+                        ]
 
                 return [TextContent(type="text", text=f"Document '{doc_id}' not found")]
 
@@ -347,13 +386,26 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 if tags:
                     body["metadata"]["tags"] = tags
                 response = await _request_with_fallback(
-                    client, "POST", "/documents", json=body,
+                    client,
+                    "POST",
+                    "/documents",
+                    json=body,
                 )
                 if response.status_code in (200, 201):
                     data = response.json()
-                    return [TextContent(type="text", text=f"Document created: {data.get('id', path)} (revision {data.get('revision', 1)})")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Document created: {data.get('id', path)} (revision {data.get('revision', 1)})",
+                        )
+                    ]
                 else:
-                    return [TextContent(type="text", text=f"Upload failed: HTTP {response.status_code} — {response.text}")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Upload failed: HTTP {response.status_code} — {response.text}",
+                        )
+                    ]
 
             elif name == "update_document":
                 path = arguments.get("path", "")
@@ -376,55 +428,107 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     "update_mask": update_mask,
                 }
                 response = await _request_with_fallback(
-                    client, "PUT", f"/documents/{path}", json=body,
+                    client,
+                    "PUT",
+                    f"/documents/{path}",
+                    json=body,
                 )
                 if response.status_code == 200:
                     data = response.json()
-                    return [TextContent(type="text", text=f"Document updated: {data.get('id', path)} (revision {data.get('revision', '?')})")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Document updated: {data.get('id', path)} (revision {data.get('revision', '?')})",
+                        )
+                    ]
                 else:
-                    return [TextContent(type="text", text=f"Update failed: HTTP {response.status_code} — {response.text}")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Update failed: HTTP {response.status_code} — {response.text}",
+                        )
+                    ]
 
             elif name == "delete_document":
                 path = arguments.get("path", "")
                 response = await _request_with_fallback(
-                    client, "DELETE", f"/documents/{path}",
+                    client,
+                    "DELETE",
+                    f"/documents/{path}",
                 )
                 if response.status_code == 200:
                     data = response.json()
-                    return [TextContent(type="text", text=f"Document deleted: {data.get('id', path)}")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Document deleted: {data.get('id', path)}",
+                        )
+                    ]
                 else:
-                    return [TextContent(type="text", text=f"Delete failed: HTTP {response.status_code} — {response.text}")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Delete failed: HTTP {response.status_code} — {response.text}",
+                        )
+                    ]
 
             elif name == "move_document":
                 path = arguments.get("path", "")
                 new_path = arguments.get("new_path", "")
                 response = await _request_with_fallback(
-                    client, "POST", f"/documents/{path}/move",
+                    client,
+                    "POST",
+                    f"/documents/{path}/move",
                     json={"new_parent_id": new_path},
                 )
                 if response.status_code == 200:
                     data = response.json()
-                    return [TextContent(type="text", text=f"Document moved: {data.get('id', path)} → {new_path}")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Document moved: {data.get('id', path)} → {new_path}",
+                        )
+                    ]
                 else:
-                    return [TextContent(type="text", text=f"Move failed: HTTP {response.status_code} — {response.text}")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Move failed: HTTP {response.status_code} — {response.text}",
+                        )
+                    ]
 
             elif name == "ingest_document":
                 source = arguments.get("source", "")
                 response = await _request_with_fallback(
-                    client, "POST", "/ingest", json={"text": source},
+                    client,
+                    "POST",
+                    "/ingest",
+                    json={"text": source},
                 )
                 if response.status_code in (200, 202):
                     data = response.json()
-                    msg = data.get("response", data.get("content", "Ingestion accepted"))
+                    msg = data.get(
+                        "response", data.get("content", "Ingestion accepted")
+                    )
                     return [TextContent(type="text", text=f"Ingest accepted: {msg}")]
                 else:
-                    return [TextContent(type="text", text=f"Ingest failed: HTTP {response.status_code} — {response.text}")]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Ingest failed: HTTP {response.status_code} — {response.text}",
+                        )
+                    ]
 
             else:
                 return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
         except httpx.ConnectError as e:
-            return [TextContent(type="text", text=f"Connection error: {str(e)}. Both local and cloud endpoints unavailable.")]
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Connection error: {str(e)}. Both local and cloud endpoints unavailable.",
+                )
+            ]
         except httpx.RequestError as e:
             return [TextContent(type="text", text=f"Request error: {str(e)}")]
         except Exception as e:
@@ -444,10 +548,11 @@ async def main():
 if __name__ == "__main__":
     # Test mode: verify tools can be listed
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
+
         async def test():
             tools = await list_tools()
-            print(f"MCP STDIO Server Test (Hybrid)")
-            print(f"==============================")
+            print("MCP STDIO Server Test (Hybrid)")
+            print("==============================")
             print(f"Local URL:  {AGENT_DATA_URL}")
             print(f"Cloud URL:  {AGENT_DATA_URL_CLOUD}")
             print(f"Prefer:     {AGENT_DATA_PREFER}")
@@ -457,6 +562,7 @@ if __name__ == "__main__":
 
             # Test connection with hybrid fallback
             import httpx
+
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await _request_with_fallback(client, "GET", "/info")
@@ -474,6 +580,7 @@ if __name__ == "__main__":
 
     # Full tool test mode
     elif len(sys.argv) > 1 and sys.argv[1] == "--test-tools":
+
         async def test_tools():
             print("MCP Tools Integration Test")
             print("==========================\n")
@@ -492,7 +599,9 @@ if __name__ == "__main__":
 
             # Test 2: get_document
             print("2. Testing get_document...")
-            result = await call_tool("get_document", {"document_id": "AGENCY_OS_E1_BLUEPRINT.md"})
+            result = await call_tool(
+                "get_document", {"document_id": "AGENCY_OS_E1_BLUEPRINT.md"}
+            )
             output = result[0].text if result else "No output"
             if len(output) > 500 and "AGENCY" in output:
                 print("   ✅ PASS - Returns full document content")
@@ -517,12 +626,15 @@ if __name__ == "__main__":
             # Test 4: Write tools (upload → update → delete)
             test_path = "mcp-write-test-auto"
             print("4. Testing upload_document...")
-            result = await call_tool("upload_document", {
-                "path": test_path,
-                "content": "# MCP Write Test\nAutomated test document.",
-                "title": "MCP Write Test",
-                "tags": ["test", "mcp"],
-            })
+            result = await call_tool(
+                "upload_document",
+                {
+                    "path": test_path,
+                    "content": "# MCP Write Test\nAutomated test document.",
+                    "title": "MCP Write Test",
+                    "tags": ["test", "mcp"],
+                },
+            )
             output = result[0].text if result else "No output"
             if "created" in output.lower() or "revision" in output.lower():
                 print(f"   ✅ PASS - {output}")
@@ -532,10 +644,13 @@ if __name__ == "__main__":
             print()
 
             print("5. Testing update_document...")
-            result = await call_tool("update_document", {
-                "path": test_path,
-                "content": "# MCP Write Test (Updated)\nThis content was updated.",
-            })
+            result = await call_tool(
+                "update_document",
+                {
+                    "path": test_path,
+                    "content": "# MCP Write Test (Updated)\nThis content was updated.",
+                },
+            )
             output = result[0].text if result else "No output"
             if "updated" in output.lower() or "revision" in output.lower():
                 print(f"   ✅ PASS - {output}")

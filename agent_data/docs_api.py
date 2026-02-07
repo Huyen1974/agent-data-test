@@ -7,7 +7,6 @@ Provides endpoints to browse and fetch documentation from GitHub repository.
 import base64
 import logging
 import os
-from functools import lru_cache
 from time import time
 from typing import Any
 
@@ -118,7 +117,9 @@ async def get_docs_tree(
             )
     except httpx.RequestError as exc:
         logger.error("GitHub API request failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Failed to connect to GitHub API") from exc
+        raise HTTPException(
+            status_code=502, detail="Failed to connect to GitHub API"
+        ) from exc
 
     if response.status_code == 404:
         raise HTTPException(
@@ -154,7 +155,9 @@ async def get_docs_tree(
         # Calculate source_id as relative path from docs/ folder
         item_path = item["path"]
         source_id = (
-            item_path[len(base_prefix) :] if item_path.startswith(base_prefix) else item_path
+            item_path[len(base_prefix) :]
+            if item_path.startswith(base_prefix)
+            else item_path
         )
 
         items.append(
@@ -205,7 +208,9 @@ async def get_docs_file(
             )
     except httpx.RequestError as exc:
         logger.error("GitHub API request failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Failed to connect to GitHub API") from exc
+        raise HTTPException(
+            status_code=502, detail="Failed to connect to GitHub API"
+        ) from exc
 
     if response.status_code == 404:
         raise HTTPException(
@@ -234,7 +239,8 @@ async def get_docs_file(
 
     if data.get("type") != "file":
         raise HTTPException(
-            status_code=400, detail=f"Path is not a file: {path} (type: {data.get('type')})"
+            status_code=400,
+            detail=f"Path is not a file: {path} (type: {data.get('type')})",
         )
 
     # Decode base64 content
@@ -244,7 +250,9 @@ async def get_docs_file(
         content = base64.b64decode(encoded_content).decode("utf-8")
     except Exception as exc:
         logger.error("Failed to decode file content: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to decode file content") from exc
+        raise HTTPException(
+            status_code=500, detail="Failed to decode file content"
+        ) from exc
 
     result = FileResponse(
         path=path,

@@ -3,6 +3,7 @@ Create 3 document templates in the v3 knowledge base.
 """
 
 import sys
+
 import httpx
 
 BASE_URL = "http://localhost:8000"
@@ -150,7 +151,10 @@ def main():
                 "document_id": tmpl["path"],
                 "parent_id": tmpl["parent_id"],
                 "content": {"mime_type": "text/markdown", "body": tmpl["content"]},
-                "metadata": {"title": tmpl["title"], "tags": ["template", "v3-structure"]},
+                "metadata": {
+                    "title": tmpl["title"],
+                    "tags": ["template", "v3-structure"],
+                },
             }
             try:
                 resp = client.post(
@@ -163,7 +167,9 @@ def main():
                     print(f"  PASS  {tmpl['path']} (rev {data.get('revision', '?')})")
                     created += 1
                 else:
-                    print(f"  FAIL  {tmpl['path']} -> HTTP {resp.status_code}: {resp.text[:200]}")
+                    print(
+                        f"  FAIL  {tmpl['path']} -> HTTP {resp.status_code}: {resp.text[:200]}"
+                    )
                     failed += 1
             except Exception as e:
                 print(f"  FAIL  {tmpl['path']} -> {e}")

@@ -4,8 +4,8 @@ AI Connections Test Suite
 Tests all AI platform connections to Agent Data
 """
 
-import subprocess
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,7 +29,9 @@ def test_agent_data_health(base_url, name="", allow_auth_error=False):
     try:
         r = requests.get(f"{base_url}/health", timeout=15)
         if r.status_code == 403 and allow_auth_error:
-            print(f"   ⚠️ Health: 403 Forbidden (IAM auth required - expected for Cloud Run)")
+            print(
+                "   ⚠️ Health: 403 Forbidden (IAM auth required - expected for Cloud Run)"
+            )
             return True  # Expected for authenticated Cloud Run
         assert r.status_code == 200, f"Expected 200, got {r.status_code}"
         data = r.json()
@@ -37,7 +39,7 @@ def test_agent_data_health(base_url, name="", allow_auth_error=False):
         print(f"   ✅ Health: OK - {data.get('version', 'unknown')}")
         return True
     except requests.exceptions.Timeout:
-        print(f"   ❌ Health FAILED: Timeout (server may be cold starting)")
+        print("   ❌ Health FAILED: Timeout (server may be cold starting)")
         return False
     except Exception as e:
         print(f"   ❌ Health FAILED: {e}")
@@ -66,17 +68,19 @@ def test_knowledge_search(base_url):
         r = requests.post(
             f"{base_url}/chat",
             json={"message": "Hiến pháp Agent Data"},
-            timeout=60  # RAG can be slow
+            timeout=60,  # RAG can be slow
         )
         assert r.status_code == 200, f"HTTP {r.status_code}: {r.text[:200]}"
         data = r.json()
         # Check for response content
-        response_text = data.get("response", data.get("content", data.get("answer", "")))
+        response_text = data.get(
+            "response", data.get("content", data.get("answer", ""))
+        )
         assert len(response_text) > 20, f"Response too short: {response_text}"
         print(f"   ✅ Search returned results ({len(response_text)} chars)")
         return True
     except requests.exceptions.Timeout:
-        print(f"   ❌ Search FAILED: Timeout (RAG query took too long)")
+        print("   ❌ Search FAILED: Timeout (RAG query took too long)")
         return False
     except Exception as e:
         print(f"   ❌ Search FAILED: {e}")
@@ -96,7 +100,7 @@ def test_mcp_server():
         print(f"   ✅ MCP Tools: {tool_names}")
         return True
     except requests.exceptions.ConnectionError:
-        print(f"   ❌ MCP FAILED: Connection refused (server not running)")
+        print("   ❌ MCP FAILED: Connection refused (server not running)")
         return False
     except Exception as e:
         print(f"   ❌ MCP FAILED: {e}")
@@ -105,7 +109,7 @@ def test_mcp_server():
 
 def test_mcp_stdio():
     """Test MCP STDIO server"""
-    print(f"\n🔍 Testing MCP STDIO server...")
+    print("\n🔍 Testing MCP STDIO server...")
     try:
         venv_python = f"{AGENT_DATA_DIR}/venv/bin/python"
         script_path = f"{AGENT_DATA_DIR}/mcp_server/stdio_server.py"
@@ -115,16 +119,16 @@ def test_mcp_stdio():
             capture_output=True,
             text=True,
             timeout=30,
-            cwd=AGENT_DATA_DIR
+            cwd=AGENT_DATA_DIR,
         )
         if result.returncode == 0 and "Test completed successfully" in result.stdout:
-            print(f"   ✅ STDIO Server: OK (3 tools)")
+            print("   ✅ STDIO Server: OK (3 tools)")
             return True
         else:
             print(f"   ❌ STDIO FAILED: {result.stderr or result.stdout}")
             return False
     except subprocess.TimeoutExpired:
-        print(f"   ❌ STDIO FAILED: Timeout")
+        print("   ❌ STDIO FAILED: Timeout")
         return False
     except Exception as e:
         print(f"   ❌ STDIO FAILED: {e}")
@@ -133,8 +137,10 @@ def test_mcp_stdio():
 
 def test_claude_desktop_config():
     """Check Claude Desktop MCP configuration"""
-    print(f"\n🔍 Checking Claude Desktop config...")
-    config_path = Path.home() / "Library/Application Support/Claude/claude_desktop_config.json"
+    print("\n🔍 Checking Claude Desktop config...")
+    config_path = (
+        Path.home() / "Library/Application Support/Claude/claude_desktop_config.json"
+    )
     try:
         if not config_path.exists():
             print(f"   ❌ Config not found at {config_path}")
@@ -144,17 +150,17 @@ def test_claude_desktop_config():
             config = json.load(f)
 
         if "mcpServers" not in config:
-            print(f"   ❌ mcpServers not in config")
+            print("   ❌ mcpServers not in config")
             return False
 
         if "agent-data" not in config["mcpServers"]:
-            print(f"   ❌ agent-data server not configured")
+            print("   ❌ agent-data server not configured")
             return False
 
         server_config = config["mcpServers"]["agent-data"]
         command = server_config.get("command", "")
 
-        print(f"   ✅ Claude Desktop configured")
+        print("   ✅ Claude Desktop configured")
         print(f"      Command: {command[:50]}...")
         return True
     except json.JSONDecodeError as e:
@@ -167,7 +173,7 @@ def test_claude_desktop_config():
 
 def test_openapi_spec():
     """Verify OpenAPI spec exists"""
-    print(f"\n🔍 Checking OpenAPI spec...")
+    print("\n🔍 Checking OpenAPI spec...")
     spec_path = Path(f"{AGENT_DATA_DIR}/specs/agent-data-openapi.yaml")
     if spec_path.exists():
         size = spec_path.stat().st_size
@@ -180,7 +186,7 @@ def test_openapi_spec():
 
 def test_docs_exist():
     """Verify setup documentation exists"""
-    print(f"\n🔍 Checking setup documentation...")
+    print("\n🔍 Checking setup documentation...")
     docs_dir = Path(f"{AGENT_DATA_DIR}/docs")
 
     gpt_guide = docs_dir / "GPT_ACTIONS_SETUP.md"
@@ -189,15 +195,15 @@ def test_docs_exist():
     all_exist = True
 
     if gpt_guide.exists():
-        print(f"   ✅ GPT_ACTIONS_SETUP.md exists")
+        print("   ✅ GPT_ACTIONS_SETUP.md exists")
     else:
-        print(f"   ❌ GPT_ACTIONS_SETUP.md missing")
+        print("   ❌ GPT_ACTIONS_SETUP.md missing")
         all_exist = False
 
     if gemini_guide.exists():
-        print(f"   ✅ GEMINI_EXTENSIONS_SETUP.md exists")
+        print("   ✅ GEMINI_EXTENSIONS_SETUP.md exists")
     else:
-        print(f"   ❌ GEMINI_EXTENSIONS_SETUP.md missing")
+        print("   ❌ GEMINI_EXTENSIONS_SETUP.md missing")
         all_exist = False
 
     return all_exist
@@ -213,7 +219,9 @@ def main():
     # Local tests
     print("\n📍 LOCAL TESTS")
     print("-" * 40)
-    results["agent_data_local_health"] = test_agent_data_health(AGENT_DATA_LOCAL, "local")
+    results["agent_data_local_health"] = test_agent_data_health(
+        AGENT_DATA_LOCAL, "local"
+    )
     results["agent_data_local_info"] = test_agent_data_info(AGENT_DATA_LOCAL)
     results["agent_data_local_search"] = test_knowledge_search(AGENT_DATA_LOCAL)
     results["mcp_http"] = test_mcp_server()
@@ -222,7 +230,9 @@ def main():
     # Cloud tests (allow 403 for IAM-protected Cloud Run)
     print("\n☁️ CLOUD TESTS")
     print("-" * 40)
-    results["agent_data_cloud_health"] = test_agent_data_health(AGENT_DATA_CLOUD, "cloud", allow_auth_error=True)
+    results["agent_data_cloud_health"] = test_agent_data_health(
+        AGENT_DATA_CLOUD, "cloud", allow_auth_error=True
+    )
 
     # Configuration tests
     print("\n⚙️ CONFIGURATION TESTS")

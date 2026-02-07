@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-from uuid import uuid5, NAMESPACE_DNS
+from uuid import NAMESPACE_DNS, uuid5
 
 # Chunking configuration (configurable via environment variables)
 CHUNK_SIZE = int(os.getenv("QDRANT_CHUNK_SIZE", "4000"))
