@@ -332,6 +332,35 @@ class QdrantVectorStore:
             logger.error("Failed to delete vector for %s: %s", document_id, exc)
             return VectorSyncResult(status="error", error=str(exc))
 
+    def list_document_ids(self) -> set[str]:
+        """Scroll through all points and return unique document_ids."""
+        if not self.enabled:
+            return set()
+        try:
+            self._ensure_client()
+            if self._client is None:
+                return set()
+            doc_ids: set[str] = set()
+            offset = None
+            while True:
+                points, next_offset = self._client.scroll(
+                    collection_name=self.collection,
+                    limit=100,
+                    offset=offset,
+                    with_payload=["document_id"],
+                )
+                for point in points:
+                    did = (point.payload or {}).get("document_id")
+                    if did:
+                        doc_ids.add(did)
+                if next_offset is None:
+                    break
+                offset = next_offset
+            return doc_ids
+        except Exception as exc:
+            logger.error("Failed to list document IDs from Qdrant: %s", exc)
+            return set()
+
 
 _cached_store: QdrantVectorStore | None = None
 
