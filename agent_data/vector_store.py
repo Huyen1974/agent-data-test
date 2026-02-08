@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -170,6 +171,7 @@ class QdrantVectorStore:
         """
         if not self.enabled:
             return VectorSyncResult(status="skipped")
+        t0 = time.monotonic()
         try:
             self._ensure_client()
             if self._client is None:
@@ -218,12 +220,28 @@ class QdrantVectorStore:
             # Batch upsert all chunks (with retry on transient errors)
             self._qdrant_upsert(points)
 
+            duration_ms = int((time.monotonic() - t0) * 1000)
             logger.info(
-                "Upserted %d chunk(s) for document %s", total_chunks, document_id
+                "vector_sync",
+                extra={
+                    "action": "upsert",
+                    "document_id": document_id,
+                    "chunks": total_chunks,
+                    "duration_ms": duration_ms,
+                },
             )
             return VectorSyncResult(status="ready", chunks_created=total_chunks)
         except Exception as exc:  # pragma: no cover - network/SDK errors
-            logger.error("Failed to upsert vector for %s: %s", document_id, exc)
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            logger.error(
+                "vector_sync_error",
+                extra={
+                    "action": "upsert",
+                    "document_id": document_id,
+                    "error": str(exc),
+                    "duration_ms": duration_ms,
+                },
+            )
             health_registry.mark_unhealthy("qdrant", str(exc))
             return VectorSyncResult(status="error", error=str(exc))
 
@@ -304,15 +322,34 @@ class QdrantVectorStore:
         """
         if not self.enabled:
             return VectorSyncResult(status="skipped")
+        t0 = time.monotonic()
         try:
             self._ensure_client()
             if self._client is None:
                 raise RuntimeError("Qdrant client unavailable")
 
             self._qdrant_delete(document_id)
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            logger.info(
+                "vector_sync",
+                extra={
+                    "action": "delete",
+                    "document_id": document_id,
+                    "duration_ms": duration_ms,
+                },
+            )
             return VectorSyncResult(status="deleted")
         except Exception as exc:  # pragma: no cover
-            logger.error("Failed to delete vector for %s: %s", document_id, exc)
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            logger.error(
+                "vector_sync_error",
+                extra={
+                    "action": "delete",
+                    "document_id": document_id,
+                    "error": str(exc),
+                    "duration_ms": duration_ms,
+                },
+            )
             health_registry.mark_unhealthy("qdrant", str(exc))
             return VectorSyncResult(status="error", error=str(exc))
 
@@ -362,6 +399,37 @@ class QdrantVectorStore:
             points_selector=qmodels.FilterSelector(filter=filter_condition),
             wait=True,
         )
+
+    @sync_retry(service_name="qdrant")
+    def _qdrant_count_by_doc(self, document_id: str) -> int:
+        if self._client is None:
+            raise RuntimeError("Qdrant client unavailable")
+        result = self._client.count(
+            collection_name=self.collection,
+            count_filter=qmodels.Filter(
+                must=[
+                    qmodels.FieldCondition(
+                        key="document_id",
+                        match=qmodels.MatchValue(value=document_id),
+                    )
+                ]
+            ),
+            exact=True,
+        )
+        return result.count
+
+    def count_by_document_id(self, document_id: str) -> int:
+        """Return the number of vectors for a specific document."""
+        if not self.enabled:
+            return -1
+        try:
+            self._ensure_client()
+            if self._client is None:
+                return -1
+            return self._qdrant_count_by_doc(document_id)
+        except Exception as exc:
+            logger.error("Vector count by doc failed for %s: %s", document_id, exc)
+            return -1
 
     def list_document_ids(self) -> set[str]:
         """Scroll through all points and return unique document_ids."""

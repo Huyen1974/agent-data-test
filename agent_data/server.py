@@ -80,12 +80,20 @@ class ServiceStatusDetail(BaseModel):
     last_error: str | None = None
 
 
+class DataIntegrity(BaseModel):
+    document_count: int
+    vector_point_count: int
+    ratio: float
+    sync_status: str  # "ok" | "warning" | "critical"
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str
     langroid_available: bool
     services: dict[str, ServiceStatusDetail] | None = None
     service_count: int | None = None
+    data_integrity: DataIntegrity | None = None
 
 
 class ChatMessage(BaseModel):
@@ -374,6 +382,47 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
+def _compute_data_integrity() -> DataIntegrity | None:
+    """Best-effort data integrity metrics from Firestore + Qdrant."""
+    try:
+        store = vector_store.get_vector_store()
+        if not store.enabled:
+            return None
+
+        db = _firestore()
+        docs = list(db.collection(KB_COLLECTION).stream())
+        doc_count = sum(
+            1 for snap in docs if (snap.to_dict() or {}).get("deleted_at") is None
+        )
+        vec_count = store.count()
+        if vec_count < 0:
+            return None
+
+        ratio = round(vec_count / doc_count, 1) if doc_count > 0 else 0.0
+
+        # Heuristic: healthy ratio is 1-50 vectors per doc (chunked)
+        if doc_count == 0 and vec_count == 0:
+            sync_status = "ok"
+        elif doc_count > 0 and vec_count == 0:
+            sync_status = "critical"
+        elif ratio < 1:
+            sync_status = "critical"
+        elif ratio > 50:
+            sync_status = "warning"
+        else:
+            sync_status = "ok"
+
+        return DataIntegrity(
+            document_count=doc_count,
+            vector_point_count=vec_count,
+            ratio=ratio,
+            sync_status=sync_status,
+        )
+    except Exception as exc:
+        logger.warning("data_integrity probe failed: %s", exc)
+        return None
+
+
 @app.get("/", response_model=HealthResponse)
 async def root():
     """Root endpoint with health check including per-service status."""
@@ -392,12 +441,15 @@ async def root():
             else None
         )
 
+        data_integrity = _compute_data_integrity()
+
         return HealthResponse(
             status=health_registry.overall_status(),
             version=info["version"],
             langroid_available=info["langroid_available"],
             services=services,
             service_count=len(services_raw) if services_raw else 0,
+            data_integrity=data_integrity,
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -1089,21 +1141,36 @@ async def update_document(
         merged_parent = updates.get("parent_id", current.get("parent_id"))
         merged_hr = new_is_hr
 
+        # Only re-embed when content changed; metadata-only updates skip embedding
+        content_changed = "content" in fields_updated
         try:
-            # Delete old vectors first to avoid stale chunks when content shrinks
-            _delete_vector_entry(doc_id)
-            _sync_vector_entry(
-                doc_ref=doc_ref,
-                document_id=doc_id,
-                content=(
-                    merged_content.get("body")
-                    if isinstance(merged_content, dict)
-                    else None
-                ),
-                metadata=merged_metadata if isinstance(merged_metadata, dict) else None,
-                parent_id=merged_parent,
-                is_human_readable=bool(merged_hr),
-            )
+            if content_changed:
+                # Delete old vectors first to avoid stale chunks when content shrinks
+                _delete_vector_entry(doc_id)
+                _sync_vector_entry(
+                    doc_ref=doc_ref,
+                    document_id=doc_id,
+                    content=(
+                        merged_content.get("body")
+                        if isinstance(merged_content, dict)
+                        else None
+                    ),
+                    metadata=(
+                        merged_metadata if isinstance(merged_metadata, dict) else None
+                    ),
+                    parent_id=merged_parent,
+                    is_human_readable=bool(merged_hr),
+                )
+            else:
+                logger.info(
+                    "vector_sync",
+                    extra={
+                        "action": "skip_reembed",
+                        "document_id": doc_id,
+                        "reason": "content_unchanged",
+                        "fields_updated": list(fields_updated),
+                    },
+                )
         except Exception as exc:  # pragma: no cover
             logger.error("Vector synchronization failed for %s: %s", doc_id, exc)
 
@@ -1178,6 +1245,8 @@ async def move_document(
         doc_ref.update(updates)
         current["parent_id"] = new_parent_id
         try:
+            # Delete old vectors first to avoid stale chunks when chunk count changes
+            _delete_vector_entry(doc_id)
             _sync_vector_entry(
                 doc_ref=doc_ref,
                 document_id=doc_id,
@@ -1391,12 +1460,23 @@ async def reindex_kb_documents():
     }
 
 
+class CleanupOrphansRequest(BaseModel):
+    dry_run: bool = True
+    max_delete: int = 100
+
+    model_config = ConfigDict(extra="forbid")
+
+
 @app.post("/kb/cleanup-orphans", dependencies=[Depends(require_api_key)])
-async def cleanup_orphan_vectors():
+async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
     """Remove Qdrant vectors whose documents no longer exist in Firestore.
 
     Compares document_ids in Qdrant against Firestore KB and deletes orphans.
+    Supports dry_run (default True) and max_delete safety limit.
     """
+    if payload is None:
+        payload = CleanupOrphansRequest()
+
     store = vector_store.get_vector_store(refresh=True)
     if not store.enabled:
         raise HTTPException(
@@ -1406,7 +1486,13 @@ async def cleanup_orphan_vectors():
 
     qdrant_doc_ids = store.list_document_ids()
     if not qdrant_doc_ids:
-        return {"removed": 0, "remaining": 0, "qdrant_vectors": store.count()}
+        return {
+            "mode": "dry_run" if payload.dry_run else "execute",
+            "orphans_found": 0,
+            "orphans_deleted": 0,
+            "details": [],
+            "qdrant_vectors": store.count(),
+        }
 
     db = _firestore()
     orphan_ids: list[str] = []
@@ -1423,14 +1509,168 @@ async def cleanup_orphan_vectors():
         except Exception:
             pass
 
-    for doc_id in orphan_ids:
-        store.delete_document(doc_id)
+    deleted = 0
+    details: list[dict[str, Any]] = []
+    to_delete = orphan_ids[: payload.max_delete]
+
+    if not payload.dry_run:
+        for doc_id in to_delete:
+            result = store.delete_document(doc_id)
+            if result.status != "error":
+                deleted += 1
+            details.append({"document_id": doc_id, "status": result.status})
+            logger.info(
+                "vector_sync",
+                extra={
+                    "action": "orphan_cleanup",
+                    "document_id": doc_id,
+                    "status": result.status,
+                },
+            )
+    else:
+        details = [
+            {"document_id": doc_id, "status": "would_delete"} for doc_id in to_delete
+        ]
 
     return {
-        "removed": len(orphan_ids),
-        "removed_ids": orphan_ids,
-        "remaining": len(qdrant_doc_ids) - len(orphan_ids),
+        "mode": "dry_run" if payload.dry_run else "execute",
+        "orphans_found": len(orphan_ids),
+        "orphans_deleted": deleted,
+        "details": details,
+        "remaining_after_cleanup": len(orphan_ids) - deleted,
         "qdrant_vectors": store.count(),
+    }
+
+
+@app.post("/kb/audit-sync", dependencies=[Depends(require_api_key)])
+async def audit_sync():
+    """Compare Firestore documents with Qdrant vectors and report mismatches.
+
+    Returns orphans (vectors without docs) and ghosts (docs without vectors).
+    Read-only — does NOT modify any data.
+    """
+    store = vector_store.get_vector_store(refresh=True)
+    if not store.enabled:
+        raise HTTPException(status_code=503, detail="Vector store not available")
+
+    db = _firestore()
+    docs = list(db.collection(KB_COLLECTION).stream())
+
+    # Set A: active Firestore document IDs
+    firestore_ids: set[str] = set()
+    for snap in docs:
+        data = snap.to_dict() or {}
+        if data.get("deleted_at") is None:
+            doc_id = data.get("document_id", snap.id)
+            firestore_ids.add(doc_id)
+
+    # Set B: unique document IDs in Qdrant vectors
+    qdrant_ids = store.list_document_ids()
+
+    orphan_ids = sorted(qdrant_ids - firestore_ids)
+    ghost_ids = sorted(firestore_ids - qdrant_ids)
+
+    total_docs = len(firestore_ids)
+    total_vectors = store.count()
+
+    status = "clean"
+    recommendations: list[str] = []
+    if orphan_ids:
+        status = "needs_cleanup"
+        recommendations.append(
+            f"{len(orphan_ids)} orphan vectors from deleted documents "
+            "— run POST /kb/cleanup-orphans"
+        )
+    if ghost_ids:
+        status = "needs_cleanup"
+        recommendations.append(
+            f"{len(ghost_ids)} documents missing vectors "
+            "— run POST /kb/reindex-missing"
+        )
+
+    return {
+        "total_documents": total_docs,
+        "total_vectors": total_vectors,
+        "documents_without_vectors": ghost_ids,
+        "ghost_count": len(ghost_ids),
+        "orphan_vector_document_ids": orphan_ids,
+        "orphan_count": len(orphan_ids),
+        "status": status,
+        "recommendations": recommendations,
+    }
+
+
+@app.post("/kb/reindex-missing", dependencies=[Depends(require_api_key)])
+async def reindex_missing():
+    """Re-index documents that exist in Firestore but have no vectors in Qdrant.
+
+    Reads content from Firestore and ingests into Qdrant using the standard
+    upsert flow. Only processes 'ghost' documents (active docs without vectors).
+    """
+    store = vector_store.get_vector_store(refresh=True)
+    if not store.enabled:
+        raise HTTPException(status_code=503, detail="Vector store not available")
+
+    db = _firestore()
+    docs = list(db.collection(KB_COLLECTION).stream())
+
+    firestore_docs: dict[str, dict[str, Any]] = {}
+    for snap in docs:
+        data = snap.to_dict() or {}
+        if data.get("deleted_at") is None:
+            doc_id = data.get("document_id", snap.id)
+            firestore_docs[doc_id] = data
+
+    qdrant_ids = store.list_document_ids()
+    ghost_ids = sorted(set(firestore_docs.keys()) - qdrant_ids)
+
+    reindexed = 0
+    failed: list[dict[str, str]] = []
+    details: list[dict[str, Any]] = []
+
+    for doc_id in ghost_ids:
+        data = firestore_docs[doc_id]
+        content = data.get("content") or {}
+        body = content.get("body", "") if isinstance(content, dict) else ""
+        if not body.strip():
+            details.append({"document_id": doc_id, "status": "skipped_empty"})
+            continue
+
+        metadata = (
+            data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        )
+        parent_id = data.get("parent_id", "")
+        is_hr = data.get("is_human_readable", False)
+
+        result = store.upsert_document(
+            document_id=doc_id,
+            content=body,
+            metadata=metadata,
+            parent_id=parent_id,
+            is_human_readable=is_hr,
+        )
+
+        if result.status == "error":
+            failed.append({"document_id": doc_id, "error": result.error or ""})
+        else:
+            reindexed += 1
+            details.append(
+                {
+                    "document_id": doc_id,
+                    "chunks_created": result.chunks_created,
+                }
+            )
+            try:
+                doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
+                doc_ref.update({"vector_status": "ready"})
+            except Exception:
+                pass
+
+    return {
+        "missing_found": len(ghost_ids),
+        "reindexed": reindexed,
+        "failed": failed,
+        "details": details,
     }
 
 
