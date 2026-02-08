@@ -7,16 +7,11 @@ and reindex-missing functionality.
 
 from __future__ import annotations
 
-import concurrent.futures
-from typing import Any
-from unittest.mock import patch
-
 import pytest
 from fastapi.testclient import TestClient
 
 import agent_data.server as server
 import agent_data.vector_store as vs_mod
-
 
 # ---- Fake Firestore (same as test_vector_sync) ----
 
@@ -86,14 +81,21 @@ class FakeVectorStore:
         self.enabled = True
         self.vectors: dict[str, list[dict]] = {}
 
-    def upsert_document(self, *, document_id, content, metadata=None,
-                        parent_id=None, is_human_readable=False):
+    def upsert_document(
+        self,
+        *,
+        document_id,
+        content,
+        metadata=None,
+        parent_id=None,
+        is_human_readable=False,
+    ):
         if not content or not content.strip():
             return vs_mod.VectorSyncResult(status="ready", chunks_created=0)
         chunk_size = 500
         chunks = []
         for i in range(0, len(content), chunk_size):
-            chunks.append(content[i:i + chunk_size])
+            chunks.append(content[i : i + chunk_size])
         self.vectors[document_id] = [
             {"content": c, "metadata": metadata, "chunk_index": i}
             for i, c in enumerate(chunks)
@@ -116,12 +118,14 @@ class FakeVectorStore:
         for doc_id, chunks in self.vectors.items():
             for chunk in chunks:
                 if query.lower() in chunk["content"].lower():
-                    results.append({
-                        "document_id": doc_id,
-                        "snippet": chunk["content"][:500],
-                        "score": 0.95,
-                        "metadata": chunk.get("metadata") or {},
-                    })
+                    results.append(
+                        {
+                            "document_id": doc_id,
+                            "snippet": chunk["content"][:500],
+                            "score": 0.95,
+                            "metadata": chunk.get("metadata") or {},
+                        }
+                    )
         return results[:top_k]
 
     def list_document_ids(self):
@@ -189,7 +193,12 @@ class TestFullLifecycle:
             "/documents/doc-lifecycle",
             json={
                 "document_id": "doc-lifecycle",
-                "patch": {"content": {"mime_type": "text/plain", "body": "Content about whales"}},
+                "patch": {
+                    "content": {
+                        "mime_type": "text/plain",
+                        "body": "Content about whales",
+                    }
+                },
                 "update_mask": ["content"],
                 "last_known_revision": 1,
             },
@@ -364,7 +373,9 @@ class TestLargeDocumentChunking:
             "/documents/large-doc",
             json={
                 "document_id": "large-doc",
-                "patch": {"content": {"mime_type": "text/plain", "body": "Tiny update."}},
+                "patch": {
+                    "content": {"mime_type": "text/plain", "body": "Tiny update."}
+                },
                 "update_mask": ["content"],
                 "last_known_revision": 1,
             },

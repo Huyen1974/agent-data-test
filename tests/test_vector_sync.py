@@ -14,14 +14,12 @@ Verifies that:
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 import agent_data.server as server
 import agent_data.vector_store as vs_mod
-
 
 # ---- Fake Firestore helpers (reused from unit tests) ----
 
@@ -94,20 +92,29 @@ class FakeVectorStore:
         self.upsert_calls: list[dict] = []
         self.delete_calls: list[str] = []
 
-    def upsert_document(self, *, document_id, content, metadata=None,
-                        parent_id=None, is_human_readable=False):
-        self.upsert_calls.append({
-            "document_id": document_id,
-            "content": content,
-            "metadata": metadata,
-        })
+    def upsert_document(
+        self,
+        *,
+        document_id,
+        content,
+        metadata=None,
+        parent_id=None,
+        is_human_readable=False,
+    ):
+        self.upsert_calls.append(
+            {
+                "document_id": document_id,
+                "content": content,
+                "metadata": metadata,
+            }
+        )
         if not content or not content.strip():
             return vs_mod.VectorSyncResult(status="ready", chunks_created=0)
         # Simulate chunking: 1 chunk per 500 chars for testing
         chunk_size = 500
         chunks = []
         for i in range(0, len(content), chunk_size):
-            chunks.append(content[i:i + chunk_size])
+            chunks.append(content[i : i + chunk_size])
         self.vectors[document_id] = [
             {"content": c, "metadata": metadata, "chunk_index": i}
             for i, c in enumerate(chunks)
@@ -131,12 +138,14 @@ class FakeVectorStore:
         for doc_id, chunks in self.vectors.items():
             for chunk in chunks:
                 if query.lower() in chunk["content"].lower():
-                    results.append({
-                        "document_id": doc_id,
-                        "snippet": chunk["content"][:500],
-                        "score": 0.95,
-                        "metadata": chunk.get("metadata") or {},
-                    })
+                    results.append(
+                        {
+                            "document_id": doc_id,
+                            "snippet": chunk["content"][:500],
+                            "score": 0.95,
+                            "metadata": chunk.get("metadata") or {},
+                        }
+                    )
         return results[:top_k]
 
     def list_document_ids(self):
@@ -204,7 +213,10 @@ class TestUpdateVectorSync:
             json={
                 "document_id": "test-doc",
                 "patch": {
-                    "content": {"mime_type": "text/plain", "body": "New content about kangaroo"},
+                    "content": {
+                        "mime_type": "text/plain",
+                        "body": "New content about kangaroo",
+                    },
                 },
                 "update_mask": ["content"],
                 "last_known_revision": 1,

@@ -392,8 +392,7 @@ def _compute_data_integrity() -> DataIntegrity | None:
         db = _firestore()
         docs = list(db.collection(KB_COLLECTION).stream())
         doc_count = sum(
-            1 for snap in docs
-            if (snap.to_dict() or {}).get("deleted_at") is None
+            1 for snap in docs if (snap.to_dict() or {}).get("deleted_at") is None
         )
         vec_count = store.count()
         if vec_count < 0:
@@ -1156,9 +1155,9 @@ async def update_document(
                         if isinstance(merged_content, dict)
                         else None
                     ),
-                    metadata=merged_metadata
-                    if isinstance(merged_metadata, dict)
-                    else None,
+                    metadata=(
+                        merged_metadata if isinstance(merged_metadata, dict) else None
+                    ),
                     parent_id=merged_parent,
                     is_human_readable=bool(merged_hr),
                 )
@@ -1522,10 +1521,16 @@ async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
             details.append({"document_id": doc_id, "status": result.status})
             logger.info(
                 "vector_sync",
-                extra={"action": "orphan_cleanup", "document_id": doc_id, "status": result.status},
+                extra={
+                    "action": "orphan_cleanup",
+                    "document_id": doc_id,
+                    "status": result.status,
+                },
             )
     else:
-        details = [{"document_id": doc_id, "status": "would_delete"} for doc_id in to_delete]
+        details = [
+            {"document_id": doc_id, "status": "would_delete"} for doc_id in to_delete
+        ]
 
     return {
         "mode": "dry_run" if payload.dry_run else "execute",
@@ -1631,7 +1636,9 @@ async def reindex_missing():
             details.append({"document_id": doc_id, "status": "skipped_empty"})
             continue
 
-        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        metadata = (
+            data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        )
         parent_id = data.get("parent_id", "")
         is_hr = data.get("is_human_readable", False)
 
@@ -1647,10 +1654,12 @@ async def reindex_missing():
             failed.append({"document_id": doc_id, "error": result.error or ""})
         else:
             reindexed += 1
-            details.append({
-                "document_id": doc_id,
-                "chunks_created": result.chunks_created,
-            })
+            details.append(
+                {
+                    "document_id": doc_id,
+                    "chunks_created": result.chunks_created,
+                }
+            )
             try:
                 doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
                 doc_ref.update({"vector_status": "ready"})
