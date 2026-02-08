@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import NAMESPACE_DNS, uuid5
 
+from agent_data.resilient_client import health_registry, sync_retry
+
 # Chunking configuration (configurable via environment variables)
 CHUNK_SIZE = int(os.getenv("QDRANT_CHUNK_SIZE", "4000"))
 CHUNK_OVERLAP = int(os.getenv("QDRANT_CHUNK_OVERLAP", "400"))
@@ -121,6 +123,7 @@ class QdrantVectorStore:
                     ", ".join(missing),
                 )
 
+    @sync_retry(service_name="qdrant")
     def _ensure_client(self) -> None:
         if not self.enabled:
             return
@@ -138,6 +141,7 @@ class QdrantVectorStore:
                 kwargs["base_url"] = openai_base
             self._openai = OpenAI(**kwargs)  # type: ignore[arg-type]
 
+    @sync_retry(service_name="openai")
     def _embed(self, text: str) -> list[float]:
         self._ensure_client()
         if not self.enabled or self._openai is None:
@@ -211,12 +215,8 @@ class QdrantVectorStore:
                     )
                 )
 
-            # Batch upsert all chunks
-            self._client.upsert(
-                collection_name=self.collection,
-                points=points,
-                wait=True,
-            )
+            # Batch upsert all chunks (with retry on transient errors)
+            self._qdrant_upsert(points)
 
             logger.info(
                 "Upserted %d chunk(s) for document %s", total_chunks, document_id
@@ -224,6 +224,7 @@ class QdrantVectorStore:
             return VectorSyncResult(status="ready", chunks_created=total_chunks)
         except Exception as exc:  # pragma: no cover - network/SDK errors
             logger.error("Failed to upsert vector for %s: %s", document_id, exc)
+            health_registry.mark_unhealthy("qdrant", str(exc))
             return VectorSyncResult(status="error", error=str(exc))
 
     def search(
@@ -257,13 +258,7 @@ class QdrantVectorStore:
                     ]
                 )
 
-            results = self._client.search(
-                collection_name=self.collection,
-                query_vector=embedding,
-                limit=top_k * 2,  # Fetch extra to deduplicate by document_id
-                query_filter=query_filter,
-                with_payload=True,
-            )
+            results = self._qdrant_search(embedding, query_filter, top_k * 2)
 
             # Deduplicate by document_id (multiple chunks may match)
             seen_docs: dict[str, dict[str, Any]] = {}
@@ -284,6 +279,7 @@ class QdrantVectorStore:
             return list(seen_docs.values())
         except Exception as exc:
             logger.error("Vector search failed: %s", exc)
+            health_registry.mark_unhealthy("qdrant", str(exc))
             return []
 
     def count(self) -> int:
@@ -294,10 +290,10 @@ class QdrantVectorStore:
             self._ensure_client()
             if self._client is None:
                 return -1
-            info = self._client.get_collection(self.collection)
-            return info.points_count or 0
+            return self._qdrant_count()
         except Exception as exc:
             logger.error("Vector count failed: %s", exc)
+            health_registry.mark_unhealthy("qdrant", str(exc))
             return -1
 
     def delete_document(self, document_id: str) -> VectorSyncResult:
@@ -313,24 +309,59 @@ class QdrantVectorStore:
             if self._client is None:
                 raise RuntimeError("Qdrant client unavailable")
 
-            # Delete by filter on document_id to handle all chunks
-            filter_condition = qmodels.Filter(
-                must=[
-                    qmodels.FieldCondition(
-                        key="document_id",
-                        match=qmodels.MatchValue(value=document_id),
-                    )
-                ]
-            )
-            self._client.delete(
-                collection_name=self.collection,
-                points_selector=qmodels.FilterSelector(filter=filter_condition),
-                wait=True,
-            )
+            self._qdrant_delete(document_id)
             return VectorSyncResult(status="deleted")
         except Exception as exc:  # pragma: no cover
             logger.error("Failed to delete vector for %s: %s", document_id, exc)
+            health_registry.mark_unhealthy("qdrant", str(exc))
             return VectorSyncResult(status="error", error=str(exc))
+
+    # -- Retryable Qdrant SDK helpers --
+
+    @sync_retry(service_name="qdrant")
+    def _qdrant_upsert(self, points: list[Any]) -> None:
+        if self._client is None:
+            raise RuntimeError("Qdrant client unavailable")
+        self._client.upsert(collection_name=self.collection, points=points, wait=True)
+
+    @sync_retry(service_name="qdrant")
+    def _qdrant_search(
+        self, embedding: list[float], query_filter: Any, limit: int
+    ) -> list[Any]:
+        if self._client is None:
+            raise RuntimeError("Qdrant client unavailable")
+        return self._client.search(
+            collection_name=self.collection,
+            query_vector=embedding,
+            limit=limit,
+            query_filter=query_filter,
+            with_payload=True,
+        )
+
+    @sync_retry(service_name="qdrant")
+    def _qdrant_count(self) -> int:
+        if self._client is None:
+            raise RuntimeError("Qdrant client unavailable")
+        info = self._client.get_collection(self.collection)
+        return info.points_count or 0
+
+    @sync_retry(service_name="qdrant")
+    def _qdrant_delete(self, document_id: str) -> None:
+        if self._client is None:
+            raise RuntimeError("Qdrant client unavailable")
+        filter_condition = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(
+                    key="document_id",
+                    match=qmodels.MatchValue(value=document_id),
+                )
+            ]
+        )
+        self._client.delete(
+            collection_name=self.collection,
+            points_selector=qmodels.FilterSelector(filter=filter_condition),
+            wait=True,
+        )
 
     def list_document_ids(self) -> set[str]:
         """Scroll through all points and return unique document_ids."""

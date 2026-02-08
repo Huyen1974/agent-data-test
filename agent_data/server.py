@@ -20,6 +20,7 @@ from starlette_prometheus import PrometheusMiddleware, metrics
 from agent_data import vector_store
 from agent_data.docs_api import router as docs_router
 from agent_data.main import AgentData, AgentDataConfig
+from agent_data.resilient_client import health_registry, resilient_lifespan
 
 try:
     from google.cloud import pubsub_v1  # type: ignore
@@ -41,6 +42,7 @@ app = FastAPI(
     title="Agent Data Langroid",
     description="Multi-agent knowledge management system built with Langroid framework",
     version="0.1.0",
+    lifespan=resilient_lifespan,
 )
 
 # Prometheus metrics exporter via starlette-prometheus
@@ -72,10 +74,18 @@ app.add_middleware(
 app.include_router(docs_router)
 
 
+class ServiceStatusDetail(BaseModel):
+    status: str
+    latency_ms: float = 0.0
+    last_error: str | None = None
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str
     langroid_available: bool
+    services: dict[str, ServiceStatusDetail] | None = None
+    service_count: int | None = None
 
 
 class ChatMessage(BaseModel):
@@ -366,16 +376,28 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
 
 @app.get("/", response_model=HealthResponse)
 async def root():
-    """Root endpoint with health check."""
+    """Root endpoint with health check including per-service status."""
     try:
         from agent_data import get_info
 
         info = get_info()
 
+        services_raw = health_registry.summary()
+        services = (
+            {
+                name: ServiceStatusDetail(**detail)
+                for name, detail in services_raw.items()
+            }
+            if services_raw
+            else None
+        )
+
         return HealthResponse(
-            status="healthy",
+            status=health_registry.overall_status(),
             version=info["version"],
             langroid_available=info["langroid_available"],
+            services=services,
+            service_count=len(services_raw) if services_raw else 0,
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
