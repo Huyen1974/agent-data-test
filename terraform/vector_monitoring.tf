@@ -20,18 +20,19 @@ resource "google_cloud_run_service_iam_member" "scheduler_audit_invoker" {
   member   = "serviceAccount:${local.appspot_sa}"
 }
 
-# Cloud Scheduler: audit vector sync every 6 hours
-# Calls POST /kb/audit-sync to detect orphan vectors and ghost documents
+# Cloud Scheduler: auto-heal vector sync every 12 hours
+# Calls POST /kb/audit-sync with auto_heal=true to detect and fix issues automatically
 resource "google_cloud_scheduler_job" "audit_sync_6h" {
   name        = "vector-audit-sync-6h"
   region      = var.region
-  description = "Audit vector sync integrity every 6 hours"
-  schedule    = "0 */6 * * *"
+  description = "Auto-heal vector sync integrity every 12 hours"
+  schedule    = "0 */12 * * *"
   time_zone   = "Etc/UTC"
 
   http_target {
     http_method = "POST"
     uri         = "${data.google_cloud_run_service.agent_data.status[0].url}/kb/audit-sync"
+    body        = base64encode(jsonencode({ auto_heal = true }))
 
     headers = {
       "Content-Type" = "application/json"

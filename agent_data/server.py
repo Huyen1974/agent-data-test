@@ -1467,6 +1467,12 @@ class CleanupOrphansRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AuditSyncRequest(BaseModel):
+    auto_heal: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
 @app.post("/kb/cleanup-orphans", dependencies=[Depends(require_api_key)])
 async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
     """Remove Qdrant vectors whose documents no longer exist in Firestore.
@@ -1509,54 +1515,35 @@ async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
         except Exception:
             pass
 
-    deleted = 0
-    details: list[dict[str, Any]] = []
-    to_delete = orphan_ids[: payload.max_delete]
-
-    if not payload.dry_run:
-        for doc_id in to_delete:
-            result = store.delete_document(doc_id)
-            if result.status != "error":
-                deleted += 1
-            details.append({"document_id": doc_id, "status": result.status})
-            logger.info(
-                "vector_sync",
-                extra={
-                    "action": "orphan_cleanup",
-                    "document_id": doc_id,
-                    "status": result.status,
-                },
-            )
-    else:
+    if payload.dry_run:
+        to_delete = orphan_ids[: payload.max_delete]
         details = [
             {"document_id": doc_id, "status": "would_delete"} for doc_id in to_delete
         ]
+        return {
+            "mode": "dry_run",
+            "orphans_found": len(orphan_ids),
+            "orphans_deleted": 0,
+            "details": details,
+            "remaining_after_cleanup": len(orphan_ids),
+            "qdrant_vectors": store.count(),
+        }
 
+    result = _run_cleanup(store, db, orphan_ids, max_delete=payload.max_delete)
     return {
-        "mode": "dry_run" if payload.dry_run else "execute",
-        "orphans_found": len(orphan_ids),
-        "orphans_deleted": deleted,
-        "details": details,
-        "remaining_after_cleanup": len(orphan_ids) - deleted,
+        "mode": "execute",
+        "orphans_found": result["orphans_found"],
+        "orphans_deleted": result["orphans_deleted"],
+        "details": result["details"],
+        "remaining_after_cleanup": result["remaining_after_cleanup"],
         "qdrant_vectors": store.count(),
     }
 
 
-@app.post("/kb/audit-sync", dependencies=[Depends(require_api_key)])
-async def audit_sync():
-    """Compare Firestore documents with Qdrant vectors and report mismatches.
-
-    Returns orphans (vectors without docs) and ghosts (docs without vectors).
-    Read-only — does NOT modify any data.
-    """
-    store = vector_store.get_vector_store(refresh=True)
-    if not store.enabled:
-        raise HTTPException(status_code=503, detail="Vector store not available")
-
-    db = _firestore()
+def _run_audit(store: Any, db: Any) -> dict[str, Any]:
+    """Internal: compare Firestore vs Qdrant and return audit result dict."""
     docs = list(db.collection(KB_COLLECTION).stream())
 
-    # Set A: active Firestore document IDs
     firestore_ids: set[str] = set()
     for snap in docs:
         data = snap.to_dict() or {}
@@ -1564,14 +1551,9 @@ async def audit_sync():
             doc_id = data.get("document_id", snap.id)
             firestore_ids.add(doc_id)
 
-    # Set B: unique document IDs in Qdrant vectors
     qdrant_ids = store.list_document_ids()
-
     orphan_ids = sorted(qdrant_ids - firestore_ids)
     ghost_ids = sorted(firestore_ids - qdrant_ids)
-
-    total_docs = len(firestore_ids)
-    total_vectors = store.count()
 
     status = "clean"
     recommendations: list[str] = []
@@ -1589,8 +1571,8 @@ async def audit_sync():
         )
 
     return {
-        "total_documents": total_docs,
-        "total_vectors": total_vectors,
+        "total_documents": len(firestore_ids),
+        "total_vectors": store.count(),
         "documents_without_vectors": ghost_ids,
         "ghost_count": len(ghost_ids),
         "orphan_vector_document_ids": orphan_ids,
@@ -1600,36 +1582,24 @@ async def audit_sync():
     }
 
 
-@app.post("/kb/reindex-missing", dependencies=[Depends(require_api_key)])
-async def reindex_missing():
-    """Re-index documents that exist in Firestore but have no vectors in Qdrant.
-
-    Reads content from Firestore and ingests into Qdrant using the standard
-    upsert flow. Only processes 'ghost' documents (active docs without vectors).
-    """
-    store = vector_store.get_vector_store(refresh=True)
-    if not store.enabled:
-        raise HTTPException(status_code=503, detail="Vector store not available")
-
-    db = _firestore()
-    docs = list(db.collection(KB_COLLECTION).stream())
-
-    firestore_docs: dict[str, dict[str, Any]] = {}
-    for snap in docs:
-        data = snap.to_dict() or {}
-        if data.get("deleted_at") is None:
-            doc_id = data.get("document_id", snap.id)
-            firestore_docs[doc_id] = data
-
-    qdrant_ids = store.list_document_ids()
-    ghost_ids = sorted(set(firestore_docs.keys()) - qdrant_ids)
-
+def _run_reindex(store: Any, db: Any, ghost_ids: list[str]) -> dict[str, Any]:
+    """Internal: re-ingest ghost documents into Qdrant."""
     reindexed = 0
     failed: list[dict[str, str]] = []
     details: list[dict[str, Any]] = []
 
     for doc_id in ghost_ids:
-        data = firestore_docs[doc_id]
+        try:
+            ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
+            snap = ref.get()
+            if not getattr(snap, "exists", False):
+                details.append({"document_id": doc_id, "status": "not_found"})
+                continue
+            data = snap.to_dict() or {}
+        except Exception:
+            failed.append({"document_id": doc_id, "error": "firestore_read_failed"})
+            continue
+
         content = data.get("content") or {}
         body = content.get("body", "") if isinstance(content, dict) else ""
         if not body.strip():
@@ -1655,14 +1625,11 @@ async def reindex_missing():
         else:
             reindexed += 1
             details.append(
-                {
-                    "document_id": doc_id,
-                    "chunks_created": result.chunks_created,
-                }
+                {"document_id": doc_id, "chunks_created": result.chunks_created}
             )
             try:
-                doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-                doc_ref.update({"vector_status": "ready"})
+                ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
+                ref.update({"vector_status": "ready"})
             except Exception:
                 pass
 
@@ -1672,6 +1639,142 @@ async def reindex_missing():
         "failed": failed,
         "details": details,
     }
+
+
+def _run_cleanup(
+    store: Any, db: Any, orphan_ids: list[str], max_delete: int = 100
+) -> dict[str, Any]:
+    """Internal: delete orphan vectors from Qdrant."""
+    to_delete = orphan_ids[:max_delete]
+    deleted = 0
+    details: list[dict[str, Any]] = []
+
+    for doc_id in to_delete:
+        result = store.delete_document(doc_id)
+        if result.status != "error":
+            deleted += 1
+        details.append({"document_id": doc_id, "status": result.status})
+        logger.info(
+            "vector_sync",
+            extra={
+                "action": "orphan_cleanup",
+                "document_id": doc_id,
+                "status": result.status,
+            },
+        )
+
+    return {
+        "orphans_found": len(orphan_ids),
+        "orphans_deleted": deleted,
+        "details": details,
+        "remaining_after_cleanup": len(orphan_ids) - deleted,
+    }
+
+
+@app.post("/kb/audit-sync", dependencies=[Depends(require_api_key)])
+async def audit_sync(payload: AuditSyncRequest | None = None):
+    """Compare Firestore documents with Qdrant vectors and report mismatches.
+
+    Returns orphans (vectors without docs) and ghosts (docs without vectors).
+    When auto_heal=True, automatically fixes issues and runs a verification audit.
+    """
+    if payload is None:
+        payload = AuditSyncRequest()
+
+    store = vector_store.get_vector_store(refresh=True)
+    if not store.enabled:
+        raise HTTPException(status_code=503, detail="Vector store not available")
+
+    db = _firestore()
+    audit_before = _run_audit(store, db)
+
+    if not payload.auto_heal or audit_before["status"] == "clean":
+        logger.info(
+            "vector_sync",
+            extra={
+                "action": "audit_sync",
+                "auto_heal": payload.auto_heal,
+                "status": audit_before["status"],
+            },
+        )
+        return audit_before
+
+    # --- Auto-heal: fix issues then verify ---
+    logger.info(
+        "vector_sync",
+        extra={
+            "action": "auto_heal_triggered",
+            "ghost_count": audit_before["ghost_count"],
+            "orphan_count": audit_before["orphan_count"],
+        },
+    )
+
+    heal_report: dict[str, Any] = {"auto_heal": True}
+
+    # Fix ghosts (docs without vectors)
+    if audit_before["ghost_count"] > 0:
+        reindex_result = _run_reindex(
+            store, db, audit_before["documents_without_vectors"]
+        )
+        heal_report["reindex"] = reindex_result
+        logger.info(
+            "vector_sync",
+            extra={
+                "action": "auto_heal_reindex",
+                "ghosts_fixed": reindex_result["reindexed"],
+                "ghosts_failed": len(reindex_result["failed"]),
+            },
+        )
+
+    # Fix orphans (vectors without docs)
+    if audit_before["orphan_count"] > 0:
+        cleanup_result = _run_cleanup(
+            store, db, audit_before["orphan_vector_document_ids"], max_delete=100
+        )
+        heal_report["cleanup"] = cleanup_result
+        logger.info(
+            "vector_sync",
+            extra={
+                "action": "auto_heal_cleanup",
+                "orphans_cleaned": cleanup_result["orphans_deleted"],
+                "orphans_remaining": cleanup_result["remaining_after_cleanup"],
+            },
+        )
+
+    # Verification audit
+    audit_after = _run_audit(store, db)
+    heal_report["audit_before"] = audit_before
+    heal_report["audit_after"] = audit_after
+    heal_report["final_status"] = audit_after["status"]
+
+    logger.info(
+        "vector_sync",
+        extra={
+            "action": "auto_heal_complete",
+            "final_status": audit_after["status"],
+            "status_before": audit_before["status"],
+        },
+    )
+
+    return heal_report
+
+
+@app.post("/kb/reindex-missing", dependencies=[Depends(require_api_key)])
+async def reindex_missing():
+    """Re-index documents that exist in Firestore but have no vectors in Qdrant.
+
+    Reads content from Firestore and ingests into Qdrant using the standard
+    upsert flow. Only processes 'ghost' documents (active docs without vectors).
+    """
+    store = vector_store.get_vector_store(refresh=True)
+    if not store.enabled:
+        raise HTTPException(status_code=503, detail="Vector store not available")
+
+    db = _firestore()
+    audit = _run_audit(store, db)
+    ghost_ids = audit["documents_without_vectors"]
+
+    return _run_reindex(store, db, ghost_ids)
 
 
 # ---- MCP Protocol Endpoints ----
