@@ -11,6 +11,14 @@ echo ""
 cd "$AGENT_DATA_DIR"
 mkdir -p logs
 
+# Load environment variables from .env.local (if exists)
+if [ -f "$AGENT_DATA_DIR/.env.local" ]; then
+    set -a
+    source "$AGENT_DATA_DIR/.env.local"
+    set +a
+    echo "Loaded .env.local"
+fi
+
 # Activate venv
 VENV_PYTHON="$AGENT_DATA_DIR/venv/bin/python"
 
