@@ -251,6 +251,7 @@ class QdrantVectorStore:
         query: str,
         top_k: int = 5,
         filter_tags: list[str] | None = None,
+        filter_status: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search for documents using vector similarity.
 
@@ -265,16 +266,22 @@ class QdrantVectorStore:
 
             embedding = self._embed(query)
 
-            query_filter = None
+            conditions: list[Any] = []
             if filter_tags:
-                query_filter = qmodels.Filter(
-                    must=[
-                        qmodels.FieldCondition(
-                            key="metadata.tags",
-                            match=qmodels.MatchAny(any=filter_tags),
-                        )
-                    ]
+                conditions.append(
+                    qmodels.FieldCondition(
+                        key="metadata.tags",
+                        match=qmodels.MatchAny(any=filter_tags),
+                    )
                 )
+            if filter_status:
+                conditions.append(
+                    qmodels.FieldCondition(
+                        key="metadata.status",
+                        match=qmodels.MatchValue(value=filter_status),
+                    )
+                )
+            query_filter = qmodels.Filter(must=conditions) if conditions else None
 
             results = self._qdrant_search(embedding, query_filter, top_k * 2)
 
