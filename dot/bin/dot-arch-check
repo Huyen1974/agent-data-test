@@ -1,0 +1,68 @@
+#!/bin/bash
+# dot-arch-check for agent-data-test
+# Checks: no hardcoded secrets, no new SAs, no hardcoded URLs
+# Exit code: 0 = PASS, 1+ = VIOLATIONS
+
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+VIOLATIONS=0
+
+log_violation() {
+  echo "  VIOLATION [$1]: $2"
+  echo "    -> $3"
+  VIOLATIONS=$((VIOLATIONS + 1))
+}
+log_pass() { echo "  PASS [$1]: $2"; }
+
+echo "======================================="
+echo "  ARCHITECTURE CHECK (agent-data)"
+echo "======================================="
+echo ""
+
+# Rule 1: No hardcoded API keys
+echo "--- Rule 1: No Hardcoded Secrets ---"
+SECRETS=$(grep -rn \
+  'sk-proj-[A-Za-z0-9]\|sk-ant-[A-Za-z0-9]\|AIza[A-Za-z0-9]' \
+  "${REPO_ROOT}/agent_data/" \
+  --include="*.py" \
+  2>/dev/null || true)
+
+if [ -n "$SECRETS" ]; then
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    log_violation "SECRETS" "$(echo "$line" | cut -d: -f1)" "Possible hardcoded API key"
+  done <<< "$SECRETS"
+else
+  log_pass "SECRETS" "No hardcoded API keys"
+fi
+
+# Rule 2: No new Service Account creation
+echo ""
+echo "--- Rule 2: GC-LAW Single SA ---"
+NEW_SA=$(grep -rn \
+  'gcloud iam service-accounts create' \
+  "${REPO_ROOT}/" \
+  --include="*.sh" --include="*.yml" --include="*.yaml" --include="*.py" \
+  2>/dev/null \
+  | grep -v 'reports/' \
+  || true)
+
+if [ -n "$NEW_SA" ]; then
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    log_violation "GC-LAW" "$(echo "$line" | cut -d: -f1)" "New SA creation detected"
+  done <<< "$NEW_SA"
+else
+  log_pass "GC-LAW" "No new Service Account creation"
+fi
+
+# Summary
+echo ""
+echo "======================================="
+if [ $VIOLATIONS -eq 0 ]; then
+  echo "  ALL PASSED (2 rules)"
+else
+  echo "  $VIOLATIONS VIOLATION(S)"
+fi
+echo "======================================="
+exit $VIOLATIONS

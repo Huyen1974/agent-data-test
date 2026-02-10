@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Path, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_client import Counter, Histogram
@@ -208,6 +208,7 @@ class DocumentResponse(BaseModel):
 class QueryFilters(BaseModel):
     tags: list[str] | None = None
     tenant_id: str | None = None
+    status: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -841,7 +842,13 @@ def _retrieve_query_context(
         store = vector_store.get_vector_store()
         if store.enabled:
             filter_tags = filters.tags if filters and filters.tags else None
-            hits = store.search(query=query, top_k=top_k, filter_tags=filter_tags)
+            filter_status = filters.status if filters and filters.status else None
+            hits = store.search(
+                query=query,
+                top_k=top_k,
+                filter_tags=filter_tags,
+                filter_status=filter_status,
+            )
             if hits:
                 contexts = []
                 for hit in hits:
@@ -892,6 +899,12 @@ def _retrieve_query_context(
                 metadata.get("tenant_id") if isinstance(metadata, dict) else None
             )
             if tenant_id != filters.tenant_id:
+                continue
+        if filters and filters.status:
+            doc_status = (
+                metadata.get("status") if isinstance(metadata, dict) else None
+            )
+            if doc_status != filters.status:
                 continue
 
         content = data.get("content") or {}
@@ -1001,7 +1014,11 @@ def _assert_move_target_valid(*, db, document_id: str, new_parent_id: str) -> No
 
 
 @app.post("/documents", response_model=DocumentResponse)
-async def create_document(payload: DocumentCreate, _=Depends(require_api_key)):
+async def create_document(
+    payload: DocumentCreate,
+    upsert: bool = Query(False),
+    _=Depends(require_api_key),
+):
     try:
         db = _firestore()
         doc_id = payload.document_id
@@ -1010,6 +1027,39 @@ async def create_document(payload: DocumentCreate, _=Depends(require_api_key)):
         if getattr(snapshot, "exists", False):
             existing = snapshot.to_dict() or {}
             if existing.get("deleted_at") is None:
+                if upsert:
+                    # Upsert: update existing document in-place
+                    current_revision = existing.get("revision", 0)
+                    now_iso = datetime.now(UTC).isoformat()
+                    new_content = payload.content.model_dump()
+                    new_metadata = payload.metadata.model_dump(exclude_none=True)
+                    updates = {
+                        "content": new_content,
+                        "metadata": new_metadata,
+                        "is_human_readable": payload.is_human_readable,
+                        "updated_at": now_iso,
+                        "revision": current_revision + 1,
+                    }
+                    doc_ref.update(updates)
+                    try:
+                        _delete_vector_entry(doc_id)
+                        _sync_vector_entry(
+                            doc_ref=doc_ref,
+                            document_id=doc_id,
+                            content=new_content.get("body"),
+                            metadata=new_metadata,
+                            parent_id=existing.get("parent_id", payload.parent_id),
+                            is_human_readable=payload.is_human_readable,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Vector sync failed for upsert %s: %s", doc_id, exc
+                        )
+                    return DocumentResponse(
+                        id=doc_id,
+                        status="updated",
+                        revision=updates["revision"],
+                    )
                 raise _error(
                     status=409,
                     code="CONFLICT",
