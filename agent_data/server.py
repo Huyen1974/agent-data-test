@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from prometheus_client import Counter, Histogram
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette_prometheus import PrometheusMiddleware, metrics
@@ -463,6 +463,15 @@ async def health():
     return await root()
 
 
+@app.get("/chatgpt-openapi.json", include_in_schema=False)
+async def serve_openapi_spec():
+    """Serve the custom OpenAPI spec for ChatGPT Actions."""
+    spec_path = os.path.join(os.path.dirname(__file__), "static", "openapi.json")
+    if not os.path.isfile(spec_path):
+        raise HTTPException(status_code=404, detail="openapi.json not found")
+    return FileResponse(spec_path, media_type="application/json")
+
+
 @app.post("/ingest", response_model=ChatResponse, status_code=202)
 async def ingest(message: ChatMessage):
     """Queue an ingest task by publishing a Pub/Sub message and return 202.
@@ -901,9 +910,7 @@ def _retrieve_query_context(
             if tenant_id != filters.tenant_id:
                 continue
         if filters and filters.status:
-            doc_status = (
-                metadata.get("status") if isinstance(metadata, dict) else None
-            )
+            doc_status = metadata.get("status") if isinstance(metadata, dict) else None
             if doc_status != filters.status:
                 continue
 
