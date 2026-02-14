@@ -738,8 +738,23 @@ def query_knowledge(payload: QueryKnowledgeRequest):
         else:
             llm_input = query_text
 
+        # Clear agent state to prevent accumulation between requests (P20 fix)
+        # Without this, message_history grows and dialog causes
+        # followup_to_standalone rewriting, leading to assertion failures
+        # in DocChatAgent.get_summary_answer() on certain queries.
+        try:
+            agent.clear_history(0)
+            agent.clear_dialog()
+        except Exception:
+            pass
+
         # Direct langroid call (sync endpoint avoids asyncio.run() conflict)
-        agent_reply = agent.llm_response(llm_input)
+        # Prefix with "!" to bypass DocChatAgent's internal RAG pipeline (P20).
+        # We already retrieved context via _retrieve_query_context() above,
+        # so DocChatAgent's redundant search + extract + summarize is skipped.
+        # Without "!", DocChatAgent runs its own search which can fail with
+        # "LLM response should not be None" on certain queries.
+        agent_reply = agent.llm_response("!" + llm_input)
         reply_text = (getattr(agent_reply, "content", None) or "").strip()
 
         if not reply_text or reply_text.upper() in {"DO-NOT-KNOW", "UNKNOWN"}:
