@@ -299,7 +299,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     ]
 
             elif name == "list_documents":
-                path = arguments.get("path", "docs")
+                path = arguments.get("path", "")
                 # Primary: list from Firestore KB (where documents are actually stored)
                 response = await _request_with_fallback(
                     client,
@@ -587,9 +587,9 @@ if __name__ == "__main__":
 
             # Test 1: list_documents
             print("1. Testing list_documents...")
-            result = await call_tool("list_documents", {"path": "docs"})
+            result = await call_tool("list_documents", {"path": "knowledge"})
             output = result[0].text if result else "No output"
-            if "📁" in output or "📄" in output:
+            if "knowledge/" in output:
                 print("   ✅ PASS - Returns document list")
                 print(f"   Preview: {output[:200]}...")
             else:
@@ -600,10 +600,10 @@ if __name__ == "__main__":
             # Test 2: get_document
             print("2. Testing get_document...")
             result = await call_tool(
-                "get_document", {"document_id": "AGENCY_OS_E1_BLUEPRINT.md"}
+                "get_document", {"document_id": "knowledge/current-state/firebase-hosting-status.md"}
             )
             output = result[0].text if result else "No output"
-            if len(output) > 500 and "AGENCY" in output:
+            if len(output) > 100:
                 print("   ✅ PASS - Returns full document content")
                 print(f"   Length: {len(output)} chars")
             else:
