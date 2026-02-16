@@ -600,7 +600,8 @@ if __name__ == "__main__":
             # Test 2: get_document
             print("2. Testing get_document...")
             result = await call_tool(
-                "get_document", {"document_id": "knowledge/current-state/firebase-hosting-status.md"}
+                "get_document",
+                {"document_id": "knowledge/current-state/firebase-hosting-status.md"},
             )
             output = result[0].text if result else "No output"
             if len(output) > 100:
