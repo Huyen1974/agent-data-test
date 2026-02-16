@@ -257,3 +257,10 @@ app-service-project/test-results/
 .genkit/
 tools/ai/
 .cienv/
+
+# Local audit reports
+reports/
+
+# Local dev artifacts
+agent_data/static/
+scripts/start-agent-data.sh
