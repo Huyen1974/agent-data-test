@@ -1362,7 +1362,17 @@ async def delete_document(
         db = _firestore()
         doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
         snapshot = doc_ref.get()
-        if not getattr(snapshot, "exists", False):
+        doc_exists = getattr(snapshot, "exists", False)
+
+        # Always attempt Qdrant vector deletion, even if Firestore doc is
+        # missing.  This prevents orphan vectors when the Firestore record
+        # was already removed (race condition, manual cleanup, etc.).
+        try:
+            _delete_vector_entry(doc_id)
+        except Exception as exc:  # pragma: no cover
+            logger.error("Vector deletion failed for %s: %s", doc_id, exc)
+
+        if not doc_exists:
             raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
 
         now_iso = datetime.now(UTC).isoformat()
@@ -1376,10 +1386,6 @@ async def delete_document(
                 "revision": next_revision,
             }
         )
-        try:
-            _delete_vector_entry(doc_id)
-        except Exception as exc:  # pragma: no cover
-            logger.error("Vector deletion failed for %s: %s", doc_id, exc)
         return DocumentResponse(id=doc_id, status="deleted", revision=next_revision)
     except HTTPException:
         raise
