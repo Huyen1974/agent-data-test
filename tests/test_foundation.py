@@ -4,12 +4,16 @@ Foundation tests for agent-data-langroid package.
 Tests core functionality including Langroid import, CLI operations, and FastAPI endpoints.
 """
 
+import os
 import subprocess
 import sys
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+_openai_key = os.getenv("OPENAI_API_KEY", "")
+_has_openai = _openai_key and _openai_key not in ("xxx", "test", "placeholder")
 
 
 @pytest.mark.unit
@@ -192,11 +196,13 @@ class TestFastAPIHealth:
             assert "detail" in data
             assert data["detail"] == "Service unhealthy"
 
+    @pytest.mark.skipif(not _has_openai, reason="OPENAI_API_KEY not set")
     def test_chat_endpoint_basic(self, app):
         """Test basic chat endpoint functionality."""
         with TestClient(app) as client:
             response = client.post(
-                "/chat", json={"message": "Hello, world!", "session_id": "test-session"}
+                "/chat",
+                json={"message": "Hello, world!", "session_id": "test-session"},
             )
 
         assert response.status_code == 200
