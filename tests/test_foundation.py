@@ -464,6 +464,7 @@ class TestCoverageBoost:
             # Should handle missing dependencies
             assert "Missing dependencies" in result.output or result.exit_code != 0
 
+    @pytest.mark.skipif(not _has_openai, reason="OPENAI_API_KEY not set")
     def test_server_exception_branches(self):
         """Test server exception handling branches."""
         from fastapi.testclient import TestClient
