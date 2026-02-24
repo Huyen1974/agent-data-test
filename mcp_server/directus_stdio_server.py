@@ -271,7 +271,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "filter": {
                         "type": "object",
-                        "description": "Directus filter object, e.g. {\"status\": {\"_eq\": \"active\"}}",
+                        "description": 'Directus filter object, e.g. {"status": {"_eq": "active"}}',
                     },
                     "fields": {
                         "type": "string",
@@ -423,11 +423,19 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         for c in collections
                         if not c["collection"].startswith("directus_")
                     ]
-                    lines = [f"Collections ({len(user_cols)} user, {len(collections)} total):\n"]
+                    lines = [
+                        f"Collections ({len(user_cols)} user, {len(collections)} total):\n"
+                    ]
                     for c in user_cols:
                         col = c["collection"]
-                        note = c.get("meta", {}).get("note", "") if c.get("meta") else ""
-                        wl = " [whitelisted]" if not COLLECTION_WHITELIST or col in COLLECTION_WHITELIST else ""
+                        note = (
+                            c.get("meta", {}).get("note", "") if c.get("meta") else ""
+                        )
+                        wl = (
+                            " [whitelisted]"
+                            if not COLLECTION_WHITELIST or col in COLLECTION_WHITELIST
+                            else ""
+                        )
                         line = f"  {col}{wl}"
                         if note:
                             line += f" — {note}"
@@ -516,9 +524,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         )
                     ]
                 elif resp.status_code == 404:
-                    return _error(
-                        f"Item {item_id} not found in '{collection}'."
-                    )
+                    return _error(f"Item {item_id} not found in '{collection}'.")
                 return _error(f"HTTP {resp.status_code}: {resp.text[:300]}")
 
             # --- directus_create_item ---
@@ -528,9 +534,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 err = _check_collection(collection)
                 if err:
                     return _error(err)
-                resp = await _request(
-                    client, "POST", f"/items/{collection}", json=data
-                )
+                resp = await _request(client, "POST", f"/items/{collection}", json=data)
                 if resp.status_code in (200, 201, 204):
                     result = resp.json().get("data", {}) if resp.content else {}
                     item_id = result.get("id", "?")
@@ -562,9 +566,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         )
                     ]
                 elif resp.status_code == 404:
-                    return _error(
-                        f"Item {item_id} not found in '{collection}'."
-                    )
+                    return _error(f"Item {item_id} not found in '{collection}'.")
                 return _error(f"HTTP {resp.status_code}: {resp.text[:300]}")
 
             # --- directus_delete_item ---
@@ -585,9 +587,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         )
                     ]
                 elif resp.status_code == 404:
-                    return _error(
-                        f"Item {item_id} not found in '{collection}'."
-                    )
+                    return _error(f"Item {item_id} not found in '{collection}'.")
                 return _error(f"HTTP {resp.status_code}: {resp.text[:300]}")
 
             # --- directus_list_flows ---
@@ -656,7 +656,9 @@ if __name__ == "__main__":
             print(f"Email:      {DIRECTUS_EMAIL}")
             print(f"Password:   {'***' if DIRECTUS_PASSWORD else '(not set)'}")
             print(f"Static tok: {'***' if DIRECTUS_STATIC_TOKEN else '(not set)'}")
-            print(f"Whitelist:  {sorted(COLLECTION_WHITELIST) if COLLECTION_WHITELIST else '(all)'}")
+            print(
+                f"Whitelist:  {sorted(COLLECTION_WHITELIST) if COLLECTION_WHITELIST else '(all)'}"
+            )
             print()
 
             tools = await list_tools()
@@ -699,9 +701,7 @@ if __name__ == "__main__":
 
             # Test get_schema
             print("4. Testing directus_get_schema (tasks)...")
-            result = await call_tool(
-                "directus_get_schema", {"collection": "tasks"}
-            )
+            result = await call_tool("directus_get_schema", {"collection": "tasks"})
             text = result[0].text
             if "fields" in text.lower():
                 summary = text.split("\n")[0]
