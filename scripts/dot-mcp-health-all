@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# dot-mcp-health-all — Check all MCP server connections
+# Usage: dot-mcp-health-all
+set -euo pipefail
+
+VENV_PYTHON="/Users/nmhuyen/Documents/Manual Deploy/agent-data-test/venv/bin/python"
+MCP_DIR="/Users/nmhuyen/Documents/Manual Deploy/agent-data-test/mcp_server"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+pass=0
+fail=0
+
+check() {
+    local name="$1" result="$2"
+    if [[ "$result" == "OK" ]]; then
+        printf "  ${GREEN}%-20s %s${NC}\n" "$name" "OK"
+        pass=$((pass + 1))
+    else
+        printf "  ${RED}%-20s %s${NC}\n" "$name" "FAIL: $result"
+        fail=$((fail + 1))
+    fi
+}
+
+echo ""
+echo -e "${BOLD}MCP Health Check${NC}"
+echo "================"
+echo ""
+
+# --- Agent Data MCP ---
+echo -e "${BOLD}Agent Data MCP${NC}"
+AD_URL="${AGENT_DATA_URL:-https://vps.incomexsaigoncorp.vn/api}"
+AD_KEY="${AGENT_DATA_API_KEY_LOCAL:-${AGENT_DATA_API_KEY:-}}"
+
+# Check server reachable (health endpoint is public, no key needed)
+ad_health=$(curl -sf --max-time 5 "$AD_URL/info" 2>&1 && echo "OK" || echo "unreachable")
+if [[ "$ad_health" == *"OK"* ]]; then
+    check "API /info" "OK"
+else
+    check "API /info" "$ad_health"
+fi
+
+# Check stdio_server.py exists
+if [[ -f "$MCP_DIR/stdio_server.py" ]]; then
+    check "stdio_server.py" "OK"
+else
+    check "stdio_server.py" "file missing"
+fi
+
+# Check MCP config
+if grep -q '"agent-data"' ~/.claude/mcp.json 2>/dev/null; then
+    check "Claude Code config" "OK"
+else
+    check "Claude Code config" "not registered"
+fi
+
+if grep -q '"agent-data"' ~/Library/Application\ Support/Claude/claude_desktop_config.json 2>/dev/null; then
+    check "Claude Desktop config" "OK"
+else
+    check "Claude Desktop config" "not registered"
+fi
+
+echo ""
+
+# --- Directus MCP ---
+echo -e "${BOLD}Directus MCP${NC}"
+DX_URL="${DIRECTUS_URL:-https://directus.incomexsaigoncorp.vn}"
+
+# Check server reachable
+dx_health=$(curl -sf --max-time 5 "$DX_URL/server/health" 2>&1)
+if echo "$dx_health" | grep -q '"ok"'; then
+    check "API /server/health" "OK"
+else
+    check "API /server/health" "unreachable"
+fi
+
+# Check stdio_server.py exists
+if [[ -f "$MCP_DIR/directus_stdio_server.py" ]]; then
+    check "directus_stdio_server.py" "OK"
+else
+    check "directus_stdio_server.py" "file missing"
+fi
+
+# Check MCP config
+if grep -q '"directus"' ~/.claude/mcp.json 2>/dev/null; then
+    check "Claude Code config" "OK"
+else
+    check "Claude Code config" "not registered"
+fi
+
+if grep -q '"directus"' ~/Library/Application\ Support/Claude/claude_desktop_config.json 2>/dev/null; then
+    check "Claude Desktop config" "OK"
+else
+    check "Claude Desktop config" "not registered"
+fi
+
+echo ""
+
+# --- Summary ---
+total=$((pass + fail))
+echo -e "${BOLD}Summary: ${GREEN}${pass}/${total} PASS${NC}"
+if [[ $fail -gt 0 ]]; then
+    echo -e "         ${RED}${fail}/${total} FAIL${NC}"
+    exit 1
+fi
+echo ""
