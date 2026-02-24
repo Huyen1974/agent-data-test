@@ -204,7 +204,6 @@ def main():
 
     # Compare
     created = 0
-    updated = 0
     skipped = 0
     errors = 0
     dx_only = []
@@ -220,7 +219,7 @@ def main():
                 try:
                     content, metadata = get_ad_doc_content(doc_id)
                     create_directus_doc(token, doc_id, content, metadata)
-                    log(f"    CREATED in Directus")
+                    log("    CREATED in Directus")
                     created += 1
                     time.sleep(0.5)
                 except Exception as e:
