@@ -9,58 +9,19 @@ jobs:
   orphan-vector-check:
     name: Orphan Vector Check
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud (WIF)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: github-chatgpt-ggcloud
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install qdrant-client google-cloud-firestore google-cloud-secret-manager
-
-      - name: Resolve Qdrant endpoint
-        id: qdrant
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Fetch secrets from Google Secret Manager
-          MGMT_KEY=$(gcloud secrets versions access latest --secret=Qdrant_cloud_management_key --project=github-chatgpt-ggcloud)
-          QDRANT_KEY=$(gcloud secrets versions access latest --secret=Qdrant_agent_data_N1D8R2vC0_5 --project=github-chatgpt-ggcloud)
-          # Discover first cluster id from account (static account id agreed in project)
-          ACC="b7093834-20e9-4206-8ea0-025b6994b319"
-          BASE="https://api.cloud.qdrant.io/api/cluster/v1"
-          CLUS=$(curl -s -H "Authorization: apikey ${MGMT_KEY}" "${BASE}/accounts/${ACC}/clusters" | jq -r '.items[0].id // empty')
-          if [ -n "${CLUS:-}" ]; then
-            echo "qdrant_url=https://${CLUS}.qdrant.tech" >> $GITHUB_OUTPUT
-          else
-            echo "qdrant_url=" >> $GITHUB_OUTPUT
-          fi
-          # Always expose API key (used even if URL is empty; script will skip gracefully)
-          echo "qdrant_key=${QDRANT_KEY}" >> $GITHUB_OUTPUT
-
       - name: Run orphan vector check
         env:
-          QDRANT_URL: ${{ steps.qdrant.outputs.qdrant_url }}
-          QDRANT_API_KEY: ${{ steps.qdrant.outputs.qdrant_key }}
+          AGENT_DATA_URL: https://vps.incomexsaigoncorp.vn/api
+          AGENT_DATA_KEY: ${{ secrets.AGENT_DATA_API_KEY }}
         run: |
           python scripts/check_orphan_vectors.py

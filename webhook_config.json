@@ -1,0 +1,26 @@
+{
+  "webhooks": [
+    {
+      "active": false,
+      "events": [
+        "document.created",
+        "document.updated",
+        "document.deleted"
+      ],
+      "headers": {
+        "Authorization": "Bearer ${DIRECTUS_ADMIN_TOKEN}",
+        "Content-Type": "application/json"
+      },
+      "id": "directus-sync",
+      "retry_policy": {
+        "backoff": [
+          5,
+          30,
+          300
+        ],
+        "max_retries": 3
+      },
+      "url": "https://directus.incomexsaigoncorp.vn/items/knowledge_documents"
+    }
+  ]
+}

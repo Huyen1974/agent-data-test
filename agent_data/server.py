@@ -19,6 +19,12 @@ from starlette_prometheus import PrometheusMiddleware, metrics
 
 from agent_data import vector_store
 from agent_data.docs_api import router as docs_router
+from agent_data.event_system import (
+    DOCUMENT_CREATED,
+    DOCUMENT_DELETED,
+    DOCUMENT_UPDATED,
+    get_event_bus,
+)
 from agent_data.main import AgentData, AgentDataConfig
 from agent_data.resilient_client import health_registry, resilient_lifespan
 
@@ -94,6 +100,7 @@ class HealthResponse(BaseModel):
     services: dict[str, ServiceStatusDetail] | None = None
     service_count: int | None = None
     data_integrity: DataIntegrity | None = None
+    event_system: dict[str, Any] | None = None
 
 
 class ChatMessage(BaseModel):
@@ -444,6 +451,11 @@ async def root():
 
         data_integrity = _compute_data_integrity()
 
+        try:
+            event_status = get_event_bus().status()
+        except Exception:
+            event_status = None
+
         return HealthResponse(
             status=health_registry.overall_status(),
             version=info["version"],
@@ -451,6 +463,7 @@ async def root():
             services=services,
             service_count=len(services_raw) if services_raw else 0,
             data_integrity=data_integrity,
+            event_system=event_status,
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -1077,6 +1090,15 @@ async def create_document(
                         logger.error(
                             "Vector sync failed for upsert %s: %s", doc_id, exc
                         )
+                    get_event_bus().emit_fire_and_forget(
+                        DOCUMENT_UPDATED,
+                        {
+                            "document_id": doc_id,
+                            "title": new_metadata.get("title", ""),
+                            "revision": updates["revision"],
+                            "changes_summary": "upsert",
+                        },
+                    )
                     return DocumentResponse(
                         id=doc_id,
                         status="updated",
@@ -1118,6 +1140,15 @@ async def create_document(
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.error("Vector synchronization failed for %s: %s", doc_id, exc)
 
+        get_event_bus().emit_fire_and_forget(
+            DOCUMENT_CREATED,
+            {
+                "document_id": doc_id,
+                "title": document_data.get("metadata", {}).get("title", ""),
+                "revision": 1,
+                "changes_summary": "created",
+            },
+        )
         return DocumentResponse(id=doc_id, status="created", revision=1)
     except HTTPException:
         raise
@@ -1246,6 +1277,19 @@ async def update_document(
         except Exception as exc:  # pragma: no cover
             logger.error("Vector synchronization failed for %s: %s", doc_id, exc)
 
+        get_event_bus().emit_fire_and_forget(
+            DOCUMENT_UPDATED,
+            {
+                "document_id": doc_id,
+                "title": (
+                    new_metadata.get("title", "")
+                    if isinstance(new_metadata, dict)
+                    else ""
+                ),
+                "revision": updates["revision"],
+                "changes_summary": ",".join(sorted(fields_updated)),
+            },
+        )
         return DocumentResponse(
             id=doc_id, status="updated", revision=updates["revision"]
         )
@@ -1385,6 +1429,19 @@ async def delete_document(
                 "vector_status": "deleted",
                 "revision": next_revision,
             }
+        )
+        get_event_bus().emit_fire_and_forget(
+            DOCUMENT_DELETED,
+            {
+                "document_id": doc_id,
+                "title": (
+                    current.get("metadata", {}).get("title", "")
+                    if isinstance(current.get("metadata"), dict)
+                    else ""
+                ),
+                "revision": next_revision,
+                "changes_summary": "deleted",
+            },
         )
         return DocumentResponse(id=doc_id, status="deleted", revision=next_revision)
     except HTTPException:
@@ -1853,6 +1910,99 @@ async def reindex_missing():
     ghost_ids = audit["documents_without_vectors"]
 
     return _run_reindex(store, db, ghost_ids)
+
+
+# ---- Webhook / Event System API Endpoints ----
+
+
+@app.get("/api/webhooks", dependencies=[Depends(require_api_key)])
+async def list_webhooks():
+    """List registered webhooks."""
+    bus = get_event_bus()
+    webhooks = bus.webhook_manager.registry.list_all()
+    return [
+        {
+            "id": wh.id,
+            "url": wh.url,
+            "events": wh.events,
+            "active": wh.active,
+            "retry_policy": wh.retry_policy,
+        }
+        for wh in webhooks
+    ]
+
+
+class WebhookRegisterRequest(BaseModel):
+    id: str
+    url: str
+    events: list[str] = Field(
+        default=["document.created", "document.updated", "document.deleted"]
+    )
+    headers: dict[str, str] = Field(default_factory=dict)
+    active: bool = True
+    retry_policy: dict[str, Any] = Field(
+        default={"max_retries": 3, "backoff": [5, 30, 300]}
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+@app.post("/api/webhooks", dependencies=[Depends(require_api_key)])
+async def register_webhook(payload: WebhookRegisterRequest):
+    """Register a new webhook subscriber."""
+    from agent_data.event_system import WebhookConfig
+
+    bus = get_event_bus()
+    config = WebhookConfig(
+        id=payload.id,
+        url=payload.url,
+        events=payload.events,
+        headers=payload.headers,
+        active=payload.active,
+        retry_policy=payload.retry_policy,
+    )
+    bus.webhook_manager.registry.add(config)
+    return {"status": "registered", "webhook_id": payload.id}
+
+
+@app.delete("/api/webhooks/{webhook_id}", dependencies=[Depends(require_api_key)])
+async def remove_webhook(webhook_id: str):
+    """Remove a registered webhook."""
+    bus = get_event_bus()
+    removed = bus.webhook_manager.registry.remove(webhook_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return {"status": "removed", "webhook_id": webhook_id}
+
+
+@app.get("/api/events/log")
+async def get_event_log(limit: int = Query(50, ge=1, le=500)):
+    """Return recent event log entries."""
+    bus = get_event_bus()
+    return {
+        "total_logged": bus.event_log.count(),
+        "events": bus.event_log.recent(limit),
+    }
+
+
+@app.post("/api/webhooks/{webhook_id}/test", dependencies=[Depends(require_api_key)])
+async def test_webhook(webhook_id: str):
+    """Send a test event to a specific webhook subscriber."""
+    bus = get_event_bus()
+    result = await bus.webhook_manager.test_webhook(webhook_id)
+    if "error" in result and result.get("status") != "failed":
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@app.get("/api/webhooks/{webhook_id}/health")
+async def webhook_health(webhook_id: str):
+    """Get success/fail stats for a webhook subscriber."""
+    bus = get_event_bus()
+    wh = bus.webhook_manager.registry.get(webhook_id)
+    if not wh:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return bus.webhook_manager.get_health(webhook_id)
 
 
 # ---- MCP Protocol Endpoints ----
