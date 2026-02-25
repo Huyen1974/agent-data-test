@@ -35,6 +35,7 @@ def _ssl_context() -> ssl.SSLContext | None:
     """Build SSL context, trying certifi first (macOS needs this)."""
     try:
         import certifi
+
         return ssl.create_default_context(cafile=certifi.where())
     except ImportError:
         return None  # Ubuntu/CI has system certs
