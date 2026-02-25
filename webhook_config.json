@@ -3,7 +3,11 @@
     {
       "id": "directus-sync",
       "url": "https://directus.incomexsaigoncorp.vn/items/knowledge_documents",
-      "events": ["document.created", "document.updated", "document.deleted"],
+      "events": [
+        "document.created",
+        "document.updated",
+        "document.deleted"
+      ],
       "headers": {
         "Authorization": "Bearer ${DIRECTUS_ADMIN_TOKEN}",
         "Content-Type": "application/json"
@@ -11,7 +15,11 @@
       "active": false,
       "retry_policy": {
         "max_retries": 3,
-        "backoff": [5, 30, 300]
+        "backoff": [
+          5,
+          30,
+          300
+        ]
       }
     }
   ]
