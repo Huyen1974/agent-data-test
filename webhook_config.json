@@ -1,8 +1,7 @@
 {
   "webhooks": [
     {
-      "id": "directus-sync",
-      "url": "https://directus.incomexsaigoncorp.vn/items/knowledge_documents",
+      "active": false,
       "events": [
         "document.created",
         "document.updated",
@@ -12,15 +11,16 @@
         "Authorization": "Bearer ${DIRECTUS_ADMIN_TOKEN}",
         "Content-Type": "application/json"
       },
-      "active": false,
+      "id": "directus-sync",
       "retry_policy": {
-        "max_retries": 3,
         "backoff": [
           5,
           30,
           300
-        ]
-      }
+        ],
+        "max_retries": 3
+      },
+      "url": "https://directus.incomexsaigoncorp.vn/items/knowledge_documents"
     }
   ]
 }
