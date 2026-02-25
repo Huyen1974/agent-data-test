@@ -13,6 +13,8 @@ from agent_data.directus_sync import (
     _make_category,
     _make_slug,
     _make_summary,
+    _should_sync,
+    directus_sync_listener,
     handle_document_created,
     handle_document_deleted,
     handle_document_updated,
@@ -120,6 +122,33 @@ class TestEnabled:
     def test_enabled_with_token(self):
         with patch("agent_data.directus_sync._DIRECTUS_TOKEN", "some-token"):
             assert _enabled() is True
+
+
+@pytest.mark.unit
+class TestSyncRouting:
+    def test_knowledge_syncs(self):
+        assert _should_sync("knowledge/dev/some-doc.md") is True
+        assert _should_sync("knowledge/current-state/index.md") is True
+
+    def test_operations_skips(self):
+        assert _should_sync("operations/tasks/task-1") is False
+        assert _should_sync("operations/tasks/comments/comment-1") is False
+
+    def test_test_skips(self):
+        assert _should_sync("test/some-test-doc") is False
+
+    def test_root_skips(self):
+        assert _should_sync("readme.md") is False
+
+    def test_listener_skips_non_knowledge(self):
+        """directus_sync_listener should not call handler for operations docs."""
+        result = asyncio.run(
+            directus_sync_listener(
+                "document.created", {"document_id": "operations/tasks/task-99"}
+            )
+        )
+        # Should return None (skipped) without calling any handler
+        assert result is None
 
 
 @pytest.mark.unit

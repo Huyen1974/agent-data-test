@@ -38,10 +38,20 @@ _AGENT_DATA_INTERNAL = os.getenv(
 ).rstrip("/")
 _API_KEY = os.getenv("API_KEY", "")
 
+# Only sync docs matching these prefixes to knowledge_documents.
+# operations/*, test/* etc. are NOT knowledge and should not pollute
+# the knowledge_documents collection.
+_SYNC_PREFIXES = ("knowledge/",)
+
 
 def _enabled() -> bool:
     """Check if Directus sync is configured."""
     return bool(_DIRECTUS_TOKEN)
+
+
+def _should_sync(doc_id: str) -> bool:
+    """Only sync documents matching _SYNC_PREFIXES to knowledge_documents."""
+    return any(doc_id.startswith(p) for p in _SYNC_PREFIXES)
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +324,16 @@ _HANDLERS = {
 
 
 async def directus_sync_listener(event_type: str, payload: dict[str, Any]) -> None:
-    """Main listener: dispatches to appropriate handler."""
+    """Main listener: dispatches to appropriate handler.
+
+    Only syncs documents with paths matching _SYNC_PREFIXES (default:
+    ``knowledge/``). Other paths (operations/*, test/*) are skipped.
+    """
+    doc_id = payload.get("document_id", "")
+    if not _should_sync(doc_id):
+        logger.debug("Directus sync skip (not knowledge): %s", doc_id)
+        return
+
     handler = _HANDLERS.get(event_type)
     if not handler:
         return
@@ -323,13 +342,13 @@ async def directus_sync_listener(event_type: str, payload: dict[str, Any]) -> No
         logger.info(
             "Directus sync %s %s → %s",
             event_type,
-            payload.get("document_id", "?"),
+            doc_id,
             result.get("status", "unknown"),
         )
     except Exception as exc:
         logger.error(
             "Directus sync error %s %s: %s",
             event_type,
-            payload.get("document_id", "?"),
+            doc_id,
             exc,
         )
