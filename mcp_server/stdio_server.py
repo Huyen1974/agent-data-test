@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 MCP Server for Claude Desktop (stdio transport)
-Provides search_knowledge, list_documents, get_document (read)
-and upload_document, update_document, delete_document, move_document, ingest_document (write)
+Provides search_knowledge, list_documents, get_document (read),
+upload_document, update_document, delete_document, move_document, ingest_document (write),
+and get_document_for_rewrite, patch_document, batch_read (WEB-84C)
 """
 
 import asyncio
@@ -264,6 +265,63 @@ async def list_tools() -> list[Tool]:
                 "required": ["source"],
             },
         ),
+        # --- WEB-84C: Rewrite, patch, batch tools ---
+        Tool(
+            name="get_document_for_rewrite",
+            description="Get full document content for rewriting. Only use when you need to rewrite the entire document. For reading/reference, use search_knowledge instead.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Document path, e.g. 'knowledge/dev/ssot/operating-rules.md'",
+                    },
+                },
+                "required": ["path"],
+            },
+        ),
+        Tool(
+            name="patch_document",
+            description="Patch a specific section of a document. old_str must appear exactly once. Returns 404 if document not found, 409 if old_str not found or ambiguous (appears multiple times).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Document path to patch",
+                    },
+                    "old_str": {
+                        "type": "string",
+                        "description": "Exact string to find (must appear exactly once)",
+                    },
+                    "new_str": {
+                        "type": "string",
+                        "description": "Replacement string",
+                    },
+                },
+                "required": ["path", "old_str", "new_str"],
+            },
+        ),
+        Tool(
+            name="batch_read",
+            description="Read multiple documents in one call. Max 20 paths. Returns truncated content by default, use full=true for complete content.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of document paths to read (max 20)",
+                    },
+                    "full": {
+                        "type": "boolean",
+                        "description": "If true, return full content instead of truncated",
+                        "default": False,
+                    },
+                },
+                "required": ["paths"],
+            },
+        ),
     ]
 
 
@@ -516,6 +574,98 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         TextContent(
                             type="text",
                             text=f"Ingest failed: HTTP {response.status_code} — {response.text}",
+                        )
+                    ]
+
+            elif name == "get_document_for_rewrite":
+                path = arguments.get("path", "")
+                response = await _request_with_fallback(
+                    client,
+                    "GET",
+                    f"/documents/{path}",
+                    params={"full": "true", "search": "false"},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data.get("content", "")
+                    meta = data.get("metadata", {})
+                    title = meta.get("title", path)
+                    info = f"document_id: {data.get('document_id', path)}\n"
+                    info += (
+                        f"content_length: {data.get('content_length', len(content))}\n"
+                    )
+                    info += f"revision: {data.get('revision', '?')}\n\n"
+                    return [
+                        TextContent(type="text", text=f"# {title}\n\n{info}{content}")
+                    ]
+                elif response.status_code == 404:
+                    return [
+                        TextContent(type="text", text=f"Document '{path}' not found")
+                    ]
+                else:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Error: HTTP {response.status_code} — {response.text}",
+                        )
+                    ]
+
+            elif name == "patch_document":
+                path = arguments.get("path", "")
+                old_str = arguments.get("old_str", "")
+                new_str = arguments.get("new_str", "")
+                response = await _request_with_fallback(
+                    client,
+                    "PATCH",
+                    f"/documents/{path}",
+                    json={"old_str": old_str, "new_str": new_str},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Document patched: {data.get('id', path)} (revision {data.get('revision', '?')})",
+                        )
+                    ]
+                else:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Patch failed: HTTP {response.status_code} — {response.text}",
+                        )
+                    ]
+
+            elif name == "batch_read":
+                paths = arguments.get("paths", [])
+                full = arguments.get("full", False)
+                response = await _request_with_fallback(
+                    client,
+                    "POST",
+                    "/documents/batch",
+                    json={"paths": paths, "full": full},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    items = data.get("items", [])
+                    count = data.get("count", len(items))
+                    result = f"Batch read: {count} documents\n\n"
+                    for item in items:
+                        doc_id = item.get("document_id", "?")
+                        error = item.get("error")
+                        if error:
+                            result += f"--- {doc_id} (ERROR: {error}) ---\n\n"
+                        else:
+                            content = item.get("content", "")
+                            truncated = item.get("truncated", False)
+                            tag = " [truncated]" if truncated else ""
+                            result += f"--- {doc_id}{tag} ---\n{content}\n\n"
+                    return [TextContent(type="text", text=result)]
+                else:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Batch read failed: HTTP {response.status_code} — {response.text}",
                         )
                     ]
 
