@@ -1489,7 +1489,9 @@ async def get_document(
 
         content = data.get("content", {})
         body = content.get("body", "") if isinstance(content, dict) else ""
-        metadata = data.get("metadata", {}) if isinstance(data.get("metadata"), dict) else {}
+        metadata = (
+            data.get("metadata", {}) if isinstance(data.get("metadata"), dict) else {}
+        )
         title = metadata.get("title", "")
 
         # Truncation
@@ -1512,9 +1514,7 @@ async def get_document(
         run_search = search and not full
         if run_search and title:
             try:
-                hits = _retrieve_query_context(
-                    query=title, filters=None, top_k=top_k
-                )
+                hits = _retrieve_query_context(query=title, filters=None, top_k=top_k)
                 result["related"] = [
                     {
                         "document_id": h.document_id,
@@ -1547,6 +1547,7 @@ async def get_document(
 
 class PatchDocumentRequest(BaseModel):
     """Request body for string-level patch of document content."""
+
     old_str: str = Field(..., min_length=1)
     new_str: str
 
@@ -1582,13 +1583,15 @@ async def patch_document(
 
         if occurrences == 0:
             raise _error(
-                409, "NOT_FOUND_IN_CONTENT",
+                409,
+                "NOT_FOUND_IN_CONTENT",
                 "old_str not found in document content",
                 document_id=doc_id,
             )
         if occurrences > 1:
             raise _error(
-                409, "AMBIGUOUS",
+                409,
+                "AMBIGUOUS",
                 f"old_str found {occurrences} times — must be unique",
                 document_id=doc_id,
                 occurrences=occurrences,
@@ -1597,7 +1600,11 @@ async def patch_document(
         new_body = body.replace(payload.old_str, payload.new_str, 1)
         current_revision = data.get("revision", 0)
         now_iso = datetime.now(UTC).isoformat()
-        new_content = dict(content) if isinstance(content, dict) else {"mime_type": "text/markdown"}
+        new_content = (
+            dict(content)
+            if isinstance(content, dict)
+            else {"mime_type": "text/markdown"}
+        )
         new_content["body"] = new_body
 
         updates = {
@@ -1614,7 +1621,11 @@ async def patch_document(
                 doc_ref=doc_ref,
                 document_id=doc_id,
                 content=new_body,
-                metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
+                metadata=(
+                    data.get("metadata")
+                    if isinstance(data.get("metadata"), dict)
+                    else None
+                ),
                 parent_id=data.get("parent_id"),
                 is_human_readable=data.get("is_human_readable", False),
             )
@@ -1634,7 +1645,9 @@ async def patch_document(
                 "changes_summary": "patch",
             },
         )
-        return DocumentResponse(id=doc_id, status="patched", revision=updates["revision"])
+        return DocumentResponse(
+            id=doc_id, status="patched", revision=updates["revision"]
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -1651,6 +1664,7 @@ async def patch_document(
 
 class BatchReadRequest(BaseModel):
     """Request body for batch document read."""
+
     paths: list[str] = Field(..., min_length=1, max_length=20)
     full: bool = False
 
@@ -1683,7 +1697,11 @@ async def batch_read_documents(
 
             content = data.get("content", {})
             body = content.get("body", "") if isinstance(content, dict) else ""
-            metadata = data.get("metadata", {}) if isinstance(data.get("metadata"), dict) else {}
+            metadata = (
+                data.get("metadata", {})
+                if isinstance(data.get("metadata"), dict)
+                else {}
+            )
 
             truncated = False
             content_out = body
@@ -1691,14 +1709,16 @@ async def batch_read_documents(
                 content_out = body[:_TRUNCATE_DEFAULT]
                 truncated = True
 
-            results.append({
-                "document_id": data.get("document_id", doc_id),
-                "content": content_out,
-                "metadata": metadata,
-                "revision": data.get("revision", 0),
-                "truncated": truncated,
-                "content_length": len(body),
-            })
+            results.append(
+                {
+                    "document_id": data.get("document_id", doc_id),
+                    "content": content_out,
+                    "metadata": metadata,
+                    "revision": data.get("revision", 0),
+                    "truncated": truncated,
+                    "content_length": len(body),
+                }
+            )
         return {"items": results, "count": len(results)}
     except HTTPException:
         raise
@@ -2556,7 +2576,13 @@ async def _dispatch_mcp_tool(tool_name: str, args: dict) -> dict:
             result = await patch_document(doc_id=path, payload=patch_payload)
             return result.model_dump()
         except HTTPException as exc:
-            return {"error": exc.detail if isinstance(exc.detail, str) else exc.detail.get("message", str(exc.detail))}
+            return {
+                "error": (
+                    exc.detail
+                    if isinstance(exc.detail, str)
+                    else exc.detail.get("message", str(exc.detail))
+                )
+            }
 
     if tool_name == "batch_read":
         paths = args.get("paths", [])
