@@ -732,7 +732,10 @@ def test_patch_document_replaces_string(
     doc_snapshot.exists = True
     doc_snapshot.to_dict.return_value = {
         "document_id": "knowledge/dev/doc.md",
-        "content": {"mime_type": "text/markdown", "body": "Hello world, this is a test."},
+        "content": {
+            "mime_type": "text/markdown",
+            "body": "Hello world, this is a test.",
+        },
         "metadata": {"title": "Doc"},
         "revision": 3,
         "deleted_at": None,
@@ -841,9 +844,7 @@ def test_patch_document_ambiguous_match(
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @patch("agent_data.server._firestore")
-def test_batch_read_multiple_docs(
-    mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch
-):
+def test_batch_read_multiple_docs(mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("API_KEY", "secret")
     client = TestClient(server.app)
 
@@ -902,9 +903,7 @@ def test_batch_read_multiple_docs(
 
 @pytest.mark.unit
 @patch("agent_data.server._firestore")
-def test_batch_read_full_mode(
-    mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch
-):
+def test_batch_read_full_mode(mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("API_KEY", "secret")
     client = TestClient(server.app)
 
