@@ -319,6 +319,9 @@ class WebhookManager:
 class EventBus:
     """Central event bus: emit events after CRUD, dispatch to webhooks."""
 
+    # Listener type: async callable(event_type, payload) -> None
+    Listener = Any  # Callable[[str, dict[str, Any]], Awaitable[None]]
+
     def __init__(
         self,
         webhook_manager: WebhookManager,
@@ -327,6 +330,11 @@ class EventBus:
         self.webhook_manager = webhook_manager
         self.event_log = event_log
         self._enabled = True
+        self._listeners: list[EventBus.Listener] = []
+
+    def add_listener(self, listener: Listener) -> None:
+        """Register an async listener: async fn(event_type, payload)."""
+        self._listeners.append(listener)
 
     @property
     def enabled(self) -> bool:
@@ -370,6 +378,15 @@ class EventBus:
             logger.error("Webhook dispatch failed: %s", exc)
             record.webhook_results = [{"status": "error", "error": str(exc)}]
 
+        # Dispatch to internal listeners (fire-and-forget each)
+        for listener in self._listeners:
+            try:
+                await listener(event_type, payload)
+            except Exception as exc:
+                logger.error(
+                    "Listener %s failed: %s", getattr(listener, "__name__", "?"), exc
+                )
+
         self.event_log.record(record)
 
     def emit_fire_and_forget(self, event_type: str, payload: dict[str, Any]) -> None:
@@ -396,6 +413,7 @@ class EventBus:
             "enabled": self._enabled,
             "webhooks_registered": len(webhooks),
             "webhooks_active": sum(1 for w in webhooks if w.active),
+            "listeners": len(self._listeners),
             "events_logged": self.event_log.count(),
         }
 
@@ -441,5 +459,16 @@ def _build_event_bus() -> EventBus:
 
     webhook_mgr = WebhookManager(registry, event_log)
     bus = EventBus(webhook_mgr, event_log)
+
+    # Register Directus sync listener (if DIRECTUS_ADMIN_TOKEN is set)
+    if os.getenv("DIRECTUS_ADMIN_TOKEN", ""):
+        try:
+            from agent_data.directus_sync import directus_sync_listener
+
+            bus.add_listener(directus_sync_listener)
+            logger.info("Directus sync listener registered")
+        except Exception as exc:
+            logger.warning("Failed to register Directus sync listener: %s", exc)
+
     logger.info("Event system initialized: %d webhooks", len(registry.list_all()))
     return bus
