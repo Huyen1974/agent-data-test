@@ -151,14 +151,15 @@ class TestEventBus:
         bus.emit_fire_and_forget(DOCUMENT_CREATED, {"document_id": "d1"})
         assert log.count() == 0
 
-    @pytest.mark.asyncio
-    async def test_emit_records_event(self):
+    def test_emit_records_event(self):
+        import asyncio
+
         log = EventLog()
         registry = WebhookRegistry()
         mgr = WebhookManager(registry, log)
         bus = EventBus(mgr, log)
 
-        await bus.emit(DOCUMENT_CREATED, {"document_id": "doc-1", "title": "T"})
+        asyncio.run(bus.emit(DOCUMENT_CREATED, {"document_id": "doc-1", "title": "T"}))
         assert log.count() == 1
         recent = log.recent(1)
         assert recent[0]["event_type"] == DOCUMENT_CREATED
