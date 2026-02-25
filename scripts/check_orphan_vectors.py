@@ -22,8 +22,8 @@ import json
 import os
 import ssl
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 
 
 def _print(msg: str) -> None:
