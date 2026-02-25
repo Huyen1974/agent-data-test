@@ -591,3 +591,371 @@ def test_delete_document_marks_deleted(
     assert updates["vector_status"] == "deleted"
     assert updates["revision"] == 4
     assert "deleted_at" in updates
+
+
+# ---------------------------------------------------------------------------
+# TD-011: GET /documents/{path} (truncated + vector search)
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_get_document_truncated_by_default(
+    mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    long_body = "A" * 1000
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = True
+    doc_snapshot.to_dict.return_value = {
+        "document_id": "knowledge/dev/long-doc.md",
+        "content": {"mime_type": "text/markdown", "body": long_body},
+        "metadata": {"title": "Long Doc"},
+        "revision": 2,
+        "deleted_at": None,
+    }
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    resp = client.get(
+        "/documents/knowledge/dev/long-doc.md",
+        headers={"x-api-key": "secret"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["truncated"] is True
+    assert len(body["content"]) == 500
+    assert body["content_length"] == 1000
+    assert body["revision"] == 2
+    assert "related" in body
+
+
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_get_document_full_returns_complete(
+    mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    long_body = "B" * 1000
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = True
+    doc_snapshot.to_dict.return_value = {
+        "document_id": "knowledge/dev/full-doc.md",
+        "content": {"body": long_body},
+        "metadata": {"title": "Full"},
+        "revision": 1,
+        "deleted_at": None,
+    }
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    resp = client.get(
+        "/documents/knowledge/dev/full-doc.md?full=true",
+        headers={"x-api-key": "secret"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["truncated"] is False
+    assert len(body["content"]) == 1000
+    assert "related" not in body
+
+
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_get_document_not_found(mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = False
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    resp = client.get(
+        "/documents/knowledge/missing",
+        headers={"x-api-key": "secret"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_get_document_short_content_not_truncated(
+    mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    short_body = "Hello world"
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = True
+    doc_snapshot.to_dict.return_value = {
+        "document_id": "test/short",
+        "content": {"body": short_body},
+        "metadata": {"title": "Short"},
+        "revision": 1,
+        "deleted_at": None,
+    }
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    resp = client.get("/documents/test/short", headers={"x-api-key": "secret"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["truncated"] is False
+    assert body["content"] == short_body
+
+
+# ---------------------------------------------------------------------------
+# TD-009: PATCH /documents/{path}
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_patch_document_replaces_string(
+    mock_fs: MagicMock,
+    stub_vector_store: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = True
+    doc_snapshot.to_dict.return_value = {
+        "document_id": "knowledge/dev/doc.md",
+        "content": {"mime_type": "text/markdown", "body": "Hello world, this is a test."},
+        "metadata": {"title": "Doc"},
+        "revision": 3,
+        "deleted_at": None,
+        "parent_id": "knowledge/dev",
+        "is_human_readable": False,
+    }
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    resp = client.patch(
+        "/documents/knowledge/dev/doc.md",
+        json={"old_str": "Hello world", "new_str": "Hi earth"},
+        headers={"x-api-key": "secret"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "patched"
+    assert body["revision"] == 4
+    assert doc_ref.update.call_count >= 1
+    stored = doc_ref.update.call_args_list[0][0][0]
+    assert stored["content"]["body"] == "Hi earth, this is a test."
+
+
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_patch_document_not_found(mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = False
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    resp = client.patch(
+        "/documents/knowledge/missing",
+        json={"old_str": "foo", "new_str": "bar"},
+        headers={"x-api-key": "secret"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_patch_document_old_str_missing(
+    mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = True
+    doc_snapshot.to_dict.return_value = {
+        "content": {"body": "Actual content here"},
+        "metadata": {"title": "X"},
+        "revision": 1,
+        "deleted_at": None,
+    }
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    resp = client.patch(
+        "/documents/test/doc",
+        json={"old_str": "NOT IN CONTENT", "new_str": "bar"},
+        headers={"x-api-key": "secret"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "NOT_FOUND_IN_CONTENT"
+
+
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_patch_document_ambiguous_match(
+    mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = True
+    doc_snapshot.to_dict.return_value = {
+        "content": {"body": "foo bar foo baz"},
+        "metadata": {"title": "X"},
+        "revision": 1,
+        "deleted_at": None,
+    }
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    resp = client.patch(
+        "/documents/test/doc",
+        json={"old_str": "foo", "new_str": "qux"},
+        headers={"x-api-key": "secret"},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "AMBIGUOUS"
+
+
+# ---------------------------------------------------------------------------
+# TD-010: POST /documents/batch
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_batch_read_multiple_docs(
+    mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    def make_snap(doc_id, body, title, revision):
+        s = MagicMock()
+        s.exists = True
+        s.to_dict.return_value = {
+            "document_id": doc_id,
+            "content": {"body": body},
+            "metadata": {"title": title},
+            "revision": revision,
+            "deleted_at": None,
+        }
+        return s
+
+    snap1 = make_snap("doc/a", "A" * 600, "Doc A", 1)
+    snap2 = make_snap("doc/b", "Short", "Doc B", 2)
+
+    missing_snap = MagicMock()
+    missing_snap.exists = False
+
+    def doc_side_effect(key):
+        ref = MagicMock()
+        if "doc__a" in key:
+            ref.get.return_value = snap1
+        elif "doc__b" in key:
+            ref.get.return_value = snap2
+        else:
+            ref.get.return_value = missing_snap
+        return ref
+
+    mock_fs.return_value.collection.return_value.document.side_effect = doc_side_effect
+
+    resp = client.post(
+        "/documents/batch",
+        json={"paths": ["doc/a", "doc/b", "doc/missing"]},
+        headers={"x-api-key": "secret"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 3
+
+    # First doc is truncated
+    assert body["items"][0]["truncated"] is True
+    assert len(body["items"][0]["content"]) == 500
+    assert body["items"][0]["content_length"] == 600
+
+    # Second doc is short, not truncated
+    assert body["items"][1]["truncated"] is False
+    assert body["items"][1]["content"] == "Short"
+
+    # Third doc is missing
+    assert body["items"][2]["error"] == "not_found"
+
+
+@pytest.mark.unit
+@patch("agent_data.server._firestore")
+def test_batch_read_full_mode(
+    mock_fs: MagicMock, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    big_body = "C" * 800
+    doc_snapshot = MagicMock()
+    doc_snapshot.exists = True
+    doc_snapshot.to_dict.return_value = {
+        "document_id": "doc/c",
+        "content": {"body": big_body},
+        "metadata": {"title": "C"},
+        "revision": 1,
+        "deleted_at": None,
+    }
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc_snapshot
+    mock_fs.return_value.collection.return_value.document.return_value = doc_ref
+
+    resp = client.post(
+        "/documents/batch",
+        json={"paths": ["doc/c"], "full": True},
+        headers={"x-api-key": "secret"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["items"][0]["truncated"] is False
+    assert len(body["items"][0]["content"]) == 800
+
+
+@pytest.mark.unit
+def test_batch_read_empty_paths_rejected(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    resp = client.post(
+        "/documents/batch",
+        json={"paths": []},
+        headers={"x-api-key": "secret"},
+    )
+    assert resp.status_code == 422  # validation error
+
+
+@pytest.mark.unit
+def test_batch_read_exceeds_max_rejected(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("API_KEY", "secret")
+    client = TestClient(server.app)
+
+    paths = [f"doc/{i}" for i in range(21)]
+    resp = client.post(
+        "/documents/batch",
+        json={"paths": paths},
+        headers={"x-api-key": "secret"},
+    )
+    assert resp.status_code == 422  # validation error

@@ -1458,6 +1458,262 @@ async def delete_document(
         ) from e
 
 
+# --------------- GET / PATCH / BATCH Read (TD-011, TD-009, TD-010) ---------------
+
+_TRUNCATE_DEFAULT = 500  # chars shown when ?full is not set
+
+
+@app.get("/documents/{doc_id:path}")
+async def get_document(
+    doc_id: str = Path(..., min_length=1),
+    full: bool = Query(False),
+    search: bool = Query(True),
+    top_k: int = Query(3, ge=1, le=10),
+    _=Depends(require_api_key),
+):
+    """Get a document with optional truncation and related vector search.
+
+    By default returns first 500 chars of content plus vector-search results
+    for related documents. Pass ``?full=true`` to get the complete content
+    (vector search is skipped in full mode unless ``?search=true`` is also set).
+    """
+    try:
+        db = _firestore()
+        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
+        snap = doc_ref.get()
+        if not getattr(snap, "exists", False):
+            raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
+        data = snap.to_dict() or {}
+        if data.get("deleted_at") is not None:
+            raise _error(404, "NOT_FOUND", "Document deleted", document_id=doc_id)
+
+        content = data.get("content", {})
+        body = content.get("body", "") if isinstance(content, dict) else ""
+        metadata = data.get("metadata", {}) if isinstance(data.get("metadata"), dict) else {}
+        title = metadata.get("title", "")
+
+        # Truncation
+        truncated = False
+        content_out = body
+        if not full and len(body) > _TRUNCATE_DEFAULT:
+            content_out = body[:_TRUNCATE_DEFAULT]
+            truncated = True
+
+        result: dict[str, Any] = {
+            "document_id": data.get("document_id", doc_id),
+            "content": content_out,
+            "metadata": metadata,
+            "revision": data.get("revision", 0),
+            "truncated": truncated,
+            "content_length": len(body),
+        }
+
+        # Vector search for related docs (default on in truncated mode)
+        run_search = search and not full
+        if run_search and title:
+            try:
+                hits = _retrieve_query_context(
+                    query=title, filters=None, top_k=top_k
+                )
+                result["related"] = [
+                    {
+                        "document_id": h.document_id,
+                        "score": h.score,
+                        "snippet": (h.snippet or "")[:200],
+                    }
+                    for h in hits
+                    if h.document_id != doc_id
+                ]
+            except Exception as exc:
+                logger.warning("Related search failed for %s: %s", doc_id, exc)
+                result["related"] = []
+        elif not full:
+            result["related"] = []
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get document failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "INTERNAL",
+                "message": "Get document failed",
+                "details": {"error": str(e)},
+            },
+        ) from e
+
+
+class PatchDocumentRequest(BaseModel):
+    """Request body for string-level patch of document content."""
+    old_str: str = Field(..., min_length=1)
+    new_str: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+@app.patch("/documents/{doc_id:path}", response_model=DocumentResponse)
+async def patch_document(
+    doc_id: str = Path(..., min_length=1),
+    payload: PatchDocumentRequest = ...,
+    _=Depends(require_api_key),
+):
+    """Apply a targeted string replacement to a document's content.
+
+    Validates that ``old_str`` appears exactly once in the document body.
+    Returns 404 if the document doesn't exist, 409 if old_str is not found
+    or appears more than once.
+    """
+    try:
+        db = _firestore()
+        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
+        snap = doc_ref.get()
+        if not getattr(snap, "exists", False):
+            raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
+
+        data = snap.to_dict() or {}
+        if data.get("deleted_at") is not None:
+            raise _error(404, "NOT_FOUND", "Document deleted", document_id=doc_id)
+
+        content = data.get("content", {})
+        body = content.get("body", "") if isinstance(content, dict) else ""
+        occurrences = body.count(payload.old_str)
+
+        if occurrences == 0:
+            raise _error(
+                409, "NOT_FOUND_IN_CONTENT",
+                "old_str not found in document content",
+                document_id=doc_id,
+            )
+        if occurrences > 1:
+            raise _error(
+                409, "AMBIGUOUS",
+                f"old_str found {occurrences} times — must be unique",
+                document_id=doc_id,
+                occurrences=occurrences,
+            )
+
+        new_body = body.replace(payload.old_str, payload.new_str, 1)
+        current_revision = data.get("revision", 0)
+        now_iso = datetime.now(UTC).isoformat()
+        new_content = dict(content) if isinstance(content, dict) else {"mime_type": "text/markdown"}
+        new_content["body"] = new_body
+
+        updates = {
+            "content": new_content,
+            "updated_at": now_iso,
+            "revision": current_revision + 1,
+        }
+        doc_ref.update(updates)
+
+        # Re-embed
+        try:
+            _delete_vector_entry(doc_id)
+            _sync_vector_entry(
+                doc_ref=doc_ref,
+                document_id=doc_id,
+                content=new_body,
+                metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
+                parent_id=data.get("parent_id"),
+                is_human_readable=data.get("is_human_readable", False),
+            )
+        except Exception as exc:
+            logger.error("Vector sync failed for patch %s: %s", doc_id, exc)
+
+        get_event_bus().emit_fire_and_forget(
+            DOCUMENT_UPDATED,
+            {
+                "document_id": doc_id,
+                "title": (
+                    data.get("metadata", {}).get("title", "")
+                    if isinstance(data.get("metadata"), dict)
+                    else ""
+                ),
+                "revision": updates["revision"],
+                "changes_summary": "patch",
+            },
+        )
+        return DocumentResponse(id=doc_id, status="patched", revision=updates["revision"])
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Patch document failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "INTERNAL",
+                "message": "Patch document failed",
+                "details": {"error": str(e)},
+            },
+        ) from e
+
+
+class BatchReadRequest(BaseModel):
+    """Request body for batch document read."""
+    paths: list[str] = Field(..., min_length=1, max_length=20)
+    full: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
+@app.post("/documents/batch")
+async def batch_read_documents(
+    payload: BatchReadRequest,
+    _=Depends(require_api_key),
+):
+    """Read multiple documents in a single request.
+
+    Returns up to 20 documents. By default, content is truncated to 500 chars.
+    Pass ``full: true`` to get full content for all documents.
+    """
+    try:
+        db = _firestore()
+        results = []
+        for doc_id in payload.paths:
+            doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
+            snap = doc_ref.get()
+            if not getattr(snap, "exists", False):
+                results.append({"document_id": doc_id, "error": "not_found"})
+                continue
+            data = snap.to_dict() or {}
+            if data.get("deleted_at") is not None:
+                results.append({"document_id": doc_id, "error": "deleted"})
+                continue
+
+            content = data.get("content", {})
+            body = content.get("body", "") if isinstance(content, dict) else ""
+            metadata = data.get("metadata", {}) if isinstance(data.get("metadata"), dict) else {}
+
+            truncated = False
+            content_out = body
+            if not payload.full and len(body) > _TRUNCATE_DEFAULT:
+                content_out = body[:_TRUNCATE_DEFAULT]
+                truncated = True
+
+            results.append({
+                "document_id": data.get("document_id", doc_id),
+                "content": content_out,
+                "metadata": metadata,
+                "revision": data.get("revision", 0),
+                "truncated": truncated,
+                "content_length": len(body),
+            })
+        return {"items": results, "count": len(results)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Batch read failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "INTERNAL",
+                "message": "Batch read failed",
+                "details": {"error": str(e)},
+            },
+        ) from e
+
+
 # ---------------- KB Document Read Endpoints ----------------
 # These expose Firestore KB documents for MCP tools (list + get).
 # Distinct from /api/docs/* which serves GitHub-synced content.
@@ -2139,6 +2395,59 @@ MCP_TOOLS = [
             "required": ["source"],
         },
     },
+    {
+        "name": "get_document_for_rewrite",
+        "description": "Get full document content for editing/rewriting. Unlike get_document which returns truncated content, this returns the complete body needed for patch operations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "document_id": {
+                    "type": "string",
+                    "description": "The document ID or path",
+                },
+            },
+            "required": ["document_id"],
+        },
+    },
+    {
+        "name": "patch_document",
+        "description": "Apply a targeted string replacement in a document. old_str must appear exactly once in the document content.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Document path to patch"},
+                "old_str": {
+                    "type": "string",
+                    "description": "Exact string to find (must appear exactly once)",
+                },
+                "new_str": {
+                    "type": "string",
+                    "description": "Replacement string",
+                },
+            },
+            "required": ["path", "old_str", "new_str"],
+        },
+    },
+    {
+        "name": "batch_read",
+        "description": "Read multiple documents in a single call. Returns truncated content (500 chars) by default. Max 20 paths.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of document paths to read (max 20)",
+                },
+                "full": {
+                    "type": "boolean",
+                    "description": "Return full content (default: false, truncated to 500 chars)",
+                    "default": False,
+                },
+            },
+            "required": ["paths"],
+        },
+    },
 ]
 
 
@@ -2176,7 +2485,14 @@ async def _dispatch_mcp_tool(tool_name: str, args: dict) -> dict:
     if tool_name == "get_document":
         doc_id = args.get("document_id", "")
         try:
-            return await get_kb_document(doc_id=doc_id)
+            return await get_document(doc_id=doc_id, full=False, search=True, top_k=3)
+        except HTTPException:
+            return {"error": f"Document '{doc_id}' not found"}
+
+    if tool_name == "get_document_for_rewrite":
+        doc_id = args.get("document_id", "")
+        try:
+            return await get_document(doc_id=doc_id, full=True, search=False, top_k=0)
         except HTTPException:
             return {"error": f"Document '{doc_id}' not found"}
 
@@ -2229,6 +2545,24 @@ async def _dispatch_mcp_tool(tool_name: str, args: dict) -> dict:
         msg = ChatMessage(text=args.get("source", ""))
         result = await ingest(msg)
         return result.model_dump()
+
+    if tool_name == "patch_document":
+        path = args.get("path", "")
+        patch_payload = PatchDocumentRequest(
+            old_str=args.get("old_str", ""),
+            new_str=args.get("new_str", ""),
+        )
+        try:
+            result = await patch_document(doc_id=path, payload=patch_payload)
+            return result.model_dump()
+        except HTTPException as exc:
+            return {"error": exc.detail if isinstance(exc.detail, str) else exc.detail.get("message", str(exc.detail))}
+
+    if tool_name == "batch_read":
+        paths = args.get("paths", [])
+        full = args.get("full", False)
+        batch_payload = BatchReadRequest(paths=paths, full=full)
+        return await batch_read_documents(payload=batch_payload)
 
     raise ValueError(f"Unknown tool: {tool_name}")
 
