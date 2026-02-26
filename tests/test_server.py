@@ -13,6 +13,7 @@ def stub_vector_store(monkeypatch: pytest.MonkeyPatch):
     store.enabled = False
     store.upsert_document.return_value = VectorSyncResult(status="skipped")
     store.delete_document.return_value = VectorSyncResult(status="deleted")
+    store.update_metadata.return_value = VectorSyncResult(status="skipped")
 
     monkeypatch.setattr(server.vector_store, "get_vector_store", lambda: store)
     monkeypatch.setenv("API_KEY", "secret")
@@ -397,7 +398,7 @@ def test_move_document_updates_parent(
     monkeypatch.setenv("API_KEY", "secret")
     client = TestClient(server.app)
 
-    stub_vector_store.upsert_document.return_value = VectorSyncResult(status="ready")
+    stub_vector_store.update_metadata.return_value = VectorSyncResult(status="ready")
 
     doc_snapshot = MagicMock()
     doc_snapshot.exists = True
@@ -447,7 +448,8 @@ def test_move_document_updates_parent(
     updates = doc_ref.update.call_args_list[0][0][0]
     assert updates["parent_id"] == "folder-789"
     assert updates["revision"] == 3
-    stub_vector_store.upsert_document.assert_called_once()
+    stub_vector_store.update_metadata.assert_called_once()
+    stub_vector_store.upsert_document.assert_not_called()
 
 
 @pytest.mark.unit
@@ -462,7 +464,7 @@ def test_move_document_minimal_payload_updates_parent(
     monkeypatch.setenv("API_KEY", "secret")
     client = TestClient(server.app)
 
-    stub_vector_store.upsert_document.return_value = VectorSyncResult(status="ready")
+    stub_vector_store.update_metadata.return_value = VectorSyncResult(status="ready")
 
     doc_snapshot = MagicMock()
     doc_snapshot.exists = True
@@ -508,7 +510,8 @@ def test_move_document_minimal_payload_updates_parent(
     updates = doc_ref.update.call_args_list[0][0][0]
     assert updates["parent_id"] == "folder-new"
     assert updates["revision"] == 8
-    stub_vector_store.upsert_document.assert_called_once()
+    stub_vector_store.update_metadata.assert_called_once()
+    stub_vector_store.upsert_document.assert_not_called()
 
 
 @pytest.mark.unit
