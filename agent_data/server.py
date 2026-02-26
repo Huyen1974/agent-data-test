@@ -2318,7 +2318,7 @@ MCP_TOOLS = [
     },
     {
         "name": "get_document",
-        "description": "Get full content of a specific document by its ID or path",
+        "description": "Get a document summary (truncated content + related docs via vector search). Use search_knowledge first, then this for details. Use get_document_for_rewrite ONLY for full rewrite.",
         "inputSchema": {
             "type": "object",
             "properties": {
