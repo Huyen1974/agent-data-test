@@ -91,6 +91,8 @@ class DataIntegrity(BaseModel):
     vector_point_count: int
     ratio: float
     sync_status: str  # "ok" | "warning" | "critical"
+    embed_calls: int | None = None
+    embed_tokens: int | None = None
 
 
 class HealthResponse(BaseModel):
@@ -425,6 +427,8 @@ def _compute_data_integrity() -> DataIntegrity | None:
             vector_point_count=vec_count,
             ratio=ratio,
             sync_status=sync_status,
+            embed_calls=store.embed_calls,
+            embed_tokens=store.embed_tokens,
         )
     except Exception as exc:
         logger.warning("data_integrity probe failed: %s", exc)
@@ -1358,27 +1362,19 @@ async def move_document(
         doc_ref.update(updates)
         current["parent_id"] = new_parent_id
         try:
-            # Delete old vectors first to avoid stale chunks when chunk count changes
-            _delete_vector_entry(doc_id)
-            _sync_vector_entry(
-                doc_ref=doc_ref,
-                document_id=doc_id,
-                content=(
-                    (current.get("content") or {}).get("body")
-                    if isinstance(current.get("content"), dict)
-                    else None
-                ),
-                metadata=(
-                    current.get("metadata")
-                    if isinstance(current.get("metadata"), dict)
-                    else None
-                ),
-                parent_id=new_parent_id,
-                is_human_readable=current.get("is_human_readable", False),
-            )
+            # Move only changes parent_id — content is unchanged.
+            # Update vector metadata in-place (no re-embedding needed).
+            store = vector_store.get_vector_store()
+            result = store.update_metadata(doc_id, parent_id=new_parent_id)
+            if result.status == "error":
+                logger.warning(
+                    "Vector metadata update failed for move %s: %s",
+                    doc_id,
+                    result.error,
+                )
         except Exception as exc:  # pragma: no cover
             logger.error(
-                "Vector synchronization failed while moving %s: %s", doc_id, exc
+                "Vector metadata update failed while moving %s: %s", doc_id, exc
             )
         return DocumentResponse(id=doc_id, status="moved", revision=next_revision)
     except HTTPException:

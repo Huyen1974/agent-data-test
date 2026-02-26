@@ -105,6 +105,8 @@ class QdrantVectorStore:
         )
         self._client: QdrantClient | None = None
         self._openai: OpenAI | None = None
+        self.embed_calls: int = 0
+        self.embed_tokens: int = 0
 
         if not self.enabled:
             missing = []
@@ -152,6 +154,10 @@ class QdrantVectorStore:
             model=self.embedding_model,
             input=truncated,
         )
+        self.embed_calls += 1
+        usage = getattr(response, "usage", None)
+        if usage:
+            self.embed_tokens += getattr(usage, "total_tokens", 0)
         return list(response.data[0].embedding)
 
     def upsert_document(
@@ -406,6 +412,67 @@ class QdrantVectorStore:
             points_selector=qmodels.FilterSelector(filter=filter_condition),
             wait=True,
         )
+
+    @sync_retry(service_name="qdrant")
+    def _qdrant_set_payload(
+        self, document_id: str, payload_update: dict[str, Any]
+    ) -> None:
+        if self._client is None:
+            raise RuntimeError("Qdrant client unavailable")
+        filter_condition = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(
+                    key="document_id",
+                    match=qmodels.MatchValue(value=document_id),
+                )
+            ]
+        )
+        self._client.set_payload(
+            collection_name=self.collection,
+            payload=payload_update,
+            points=qmodels.FilterSelector(filter=filter_condition),
+            wait=True,
+        )
+
+    def update_metadata(
+        self, document_id: str, parent_id: str | None = None
+    ) -> VectorSyncResult:
+        """Update vector payload metadata without re-embedding.
+
+        Used by move_document to update parent_id without wasting
+        OpenAI embedding tokens — content hasn't changed.
+        """
+        if not self.enabled:
+            return VectorSyncResult(status="skipped")
+        try:
+            self._ensure_client()
+            if self._client is None:
+                raise RuntimeError("Qdrant client unavailable")
+            payload_update: dict[str, Any] = {}
+            if parent_id is not None:
+                payload_update["parent_id"] = parent_id
+            if not payload_update:
+                return VectorSyncResult(status="skipped")
+            self._qdrant_set_payload(document_id, payload_update)
+            logger.info(
+                "vector_sync",
+                extra={
+                    "action": "update_metadata",
+                    "document_id": document_id,
+                    "fields": list(payload_update.keys()),
+                },
+            )
+            return VectorSyncResult(status="ready")
+        except Exception as exc:
+            logger.error(
+                "vector_sync_error",
+                extra={
+                    "action": "update_metadata",
+                    "document_id": document_id,
+                    "error": str(exc),
+                },
+            )
+            return VectorSyncResult(status="error", error=str(exc))
 
     @sync_retry(service_name="qdrant")
     def _qdrant_count_by_doc(self, document_id: str) -> int:
