@@ -1,0 +1,10 @@
+# Codex CLI MCP configuration for Agent Data
+# Same server as Claude Code — stdio transport to VPS Agent Data API
+
+[mcp.agent-data]
+command = "python3"
+args = ["mcp_server/stdio_server.py"]
+
+[mcp.agent-data.env]
+AGENT_DATA_URL = "https://vps.incomexsaigoncorp.vn/api"
+AGENT_DATA_API_KEY = "C38FE9FA-2BC6-4FBB-BA0C-981E8FB89450"
