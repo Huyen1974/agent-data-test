@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# GUARD: Block direct push to main — all changes must go through PR
+# Install: git config core.hooksPath .githooks
+set -euo pipefail
+
+REMOTE="$1"
+PROTECTED_BRANCH="main"
+
+while read local_ref local_sha remote_ref remote_sha; do
+  if [[ "$remote_ref" == "refs/heads/${PROTECTED_BRANCH}" ]]; then
+    echo "ERROR: Direct push to '${PROTECTED_BRANCH}' is blocked."
+    echo ""
+    echo "  Operating Rules (Section IV — Quy trình 2 Mũ):"
+    echo "    Mũ 1: Code → push → CI GREEN"
+    echo "    Mũ 2: Review → Merge → Deploy VPS → Verify"
+    echo ""
+    echo "  Correct workflow:"
+    echo "    git checkout -b feat/my-feature"
+    echo "    git push -u origin feat/my-feature"
+    echo "    gh pr create --title 'feat: ...' --body '...'"
+    echo "    # Wait for CI GREEN, then merge via PR"
+    echo ""
+    echo "  To bypass (EMERGENCY ONLY): git push --no-verify"
+    exit 1
+  fi
+done
+
+exit 0
