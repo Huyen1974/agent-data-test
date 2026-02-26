@@ -152,7 +152,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_document",
-            description="Get full content of a specific document by its ID",
+            description="Get a document summary (truncated content + related docs via vector search). Use search_knowledge first for discovery, then this for details. Use get_document_for_rewrite ONLY when rewriting entire document.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -391,41 +391,47 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             elif name == "get_document":
                 doc_id = arguments.get("document_id", "")
-                # Primary: get from Firestore KB
+                # Use truncated endpoint (Vector Search First — returns
+                # truncated content + related docs via vector search)
                 response = await _request_with_fallback(
                     client,
                     "GET",
-                    f"/kb/get/{doc_id}",
+                    f"/documents/{doc_id}",
                 )
                 if response.status_code == 200:
                     data = response.json()
                     content = data.get("content", "")
-                    if content:
-                        meta = data.get("metadata", {})
-                        title = meta.get("title", doc_id)
-                        return [
-                            TextContent(type="text", text=f"# {title}\n\n{content}")
-                        ]
+                    meta = data.get("metadata", {})
+                    title = meta.get("title", doc_id)
+                    truncated = data.get("truncated", False)
+                    content_length = data.get("content_length", len(content))
 
-                # Fallback: try GitHub docs
-                doc_path = doc_id if doc_id.startswith("docs/") else f"docs/{doc_id}"
-                response = await _request_with_fallback(
-                    client,
-                    "GET",
-                    "/api/docs/file",
-                    params={"path": doc_path},
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    content = data.get("content", "")
-                    if content:
-                        return [
-                            TextContent(
-                                type="text", text=f"# Document: {doc_id}\n\n{content}"
-                            )
-                        ]
+                    result = f"# {title}\n\n{content}"
+                    if truncated:
+                        result += f"\n\n[Truncated: showing {len(content)}/{content_length} chars. Use get_document_for_rewrite for full content.]"
 
-                return [TextContent(type="text", text=f"Document '{doc_id}' not found")]
+                    # Append related documents if present
+                    related = data.get("related", {})
+                    related_items = (
+                        related.get("items", []) if isinstance(related, dict) else []
+                    )
+                    if related_items:
+                        result += "\n\nRelated documents:\n"
+                        for r in related_items[:5]:
+                            result += f"- {r.get('document_id', '?')} (score: {r.get('score', '?'):.3f})\n"
+
+                    return [TextContent(type="text", text=result)]
+                elif response.status_code == 404:
+                    return [
+                        TextContent(type="text", text=f"Document '{doc_id}' not found")
+                    ]
+                else:
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Error: HTTP {response.status_code} — {response.text}",
+                        )
+                    ]
 
             elif name == "upload_document":
                 path = arguments.get("path", "")

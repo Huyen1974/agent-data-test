@@ -80,7 +80,7 @@ MCP_TOOLS = [
     },
     {
         "name": "get_document",
-        "description": "Get full content of a specific document by its ID or path",
+        "description": "Get a document summary (truncated content + related docs via vector search). Use search_knowledge first, then this for details. Use get_document_for_rewrite ONLY for full rewrite.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -207,22 +207,16 @@ async def list_documents(path: str = "") -> dict[str, Any]:
 
 
 async def get_document(document_id: str) -> dict[str, Any]:
-    """Get document content from Firestore KB (hybrid)"""
-    try:
-        response = await _hybrid_request("GET", f"/kb/get/{document_id}")
-        if response.status_code == 200:
-            return response.json()
-    except httpx.HTTPError:
-        pass
+    """Get document via truncated endpoint (Vector Search First).
 
-    # Fallback: try GitHub docs
-    doc_path = document_id if document_id.startswith("docs/") else f"docs/{document_id}"
+    Returns truncated content + related docs via vector search.
+    """
     try:
-        response = await _hybrid_request(
-            "GET", "/api/docs/file", params={"path": doc_path}
-        )
+        response = await _hybrid_request("GET", f"/documents/{document_id}")
         if response.status_code == 200:
             return response.json()
+        if response.status_code == 404:
+            return {"error": f"Document '{document_id}' not found"}
     except httpx.HTTPError:
         pass
 
