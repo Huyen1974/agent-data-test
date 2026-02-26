@@ -23,7 +23,7 @@ This guide explains how to connect Google Gemini (AI Studio or Vertex AI) to the
 3. Select **"Import OpenAPI"**
 4. Enter the spec URL:
    ```
-   https://raw.githubusercontent.com/user/agent-data-test/main/specs/agent-data-openapi.yaml
+   https://vps.incomexsaigoncorp.vn/api/openapi.json
    ```
 
 ### Step 4: Configure Authentication
@@ -59,7 +59,7 @@ manifest:
   name: agent_data
   description: Search and retrieve knowledge documents
   api_spec:
-    open_api_gcs_uri: gs://your-bucket/agent-data-openapi.yaml
+    open_api_uri: https://vps.incomexsaigoncorp.vn/api/openapi.json
   auth_config:
     api_key_config:
       name: X-API-Key
