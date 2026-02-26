@@ -1,11 +1,10 @@
 {
   "mcpServers": {
     "agent-data": {
-      "command": "python3",
-      "args": ["mcp_server/stdio_server.py"],
-      "env": {
-        "AGENT_DATA_URL": "https://vps.incomexsaigoncorp.vn/api",
-        "AGENT_DATA_API_KEY": "C38FE9FA-2BC6-4FBB-BA0C-981E8FB89450"
+      "type": "http",
+      "url": "https://vps.incomexsaigoncorp.vn/api/mcp",
+      "headers": {
+        "X-API-Key": "${AGENT_DATA_API_KEY}"
       }
     }
   }
