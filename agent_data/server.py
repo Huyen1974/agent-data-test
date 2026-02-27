@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from starlette.responses import Response
 from prometheus_client import Counter, Histogram
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette_prometheus import PrometheusMiddleware, metrics
@@ -2631,8 +2632,8 @@ async def mcp_jsonrpc(request: Request):
             },
         }
 
-    if method == "notifications/initialized":
-        return {"jsonrpc": "2.0", "id": req_id, "result": {}}
+    if method.startswith("notifications/"):
+        return Response(status_code=204)
 
     if method == "tools/list":
         return {
