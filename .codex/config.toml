@@ -2,9 +2,6 @@
 # HTTP transport to VPS Agent Data MCP endpoint
 # Set AGENT_DATA_API_KEY env var before running: export AGENT_DATA_API_KEY="your-key"
 
-[mcp.agent-data]
-type = "http"
+[mcp_servers.agent-data]
 url = "https://vps.incomexsaigoncorp.vn/api/mcp"
-
-[mcp.agent-data.headers]
-X-API-Key = "${AGENT_DATA_API_KEY}"
+env_http_headers = { "X-API-Key" = "AGENT_DATA_API_KEY" }
