@@ -71,6 +71,41 @@ All document operations go through MCP tools. No raw HTTP, no direct DB access. 
 
 ---
 
+## Codex CLI — Tool Priority (BAT BUOC)
+
+**Codex PHAI uu tien dung MCP tools co san. KHONG tu viet Python/shell scripts thay the.**
+
+### Duong ket noi Codex (da verify PASS):
+
+| Service | Transport | Cach goi DUNG | KHONG LAM |
+|---------|-----------|---------------|-----------|
+| Agent Data | HTTP MCP | Goi MCP tool: `upload_document`, `search_knowledge`, `patch_document`... | KHONG viet Python requests/httpx |
+| Directus doc | OPS Proxy HTTP | `curl ops.incomexsaigoncorp.vn/items/{collection}` voi X-API-Key tu env | KHONG import directus_stdio_server |
+| Directus ghi | OPS Proxy HTTP | `curl -X POST ops.incomexsaigoncorp.vn/items/{collection}` | KHONG viet Python wrapper |
+
+### Bao cao sau mission → Viet thang Agent Data:
+
+Sau moi mission, Codex PHAI ghi bao cao vao Agent Data:
+```
+upload_document(
+  path="knowledge/other/sessions/{mission-name}-report.md",
+  content="# Report\n\n..."
+)
+```
+KHONG chi print ra terminal. KHONG tao file local roi quen push.
+
+### Comment vao Directus → OPS Proxy 1 lenh:
+
+```bash
+curl -s -X POST "https://ops.incomexsaigoncorp.vn/items/task_comments" \
+  -H "X-API-Key: $OPS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": 7, "content": "Noi dung", "action": "comment", "agent_type": "codex"}'
+```
+1 lenh, 2 giay. KHONG viet Python asyncio wrapper.
+
+---
+
 ## Quick-Task Protocol — Tac vu nho, quy trinh gon
 
 ### Phan loai tac vu
