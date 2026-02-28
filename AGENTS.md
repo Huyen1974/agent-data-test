@@ -68,3 +68,58 @@ All document operations go through MCP tools. No raw HTTP, no direct DB access. 
 | `AGENT_DATA_API_KEY_LOCAL` | Local-specific API key |
 | `AGENT_DATA_API_KEY_CLOUD` | Cloud-specific API key |
 | `AGENT_DATA_PREFER` | `local` or `cloud` preference |
+
+---
+
+## Quick-Task Protocol — Tac vu nho, quy trinh gon
+
+### Phan loai tac vu
+
+| Loai | Vi du | Quy trinh |
+|------|-------|-----------|
+| **Quick** | Tao comment, upload 1 file, doc data, patch 1 doan | Goi MCP tool truc tiep → bao ket qua 1 dong |
+| **Standard** | Fix bug, them feature nho, seed data, sua config | Branch → commit → CI → merge → verify |
+| **Mission** | Audit, tich hop moi, refactor, multi-phase | Full mission template + verify checklist |
+
+### Quick-Task: Goi truc tiep, khong ceremony
+
+Khi nhan yeu cau don gian (tao comment, upload doc, doc data):
+
+1. **KHONG can** khao sat schema truoc (tru lan dau dung collection moi)
+2. **KHONG can** full verify chain — confirm ket qua 1 buoc la du
+3. **KHONG can** tao report file
+4. **Goi MCP tool truc tiep** → tra ket qua ngan gon
+
+Vi du Quick-Task — tao comment:
+```
+directus_create_item(collection="task_comments", data={
+  "task_id": 7,
+  "content": "Noi dung comment",
+  "action": "comment"
+})
+→ Tra: "Comment #ID tao thanh cong tren task 7"
+```
+
+Vi du Quick-Task — upload document:
+```
+upload_document(path="knowledge/...", content="# Title\n...")
+→ Tra: "Document tao tai path X, revision 1"
+```
+
+### Khi nao PHAI dung full process
+
+- Thay doi schema Directus
+- Sua code (bat ky .ts/.vue/.py file)
+- Thay doi infrastructure/config
+- Tao hoac sua nhieu items cung luc (>5)
+- Bat ky thay doi nao can CI/CD
+
+### Common Quick-Task references
+
+| Task | Tool | Key fields |
+|------|------|------------|
+| Comment tren task | `directus_create_item("task_comments", {...})` | task_id, content, action="comment" |
+| Upload knowledge doc | `upload_document(path, content)` | path theo KS-LAW 4 folders |
+| Patch document | `patch_document(path, old_str, new_str)` | exact match old_str |
+| Search knowledge | `search_knowledge("query")` | — |
+| Doc Directus items | `directus_get_items(collection, fields, limit)` | tasks dung `name` (khong phai title) |
