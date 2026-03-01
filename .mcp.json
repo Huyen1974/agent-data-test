@@ -1,11 +1,11 @@
 {
   "mcpServers": {
     "agent-data": {
-      "type": "http",
-      "url": "https://vps.incomexsaigoncorp.vn/api/mcp",
       "headers": {
         "X-API-Key": "${AGENT_DATA_API_KEY}"
-      }
+      },
+      "type": "http",
+      "url": "https://vps.incomexsaigoncorp.vn/api/mcp"
     }
   }
 }
