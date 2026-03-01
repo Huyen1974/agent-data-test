@@ -13,9 +13,9 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from starlette.responses import Response
 from prometheus_client import Counter, Histogram
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from starlette.responses import Response
 from starlette_prometheus import PrometheusMiddleware, metrics
 
 from agent_data import vector_store
