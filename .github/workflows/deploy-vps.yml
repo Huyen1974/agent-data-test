@@ -90,8 +90,16 @@ jobs:
 
             docker logout ${{ env.REGION }}-docker.pkg.dev 2>/dev/null || true
 
+            # Post-deploy connection gate: document count sanity check
+            DOC_COUNT=$(curl -sf https://vps.incomexsaigoncorp.vn/api/health | python3 -c "import sys,json; print(json.load(sys.stdin)['data_integrity']['document_count'])" 2>/dev/null || echo 0)
+            echo "Document count: $DOC_COUNT"
+            if [[ $DOC_COUNT -lt 100 ]]; then
+              echo "Document count too low: $DOC_COUNT (expected >=100)"
+              FAILED=1
+            fi
+
             if [[ $FAILED -ne 0 ]]; then
-              echo "WARNING: Some health checks failed."
+              echo "::error::Post-deploy checks failed. Service may be unhealthy."
               exit 1
             fi
 
