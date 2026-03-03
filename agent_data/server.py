@@ -77,6 +77,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Request ID middleware — attaches a unique ID to every request for tracing
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request.state.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request.state.request_id
+    return response
+
+
 # Include docs API router
 app.include_router(docs_router)
 
@@ -388,9 +397,9 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = os.getenv("API_KEY")
     if not expected:
         # If API key not configured, deny modifying actions by default
-        raise HTTPException(status_code=403, detail="API key is not configured")
+        raise _error(403, "FORBIDDEN", "API key is not configured")
     if x_api_key != expected:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+        raise _error(401, "UNAUTHORIZED", "Invalid API key")
 
 
 def _compute_data_integrity() -> DataIntegrity | None:
@@ -472,7 +481,7 @@ async def root():
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=500, detail="Service unhealthy") from e
+        raise _error(500, "INTERNAL", "Service unhealthy", error=str(e)) from e
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -663,9 +672,7 @@ async def ingest(message: ChatMessage):
         return ChatResponse(response=ack, content=ack, session_id=message.session_id)
     except Exception as e:
         logger.error(f"Ingest endpoint failed: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to queue ingest task"
-        ) from e
+        raise _error(500, "INTERNAL", "Failed to queue ingest task", error=str(e)) from e
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -822,7 +829,7 @@ def query_knowledge(payload: QueryKnowledgeRequest):
         raise
     except Exception as e:
         logger.error(f"Query knowledge failed: {e}")
-        raise HTTPException(status_code=500, detail="Chat processing failed") from e
+        raise _error(500, "INTERNAL", "Chat processing failed", error=str(e)) from e
 
 
 @app.get("/info")
@@ -834,7 +841,7 @@ async def info():
         return get_info()
     except Exception as e:
         logger.error(f"Info endpoint failed: {e}")
-        raise HTTPException(status_code=500, detail="Unable to get system info") from e
+        raise _error(500, "INTERNAL", "Unable to get system info", error=str(e)) from e
 
 
 # ---------------- Knowledge Base CRUD (secured) ----------------
@@ -854,17 +861,42 @@ def _fs_key(doc_id: str) -> str:
 def _firestore():
     db = getattr(agent, "db", None)
     if db is None:
-        raise HTTPException(status_code=500, detail="Firestore client not initialized")
+        raise _error(500, "INTERNAL", "Firestore client not initialized")
     return db
 
 
 def _error(status: int, code: str, message: str, **details) -> HTTPException:
-    """Helper to generate MCP-style error envelopes."""
+    """Helper to generate structured error envelopes (TD-022)."""
 
     return HTTPException(
         status_code=status,
         detail={"code": code, "message": message, "details": details or {}},
     )
+
+
+@app.exception_handler(HTTPException)
+async def structured_error_handler(request: Request, exc: HTTPException):
+    """Normalize all HTTP errors to structured envelope with tracing fields."""
+    detail = exc.detail
+    if isinstance(detail, str):
+        code_map = {
+            401: "UNAUTHORIZED",
+            403: "FORBIDDEN",
+            404: "NOT_FOUND",
+            409: "CONFLICT",
+            422: "INVALID_ARGUMENT",
+            503: "UNAVAILABLE",
+        }
+        detail = {
+            "code": code_map.get(exc.status_code, "INTERNAL"),
+            "message": detail,
+            "details": {},
+        }
+    detail.setdefault("source", "agent-data")
+    detail.setdefault(
+        "request_id", getattr(request.state, "request_id", str(uuid4()))
+    )
+    return JSONResponse(status_code=exc.status_code, content=detail)
 
 
 def _retrieve_query_context(
@@ -1156,14 +1188,7 @@ async def create_document(
         raise
     except Exception as e:
         logger.error(f"Create document failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "INTERNAL",
-                "message": "Create document failed",
-                "details": {"error": str(e)},
-            },
-        ) from e
+        raise _error(500, "INTERNAL", "Create document failed", error=str(e)) from e
 
 
 @app.put("/documents/{doc_id:path}", response_model=DocumentResponse)
@@ -1299,14 +1324,7 @@ async def update_document(
         raise
     except Exception as e:
         logger.error(f"Update document failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "INTERNAL",
-                "message": "Update document failed",
-                "details": {"error": str(e)},
-            },
-        ) from e
+        raise _error(500, "INTERNAL", "Update document failed", error=str(e)) from e
 
 
 @app.post("/documents/{doc_id:path}/move", response_model=DocumentResponse)
@@ -1382,14 +1400,7 @@ async def move_document(
         raise
     except Exception as e:
         logger.error(f"Move document failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "INTERNAL",
-                "message": "Move document failed",
-                "details": {"error": str(e)},
-            },
-        ) from e
+        raise _error(500, "INTERNAL", "Move document failed", error=str(e)) from e
 
 
 @app.delete("/documents/{doc_id:path}", response_model=DocumentResponse)
@@ -1442,14 +1453,7 @@ async def delete_document(
         raise
     except Exception as e:
         logger.error(f"Delete document failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "INTERNAL",
-                "message": "Delete document failed",
-                "details": {"error": str(e)},
-            },
-        ) from e
+        raise _error(500, "INTERNAL", "Delete document failed", error=str(e)) from e
 
 
 # --------------- GET / PATCH / BATCH Read (TD-011, TD-009, TD-010) ---------------
@@ -1529,14 +1533,7 @@ async def get_document(
         raise
     except Exception as e:
         logger.error(f"Get document failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "INTERNAL",
-                "message": "Get document failed",
-                "details": {"error": str(e)},
-            },
-        ) from e
+        raise _error(500, "INTERNAL", "Get document failed", error=str(e)) from e
 
 
 class PatchDocumentRequest(BaseModel):
@@ -1646,14 +1643,7 @@ async def patch_document(
         raise
     except Exception as e:
         logger.error(f"Patch document failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "INTERNAL",
-                "message": "Patch document failed",
-                "details": {"error": str(e)},
-            },
-        ) from e
+        raise _error(500, "INTERNAL", "Patch document failed", error=str(e)) from e
 
 
 class BatchReadRequest(BaseModel):
@@ -1718,14 +1708,7 @@ async def batch_read_documents(
         raise
     except Exception as e:
         logger.error(f"Batch read failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "INTERNAL",
-                "message": "Batch read failed",
-                "details": {"error": str(e)},
-            },
-        ) from e
+        raise _error(500, "INTERNAL", "Batch read failed", error=str(e)) from e
 
 
 # ---------------- KB Document Read Endpoints ----------------
@@ -1762,7 +1745,7 @@ async def list_kb_documents(prefix: str = ""):
         raise
     except Exception as e:
         logger.error(f"List KB documents failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise _error(500, "INTERNAL", "List KB documents failed", error=str(e)) from e
 
 
 @app.get("/kb/get/{doc_id:path}")
@@ -1789,7 +1772,7 @@ async def get_kb_document(doc_id: str = Path(..., min_length=1)):
         raise
     except Exception as e:
         logger.error(f"Get KB document failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise _error(500, "INTERNAL", "Get KB document failed", error=str(e)) from e
 
 
 @app.post("/kb/reindex", dependencies=[Depends(require_api_key)])
@@ -1801,10 +1784,7 @@ async def reindex_kb_documents():
     """
     store = vector_store.get_vector_store(refresh=True)
     if not store.enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="Vector store not available (missing QDRANT_URL/API_KEY/OPENAI_API_KEY)",
-        )
+        raise _error(503, "UNAVAILABLE", "Vector store not available", reason="missing QDRANT_URL/API_KEY/OPENAI_API_KEY")
 
     db = _firestore()
     docs = list(db.collection(KB_COLLECTION).stream())
@@ -1890,10 +1870,7 @@ async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
 
     store = vector_store.get_vector_store(refresh=True)
     if not store.enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="Vector store not available",
-        )
+        raise _error(503, "UNAVAILABLE", "Vector store not available")
 
     qdrant_doc_ids = store.list_document_ids()
     if not qdrant_doc_ids:
@@ -2088,7 +2065,7 @@ async def audit_sync(payload: AuditSyncRequest | None = None):
 
     store = vector_store.get_vector_store(refresh=True)
     if not store.enabled:
-        raise HTTPException(status_code=503, detail="Vector store not available")
+        raise _error(503, "UNAVAILABLE", "Vector store not available")
 
     db = _firestore()
     audit_before = _run_audit(store, db)
@@ -2173,7 +2150,7 @@ async def reindex_missing():
     """
     store = vector_store.get_vector_store(refresh=True)
     if not store.enabled:
-        raise HTTPException(status_code=503, detail="Vector store not available")
+        raise _error(503, "UNAVAILABLE", "Vector store not available")
 
     db = _firestore()
     audit = _run_audit(store, db)
@@ -2241,7 +2218,7 @@ async def remove_webhook(webhook_id: str):
     bus = get_event_bus()
     removed = bus.webhook_manager.registry.remove(webhook_id)
     if not removed:
-        raise HTTPException(status_code=404, detail="Webhook not found")
+        raise _error(404, "NOT_FOUND", "Webhook not found", webhook_id=webhook_id)
     return {"status": "removed", "webhook_id": webhook_id}
 
 
@@ -2261,7 +2238,7 @@ async def test_webhook(webhook_id: str):
     bus = get_event_bus()
     result = await bus.webhook_manager.test_webhook(webhook_id)
     if "error" in result and result.get("status") != "failed":
-        raise HTTPException(status_code=404, detail=result["error"])
+        raise _error(404, "NOT_FOUND", result["error"], webhook_id=webhook_id)
     return result
 
 
@@ -2271,7 +2248,7 @@ async def webhook_health(webhook_id: str):
     bus = get_event_bus()
     wh = bus.webhook_manager.registry.get(webhook_id)
     if not wh:
-        raise HTTPException(status_code=404, detail="Webhook not found")
+        raise _error(404, "NOT_FOUND", "Webhook not found", webhook_id=webhook_id)
     return bus.webhook_manager.get_health(webhook_id)
 
 
