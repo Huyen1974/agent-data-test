@@ -1,4 +1,4 @@
-name: Cloud Run CD
+name: Artifact Registry CD
 
 on:
   push:
@@ -8,11 +8,11 @@ on:
       - 'Dockerfile'
       - 'requirements*.txt'
       - 'pyproject.toml'
-      - '.github/workflows/cloudrun-cd.yml'
+      - '.github/workflows/artifact-registry-cd.yml'
   workflow_dispatch:
 
 concurrency:
-  group: cloudrun-cd-${{ github.ref }}
+  group: artifact-registry-cd-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -26,7 +26,7 @@ env:
   SERVICE: agent-data-test
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,29 +57,3 @@ jobs:
             -t "$IMAGE:${GITHUB_SHA}" \
             -t "$IMAGE:latest" \
             --push .
-
-      - name: Deploy to Cloud Run
-        shell: bash
-        run: |
-          set -euo pipefail
-          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${GITHUB_SHA}"
-
-          for attempt in 1 2 3; do
-            if gcloud run deploy "$SERVICE" \
-              --image "$IMAGE" \
-              --region "$REGION" \
-              --platform managed \
-              --no-allow-unauthenticated \
-              --memory 1Gi \
-              --quiet; then
-              echo "Deploy succeeded on attempt $attempt"
-              break
-            fi
-            if [[ $attempt -lt 3 ]]; then
-              echo "WARN: deploy attempt $attempt failed; retrying in 10s..."
-              sleep 10
-            else
-              echo "ERROR: deploy failed after $attempt attempts"
-              exit 1
-            fi
-          done

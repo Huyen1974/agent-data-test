@@ -2,7 +2,7 @@ name: Deploy Agent Data to VPS
 
 on:
   workflow_run:
-    workflows: ["Cloud Run CD"]
+    workflows: ["Artifact Registry CD"]
     types: [completed]
     branches: [main]
   workflow_dispatch:

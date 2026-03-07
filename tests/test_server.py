@@ -205,7 +205,7 @@ def test_create_document_conflict_returns_error(
     resp = client.post("/documents", json=payload, headers={"x-api-key": "secret"})
 
     assert resp.status_code == 409
-    detail = resp.json().get("detail", {})
+    detail = resp.json()
     assert detail.get("code") == "CONFLICT"
     assert detail.get("details", {}).get("document_id") == "doc-123"
     stub_vector_store.upsert_document.assert_not_called()
@@ -281,7 +281,7 @@ def test_update_document_revision_conflict(
     )
 
     assert resp.status_code == 409
-    detail = resp.json().get("detail", {})
+    detail = resp.json()
     assert detail.get("code") == "CONFLICT"
     assert detail.get("details", {}).get("expected_revision") == 4
     assert detail.get("details", {}).get("actual_revision") == 5
@@ -561,7 +561,7 @@ def test_move_document_detects_cycle(
     )
 
     assert resp.status_code == 400
-    detail = resp.json().get("detail", {})
+    detail = resp.json()
     assert detail.get("code") == "INVALID_ARGUMENT"
     assert detail.get("details", {}).get("parent_id") == "child-1"
 
@@ -810,7 +810,7 @@ def test_patch_document_old_str_missing(
         headers={"x-api-key": "secret"},
     )
     assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "NOT_FOUND_IN_CONTENT"
+    assert resp.json()["code"] == "NOT_FOUND_IN_CONTENT"
 
 
 @pytest.mark.unit
@@ -839,7 +839,7 @@ def test_patch_document_ambiguous_match(
         headers={"x-api-key": "secret"},
     )
     assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "AMBIGUOUS"
+    assert resp.json()["code"] == "AMBIGUOUS"
 
 
 # ---------------------------------------------------------------------------

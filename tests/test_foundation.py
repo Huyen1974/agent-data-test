@@ -193,8 +193,9 @@ class TestFastAPIHealth:
 
             assert response.status_code == 500
             data = response.json()
-            assert "detail" in data
-            assert data["detail"] == "Service unhealthy"
+            assert data["code"] == "INTERNAL"
+            assert data["message"] == "Service unhealthy"
+            assert data["details"]["error"] == "Mocked error"
 
     @pytest.mark.skipif(not _has_openai, reason="OPENAI_API_KEY not set")
     def test_chat_endpoint_basic(self, app):
