@@ -77,6 +77,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Request ID middleware — attaches a unique ID to every request for tracing
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
@@ -672,7 +673,9 @@ async def ingest(message: ChatMessage):
         return ChatResponse(response=ack, content=ack, session_id=message.session_id)
     except Exception as e:
         logger.error(f"Ingest endpoint failed: {e}")
-        raise _error(500, "INTERNAL", "Failed to queue ingest task", error=str(e)) from e
+        raise _error(
+            500, "INTERNAL", "Failed to queue ingest task", error=str(e)
+        ) from e
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -893,9 +896,7 @@ async def structured_error_handler(request: Request, exc: HTTPException):
             "details": {},
         }
     detail.setdefault("source", "agent-data")
-    detail.setdefault(
-        "request_id", getattr(request.state, "request_id", str(uuid4()))
-    )
+    detail.setdefault("request_id", getattr(request.state, "request_id", str(uuid4())))
     return JSONResponse(status_code=exc.status_code, content=detail)
 
 
@@ -1784,7 +1785,12 @@ async def reindex_kb_documents():
     """
     store = vector_store.get_vector_store(refresh=True)
     if not store.enabled:
-        raise _error(503, "UNAVAILABLE", "Vector store not available", reason="missing QDRANT_URL/API_KEY/OPENAI_API_KEY")
+        raise _error(
+            503,
+            "UNAVAILABLE",
+            "Vector store not available",
+            reason="missing QDRANT_URL/API_KEY/OPENAI_API_KEY",
+        )
 
     db = _firestore()
     docs = list(db.collection(KB_COLLECTION).stream())
