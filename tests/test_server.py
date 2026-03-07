@@ -810,7 +810,7 @@ def test_patch_document_old_str_missing(
         headers={"x-api-key": "secret"},
     )
     assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "NOT_FOUND_IN_CONTENT"
+    assert resp.json()["code"] == "NOT_FOUND_IN_CONTENT"
 
 
 @pytest.mark.unit
@@ -839,7 +839,7 @@ def test_patch_document_ambiguous_match(
         headers={"x-api-key": "secret"},
     )
     assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "AMBIGUOUS"
+    assert resp.json()["code"] == "AMBIGUOUS"
 
 
 # ---------------------------------------------------------------------------
