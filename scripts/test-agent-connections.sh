@@ -115,13 +115,13 @@ fi
 echo ""
 
 # ===================================================================
-# SECTION 3: OPS PROXY — 23 collections
+# SECTION 3: OPS PROXY — 27 collections
 # ===================================================================
-echo "=== OPS PROXY (23 collections) ==="
+echo "=== OPS PROXY (27 collections) ==="
 
 OPS_PASS=0
 OPS_FAIL=0
-for coll in tasks task_comments ai_tasks posts pages page_blocks help_articles help_collections navigation navigation_items navigation_navigation_items globals contacts organizations organizations_contacts organization_addresses feedbacks content_requests categories ai_discussions ai_discussion_comments knowledge_documents agent_views; do
+for coll in tasks task_comments ai_tasks posts pages page_blocks help_articles help_collections navigation navigation_items navigation_navigation_items globals contacts organizations organizations_contacts organization_addresses feedbacks content_requests categories ai_discussions ai_discussion_comments knowledge_documents agent_views workflow_steps workflow_step_relations block_library workflow_change_requests; do
     HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
         -H "X-API-Key: $OPS_KEY" "$OPS_URL/items/${coll}?limit=1")
     if [ "$HTTP" = "200" ]; then
@@ -134,7 +134,7 @@ for coll in tasks task_comments ai_tasks posts pages page_blocks help_articles h
     fi
     TOTAL=$((TOTAL+1))
 done
-echo "  OPS Proxy GET: $OPS_PASS/23 PASS"
+echo "  OPS Proxy GET: $OPS_PASS/27 PASS"
 
 # 3.1: RO collection POST (should block)
 HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
