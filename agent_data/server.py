@@ -406,16 +406,20 @@ def _compute_data_integrity() -> DataIntegrity | None:
         if vec_count < 0:
             return None
 
-        ratio = round(vec_count / doc_count, 1) if doc_count > 0 else 0.0
+        ratio = round(vec_count / doc_count, 2) if doc_count > 0 else 0.0
 
-        # Heuristic: healthy ratio is 1-50 vectors per doc (chunked)
+        # TD-131: Tighter thresholds to detect orphan vectors early.
+        # ratio ≈ 1.0 is ideal (1 vector per doc or minor chunking).
+        # ratio > 1.1 means >10% extra vectors — likely orphans.
         if doc_count == 0 and vec_count == 0:
             sync_status = "ok"
         elif doc_count > 0 and vec_count == 0:
             sync_status = "critical"
         elif ratio < 1:
             sync_status = "critical"
-        elif ratio > 50:
+        elif ratio > 1.3:
+            sync_status = "critical"
+        elif ratio > 1.1:
             sync_status = "warning"
         else:
             sync_status = "ok"

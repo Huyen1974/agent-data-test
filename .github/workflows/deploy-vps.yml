@@ -90,6 +90,15 @@ jobs:
               FAILED=1
             fi
 
+            # Post-deploy: vector integrity check (TD-131)
+            HEALTH_JSON=$(curl -sf https://vps.incomexsaigoncorp.vn/api/health 2>/dev/null || echo '{}')
+            SYNC_STATUS=$(echo "$HEALTH_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data_integrity',{}).get('sync_status','unknown'))" 2>/dev/null || echo "unknown")
+            VEC_RATIO=$(echo "$HEALTH_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data_integrity',{}).get('ratio',0))" 2>/dev/null || echo "0")
+            echo "Vector sync_status: $SYNC_STATUS (ratio: $VEC_RATIO)"
+            if [[ "$SYNC_STATUS" == "critical" ]]; then
+              echo "::warning::Vector sync is critical (ratio=$VEC_RATIO). Run POST /kb/audit-sync with auto_heal=true."
+            fi
+
             if [[ $FAILED -ne 0 ]]; then
               echo "::error::Post-deploy checks failed. Service may be unhealthy."
               exit 1
