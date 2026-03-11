@@ -133,12 +133,7 @@ gitdb==4.0.12
 gitpython==3.1.44
     # via langroid
 google-api-core[grpc]==2.25.1
-    # via
-    #   google-api-python-client
-    #   google-cloud-core
-    #   google-cloud-firestore
-    #   google-cloud-pubsub
-    #   google-cloud-storage
+    # via google-api-python-client
 google-api-python-client==2.176.0
     # via
     #   agent-data-langroid (pyproject.toml)
@@ -149,49 +144,26 @@ google-auth==2.40.3
     #   google-api-core
     #   google-api-python-client
     #   google-auth-httplib2
-    #   google-cloud-core
-    #   google-cloud-firestore
-    #   google-cloud-pubsub
-    #   google-cloud-storage
     #   google-genai
 google-auth-httplib2==0.2.0
     # via google-api-python-client
-google-cloud-core==2.4.3
-    # via
-    #   google-cloud-firestore
-    #   google-cloud-storage
-psycopg2-binary==2.9.10
-    # via agent-data-langroid (pyproject.toml)
-google-crc32c==1.7.1
-    # via
-    #   google-cloud-storage
-    #   google-resumable-media
 google-genai==1.26.0
     # via langroid
-google-resumable-media==2.7.2
-    # via google-cloud-storage
 googleapis-common-protos[grpc]==1.70.0
     # via
     #   google-api-core
-    #   grpc-google-iam-v1
     #   grpcio-status
 groq==0.30.0
     # via langroid
-grpc-google-iam-v1==0.14.2
-    # via google-cloud-pubsub
 grpcio==1.73.1
     # via
     #   google-api-core
-    #   google-cloud-pubsub
     #   googleapis-common-protos
-    #   grpc-google-iam-v1
     #   grpcio-status
     #   langroid
     #   qdrant-client
 grpcio-status==1.73.1
-    # via
-    #   google-api-core
-    #   google-cloud-pubsub
+    # via google-api-core
 h11==0.16.0
     # via
     #   httpcore
@@ -236,8 +208,6 @@ idna==3.10
     #   httpx
     #   requests
     #   yarl
-importlib-metadata==8.7.0
-    # via opentelemetry-api
 iniconfig==2.1.0
     # via pytest
 jinja2==3.1.6
@@ -311,15 +281,6 @@ openai==1.97.0
     #   langroid
 openapi-pydantic==0.5.1
     # via fastmcp
-opentelemetry-api==1.36.0
-    # via
-    #   google-cloud-pubsub
-    #   opentelemetry-sdk
-    #   opentelemetry-semantic-conventions
-opentelemetry-sdk==1.36.0
-    # via google-cloud-pubsub
-opentelemetry-semantic-conventions==0.57b0
-    # via opentelemetry-sdk
 packaging==25.0
     # via
     #   limits
@@ -350,17 +311,11 @@ propcache==0.3.2
     #   aiohttp
     #   yarl
 proto-plus==1.26.1
-    # via
-    #   google-api-core
-    #   google-cloud-firestore
-    #   google-cloud-pubsub
+    # via google-api-core
 protobuf==6.31.1
     # via
     #   google-api-core
-    #   google-cloud-firestore
-    #   google-cloud-pubsub
     #   googleapis-common-protos
-    #   grpc-google-iam-v1
     #   grpcio-status
     #   onnxruntime
     #   proto-plus
@@ -409,6 +364,8 @@ pymupdf4llm==0.0.26
     # via langroid
 pynacl==1.5.0
     # via pygithub
+psycopg2-binary==2.9.10
+    # via agent-data-langroid (pyproject.toml)
 pyparsing==3.2.3
     # via
     #   httplib2
@@ -471,7 +428,6 @@ requests==2.32.4
     #   adb-cloud-connector
     #   exa-py
     #   google-api-core
-    #   google-cloud-storage
     #   google-genai
     #   langroid
     #   pygithub
@@ -575,9 +531,6 @@ typing-extensions==4.14.1
     #   groq
     #   limits
     #   openai
-    #   opentelemetry-api
-    #   opentelemetry-sdk
-    #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
     #   referencing
@@ -622,8 +575,6 @@ wrapt==1.17.2
     # via deprecated
 yarl==1.20.1
     # via aiohttp
-zipp==3.23.0
-    # via importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
