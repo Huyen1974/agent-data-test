@@ -1,75 +1,19 @@
 """Integration tests for the full vector integrity system.
 
-Tests the complete lifecycle: create → update → delete → audit → cleanup,
+Tests the complete lifecycle: create -> update -> delete -> audit -> cleanup,
 as well as health data integrity, concurrent operations, large documents,
 and reindex-missing functionality.
 """
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 import agent_data.server as server
 import agent_data.vector_store as vs_mod
-
-# ---- Fake Firestore (same as test_vector_sync) ----
-
-
-class _Snap:
-    def __init__(self, data=None, exists=True):
-        self._data = dict(data or {})
-        self._exists = exists
-
-    @property
-    def exists(self):
-        return self._exists
-
-    def to_dict(self):
-        return dict(self._data)
-
-
-class _Doc:
-    def __init__(self, store, doc_id):
-        self._store = store
-        self._id = doc_id
-
-    def set(self, data):
-        self._store[self._id] = dict(data)
-
-    def update(self, updates):
-        if self._id in self._store:
-            self._store[self._id].update(dict(updates))
-
-    def get(self):
-        if self._id not in self._store:
-            return _Snap(exists=False)
-        return _Snap(self._store[self._id])
-
-
-class _Col:
-    def __init__(self, buckets):
-        self._buckets = buckets
-
-    def document(self, doc_id):
-        return _Doc(self._buckets, doc_id)
-
-    def stream(self):
-        for key, data in self._buckets.items():
-            snap = _Snap(data)
-            snap.id = key
-            yield snap
-
-
-class _FS:
-    def __init__(self):
-        self._collections: dict[str, dict] = {}
-
-    def collection(self, name):
-        if name not in self._collections:
-            self._collections[name] = {}
-        return _Col(self._collections[name])
-
 
 # ---- Fake vector store ----
 
@@ -139,10 +83,34 @@ def env(monkeypatch):
 
 
 @pytest.fixture()
-def fake_db(monkeypatch):
-    fake = _FS()
-    server.agent.db = fake
-    return fake
+def pg_mocks(monkeypatch):
+    """Mock pg_store with an in-memory dict and set agent.db = True."""
+    server.agent.db = True
+    store: dict[str, dict] = {}
+
+    def fake_get(collection, key):
+        return store.get(key)
+
+    def fake_set(collection, key, data):
+        store[key] = dict(data)
+
+    def fake_update(collection, key, updates):
+        if key in store:
+            store[key].update(updates)
+
+    def fake_stream(collection):
+        return [{"_key": k, **v} for k, v in store.items()]
+
+    patches = {
+        "get": patch("agent_data.pg_store.get_doc", side_effect=fake_get),
+        "set": patch("agent_data.pg_store.set_doc", side_effect=fake_set),
+        "update": patch("agent_data.pg_store.update_doc", side_effect=fake_update),
+        "stream": patch("agent_data.pg_store.stream_docs", side_effect=fake_stream),
+    }
+    mocks = {name: p.start() for name, p in patches.items()}
+    yield {"store": store, "mocks": mocks}
+    for p in patches.values():
+        p.stop()
 
 
 @pytest.fixture()
@@ -154,7 +122,7 @@ def fake_vs(monkeypatch):
 
 
 @pytest.fixture()
-def client(env, fake_db, fake_vs):
+def client(env, pg_mocks, fake_vs):
     return TestClient(server.app)
 
 
@@ -180,15 +148,15 @@ def _create(client, doc_id, body, parent_id="root", tags=None):
 
 
 class TestFullLifecycle:
-    """End-to-end lifecycle: create → update → delete → audit → cleanup."""
+    """End-to-end lifecycle: create -> update -> delete -> audit -> cleanup."""
 
-    def test_full_lifecycle(self, client, fake_vs, fake_db):
-        # 1. Create doc → verify vector exists
+    def test_full_lifecycle(self, client, fake_vs, pg_mocks):
+        # 1. Create doc -> verify vector exists
         _create(client, "doc-lifecycle", "Content about dolphins")
         assert fake_vs.count_by_document_id("doc-lifecycle") > 0
         assert len(fake_vs.search(query="dolphins")) == 1
 
-        # 2. Update doc → verify OLD vectors gone, NEW vectors present
+        # 2. Update doc -> verify OLD vectors gone, NEW vectors present
         r = client.put(
             "/documents/doc-lifecycle",
             json={
@@ -208,18 +176,18 @@ class TestFullLifecycle:
         assert len(fake_vs.search(query="dolphins")) == 0
         assert len(fake_vs.search(query="whales")) == 1
 
-        # 3. Create 2nd doc → verify both searchable
+        # 3. Create 2nd doc -> verify both searchable
         _create(client, "doc-lifecycle-2", "Content about sharks")
         assert len(fake_vs.search(query="whales")) == 1
         assert len(fake_vs.search(query="sharks")) == 1
 
-        # 4. Delete 1st doc → verify only 2nd searchable
+        # 4. Delete 1st doc -> verify only 2nd searchable
         r = client.delete("/documents/doc-lifecycle", headers=HEADERS)
         assert r.status_code == 200
         assert len(fake_vs.search(query="whales")) == 0
         assert len(fake_vs.search(query="sharks")) == 1
 
-        # 5. Run audit-sync → should be clean
+        # 5. Run audit-sync -> should be clean
         r = client.post("/kb/audit-sync", headers=HEADERS)
         assert r.status_code == 200
         audit = r.json()
@@ -239,7 +207,7 @@ class TestFullLifecycle:
         assert audit["orphan_count"] == 1
         assert "ghost-doc-deleted" in audit["orphan_vector_document_ids"]
 
-        # 8. Cleanup dry_run → reports but doesn't delete
+        # 8. Cleanup dry_run -> reports but doesn't delete
         r = client.post(
             "/kb/cleanup-orphans",
             json={"dry_run": True},
@@ -253,7 +221,7 @@ class TestFullLifecycle:
         # Vector should still exist
         assert "ghost-doc-deleted" in fake_vs.vectors
 
-        # 9. Cleanup execute → actually deletes
+        # 9. Cleanup execute -> actually deletes
         r = client.post(
             "/kb/cleanup-orphans",
             json={"dry_run": False},
@@ -265,7 +233,7 @@ class TestFullLifecycle:
         assert cleanup["orphans_deleted"] == 1
         assert "ghost-doc-deleted" not in fake_vs.vectors
 
-        # 10. Audit again → clean
+        # 10. Audit again -> clean
         r = client.post("/kb/audit-sync", headers=HEADERS)
         assert r.status_code == 200
         assert r.json()["status"] == "clean"
@@ -362,7 +330,7 @@ class TestLargeDocumentChunking:
 
     def test_large_document_all_old_chunks_deleted_on_update(self, client, fake_vs):
         # Create a large document (will produce multiple chunks)
-        big_body = "Paragraph about astronomy. " * 200  # ~5400 chars → ~11 chunks
+        big_body = "Paragraph about astronomy. " * 200  # ~5400 chars -> ~11 chunks
         _create(client, "large-doc", big_body)
 
         old_chunks = fake_vs.count_by_document_id("large-doc")
