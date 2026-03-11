@@ -88,14 +88,12 @@ def test_query_knowledge_returns_context(
     mock_agent.llm_response.return_value = mock_reply
 
     documents = [
-        (
-            "doc-1",
-            {
-                "document_id": "doc-1",
-                "content": {"body": "Langroid helps orchestrate multi-agent systems."},
-                "metadata": {"tags": ["langroid", "ai"]},
-            },
-        )
+        {
+            "_key": "doc-1",
+            "document_id": "doc-1",
+            "content": {"body": "Langroid helps orchestrate multi-agent systems."},
+            "metadata": {"tags": ["langroid", "ai"]},
+        }
     ]
 
     mock_stream.return_value = documents
