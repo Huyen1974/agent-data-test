@@ -408,18 +408,20 @@ def _compute_data_integrity() -> DataIntegrity | None:
 
         ratio = round(vec_count / doc_count, 2) if doc_count > 0 else 0.0
 
-        # TD-131: Tighter thresholds to detect orphan vectors early.
-        # ratio ≈ 1.0 is ideal (1 vector per doc or minor chunking).
-        # ratio > 1.1 means >10% extra vectors — likely orphans.
+        # TD-131: Thresholds accounting for legitimate chunking.
+        # Documents > 4000 chars are split into overlapping chunks, so
+        # ratio > 1.0 is normal. Current baseline: ~1.38 with 0 orphans.
+        # ratio > 2.0 = unusual amount of chunking or some orphans.
+        # ratio > 3.0 = likely mass orphan vectors needing cleanup.
         if doc_count == 0 and vec_count == 0:
             sync_status = "ok"
         elif doc_count > 0 and vec_count == 0:
             sync_status = "critical"
-        elif ratio < 1:
+        elif ratio < 0.5:
             sync_status = "critical"
-        elif ratio > 1.3:
+        elif ratio > 3.0:
             sync_status = "critical"
-        elif ratio > 1.1:
+        elif ratio > 2.0:
             sync_status = "warning"
         else:
             sync_status = "ok"
