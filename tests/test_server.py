@@ -28,7 +28,7 @@ def test_ingest_gcs_uri_returns_disabled():
     payload = {"text": "gs://test-bucket/test.pdf"}
     resp = client.post("/ingest", json=payload)
 
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     body = resp.json()
     assert "disabled" in body.get("content", "").lower()
 
