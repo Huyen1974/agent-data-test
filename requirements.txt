@@ -132,7 +132,7 @@ gitdb==4.0.12
     # via gitpython
 gitpython==3.1.44
     # via langroid
-google-api-core[grpc]==2.25.1
+google-api-core==2.25.1
     # via google-api-python-client
 google-api-python-client==2.176.0
     # via
@@ -149,21 +149,14 @@ google-auth-httplib2==0.2.0
     # via google-api-python-client
 google-genai==1.26.0
     # via langroid
-googleapis-common-protos[grpc]==1.70.0
-    # via
-    #   google-api-core
-    #   grpcio-status
+googleapis-common-protos==1.70.0
+    # via google-api-core
 groq==0.30.0
     # via langroid
 grpcio==1.73.1
     # via
-    #   google-api-core
-    #   googleapis-common-protos
-    #   grpcio-status
     #   langroid
     #   qdrant-client
-grpcio-status==1.73.1
-    # via google-api-core
 h11==0.16.0
     # via
     #   httpcore
@@ -316,10 +309,11 @@ protobuf==6.31.1
     # via
     #   google-api-core
     #   googleapis-common-protos
-    #   grpcio-status
     #   onnxruntime
     #   proto-plus
     #   qdrant-client
+psycopg2-binary==2.9.10
+    # via agent-data-langroid (pyproject.toml)
 pyasn1==0.6.1
     # via
     #   pyasn1-modules
@@ -364,8 +358,6 @@ pymupdf4llm==0.0.26
     # via langroid
 pynacl==1.5.0
     # via pygithub
-psycopg2-binary==2.9.10
-    # via agent-data-langroid (pyproject.toml)
 pyparsing==3.2.3
     # via
     #   httplib2
