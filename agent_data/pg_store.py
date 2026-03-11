@@ -81,7 +81,8 @@ def ensure_tables() -> None:
     """Create tables if they don't exist."""
     with _conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS kb_documents (
                     key TEXT PRIMARY KEY,
                     data JSONB NOT NULL DEFAULT '{}'::jsonb
@@ -105,7 +106,8 @@ def ensure_tables() -> None:
                 );
                 CREATE INDEX IF NOT EXISTS idx_chat_messages_session
                     ON chat_messages (session_id, ts);
-            """)
+            """
+            )
     logger.info("PostgreSQL tables ensured")
 
 

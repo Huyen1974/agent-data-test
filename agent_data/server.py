@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.responses import Response
 from starlette_prometheus import PrometheusMiddleware, metrics
 
-from agent_data import vector_store
+from agent_data import pg_store, vector_store
 from agent_data.docs_api import router as docs_router
 from agent_data.event_system import (
     DOCUMENT_CREATED,
@@ -28,8 +28,6 @@ from agent_data.event_system import (
 )
 from agent_data.main import AgentData, AgentDataConfig
 from agent_data.resilient_client import health_registry, resilient_lifespan
-
-from agent_data import pg_store
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -540,9 +538,7 @@ async def ingest(message: ChatMessage):
                 is_human_readable=True,
             )
             if vec_result.status == "error":
-                logger.warning(
-                    "Vector sync error for %s: %s", doc_id, vec_result.error
-                )
+                logger.warning("Vector sync error for %s: %s", doc_id, vec_result.error)
             elif vec_result.status == "skipped":
                 logger.info("Vector sync skipped for %s (store disabled)", doc_id)
             else:
@@ -564,9 +560,7 @@ async def ingest(message: ChatMessage):
         )
     except Exception as e:
         logger.error(f"Ingest endpoint failed: {e}")
-        raise _error(
-            500, "INTERNAL", "Failed to ingest", error=str(e)
-        ) from e
+        raise _error(500, "INTERNAL", "Failed to ingest", error=str(e)) from e
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -1246,9 +1240,7 @@ async def move_document(
                 document_id=doc_id,
             )
 
-        _assert_move_target_valid(
-            document_id=doc_id, new_parent_id=new_parent_id
-        )
+        _assert_move_target_valid(document_id=doc_id, new_parent_id=new_parent_id)
 
         now_iso = datetime.now(UTC).isoformat()
         next_revision = (current.get("revision") or 0) + 1
@@ -1702,7 +1694,9 @@ async def reindex_kb_documents():
 
             # Update PostgreSQL vector_status
             try:
-                pg_store.update_doc(KB_COLLECTION, _fs_key(doc_id), {"vector_status": "ready"})
+                pg_store.update_doc(
+                    KB_COLLECTION, _fs_key(doc_id), {"vector_status": "ready"}
+                )
             except Exception:
                 pass
 
@@ -1877,7 +1871,9 @@ def _run_reindex(store: Any, _unused: Any, ghost_ids: list[str]) -> dict[str, An
                 {"document_id": doc_id, "chunks_created": result.chunks_created}
             )
             try:
-                pg_store.update_doc(KB_COLLECTION, _fs_key(doc_id), {"vector_status": "ready"})
+                pg_store.update_doc(
+                    KB_COLLECTION, _fs_key(doc_id), {"vector_status": "ready"}
+                )
             except Exception:
                 pass
 

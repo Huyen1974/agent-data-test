@@ -37,7 +37,8 @@ def get_dsn():
 
 def ensure_tables(conn):
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS kb_documents (
                 key TEXT PRIMARY KEY,
                 data JSONB NOT NULL DEFAULT '{}'::jsonb
@@ -61,7 +62,8 @@ def ensure_tables(conn):
             );
             CREATE INDEX IF NOT EXISTS idx_chat_messages_session
                 ON chat_messages (session_id, ts);
-        """)
+        """
+        )
     conn.commit()
     print("Tables ensured.")
 
@@ -146,14 +148,16 @@ def verify(conn):
         cur.execute("SELECT COUNT(*) FROM metadata_store")
         meta_count = cur.fetchone()[0]
 
-    print(f"\nVerification:")
+    print("\nVerification:")
     print(f"  kb_documents: {kb_count} total, {kb_active} active")
     print(f"  metadata_store: {meta_count}")
 
 
 def main():
     dsn = get_dsn()
-    print(f"Connecting to PostgreSQL: {dsn.replace(os.getenv('PG_PASSWORD', ''), '***')}")
+    print(
+        f"Connecting to PostgreSQL: {dsn.replace(os.getenv('PG_PASSWORD', ''), '***')}"
+    )
 
     conn = psycopg2.connect(dsn)
     conn.autocommit = False
