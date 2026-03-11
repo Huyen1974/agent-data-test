@@ -381,23 +381,21 @@ async def probe_qdrant() -> bool:
         return False
 
 
-async def probe_firestore() -> bool:
+async def probe_postgres() -> bool:
     try:
-        from agent_data.server import agent
+        from agent_data import pg_store
 
-        db = getattr(agent, "db", None)
-        if db is None:
-            logger.info("Firestore not configured; skipping probe")
-            return True
         t0 = time.monotonic()
-        await asyncio.to_thread(lambda: list(db.collections())[:1])
-        latency = (time.monotonic() - t0) * 1000
-        health_registry.mark_healthy("firestore", latency)
-        logger.info("Firestore probe OK (%.0fms)", latency)
-        return True
+        ok, latency = await asyncio.to_thread(pg_store.probe)
+        if ok:
+            health_registry.mark_healthy("postgres", latency)
+            logger.info("PostgreSQL probe OK (%.0fms)", latency)
+            return True
+        health_registry.mark_unhealthy("postgres", "probe returned False")
+        return False
     except Exception as exc:
-        health_registry.mark_unhealthy("firestore", str(exc))
-        logger.warning("Firestore probe failed: %s", exc)
+        health_registry.mark_unhealthy("postgres", str(exc))
+        logger.warning("PostgreSQL probe failed: %s", exc)
         return False
 
 
@@ -441,18 +439,18 @@ async def resilient_lifespan(app: Any):  # noqa: ANN401
     logger.info("Discovered %d service(s): %s", len(services), list(services.keys()))
 
     # Register well-known services that use SDK (not HTTP)
-    for name in ("qdrant", "firestore", "openai"):
+    for name in ("qdrant", "postgres", "openai"):
         health_registry.register(name)
 
     # Run probes concurrently
     results = await asyncio.gather(
         probe_qdrant(),
-        probe_firestore(),
+        probe_postgres(),
         probe_openai(),
         return_exceptions=True,
     )
 
-    probe_names = ["qdrant", "firestore", "openai"]
+    probe_names = ["qdrant", "postgres", "openai"]
     for name, result in zip(probe_names, results, strict=False):
         if isinstance(result, Exception):
             logger.warning("Probe %s raised: %s", name, result)

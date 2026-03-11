@@ -14,24 +14,10 @@ References:
 from __future__ import annotations
 
 import json
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agent_data.memory import FirestoreChatHistory
-
-try:
-    from google.api_core import exceptions  # type: ignore
-    from google.cloud import storage  # type: ignore
-except Exception:  # pragma: no cover - optional dependency at import time
-    storage = None  # type: ignore
-    exceptions = None  # type: ignore
-
-# Optional Firestore import
-try:
-    from google.cloud import firestore  # type: ignore
-except Exception:  # pragma: no cover - optional dependency at import time
-    firestore = None  # type: ignore
+from agent_data.memory import PostgresChatHistory
 
 from langroid.agent.special.doc_chat_agent import (
     DocChatAgent,
@@ -75,19 +61,10 @@ class AgentData(DocChatAgent):
     - Reuse Plan A1
     """
 
-    # Firestore collection to store document metadata
-    METADATA_COLLECTION = "metadata_test"
+    # PostgreSQL collection to store document metadata
+    METADATA_COLLECTION = "metadata_store"
 
     def __init__(self, config: AgentDataConfig) -> None:
-        """Initialize an AgentData instance with the provided configuration.
-
-        Parameters
-        ----------
-        config:
-            The configuration object for AgentData; currently the same shape as
-            ``DocChatAgentConfig``.
-        """
-
         super().__init__(config)
 
         # Load optional system prompts from prompts/ repository
@@ -110,35 +87,31 @@ class AgentData(DocChatAgent):
             # Non-fatal: continue without prompts if not present
             self.system_prompt = self.system_prompt or None
             self.summarization_prompt = self.summarization_prompt or None
-        # Initialize Firestore client before setting up history backend
+
+        # PostgreSQL-backed: db flag indicates store availability
         self.db = None
         try:
-            if firestore is not None:
-                self.db = firestore.Client()  # type: ignore[attr-defined]
+            from agent_data import pg_store
+
+            pg_store.init_pool()
+            pg_store.ensure_tables()
+            self.db = True  # Flag: PostgreSQL is available
         except Exception:
             self.db = None
 
-        # Integrate Firestore-backed chat history (initialize default session)
-        # Always attempt instantiation so unit tests can patch and verify the call
+        # Integrate PostgreSQL-backed chat history (initialize default session)
         self.history = None
         try:
-            self.history = FirestoreChatHistory(
-                session_id="default", firestore_client=self.db
-            )
+            self.history = PostgresChatHistory(session_id="default")
         except Exception:
             self.history = None
 
         # Track tool registrations for simple verification/tests.
-        # In full Langroid integration, tool enablement is handled via
-        # ToolMessage classes and enable_message(); here we maintain
-        # a minimal list of tool names for skeleton validation.
         self.tools = getattr(self, "tools", []) or []
         if "gcs_ingest" not in self.tools:
             self.tools.append("gcs_ingest")
         # Keep a simple preview/cache of last ingested text content (for demo/tests)
         self.last_ingested_text: str | None = None
-
-        # Firestore client already initialized above to support history backend
 
     def ingest(self) -> None:
         """Override to skip noisy warnings when vecdb is unavailable."""
@@ -151,36 +124,24 @@ class AgentData(DocChatAgent):
 
     # -------- Session helpers --------
     def set_session(self, session_id: str) -> None:
-        """Bind this agent to a session-backed chat history if Firestore is available."""
+        """Bind this agent to a session-backed chat history."""
         try:
             if self.db is not None:
-                self.history = FirestoreChatHistory(
-                    session_id=session_id, firestore_client=self.db
-                )
+                self.history = PostgresChatHistory(session_id=session_id)
             else:
                 self.history = None
         except Exception:
             self.history = None
 
     def ingest_doc_paths(self, paths, *args, **kwargs) -> str:
-        """Overrides the parent method to automatically persist metadata to Firestore after successful ingestion.
-
-        Calls the parent ingestion to process the documents, then attempts to
-        persist initial metadata per input path. Errors during metadata
-        persistence are swallowed so they don't affect ingestion success.
-
-        Returns:
-            str: A summary message including ingestion result and metadata outcome.
-        """
+        """Overrides the parent method to automatically persist metadata after ingestion."""
 
         # Execute the standard ingestion (vector store, parsing, etc.)
         try:
             parent_result = super().ingest_doc_paths(paths, *args, **kwargs)
-        except Exception as e:  # Always persist metadata even if parent ingestion fails
+        except Exception as e:
             parent_result = f"Ingestion skipped or failed: {e}"
 
-        # Normalize paths into a list of strings (ignore bytes for metadata doc_id)
-        # Accept either a single path or an iterable of paths
         if isinstance(paths, str | bytes):
             norm_paths = [paths]
         else:
@@ -191,7 +152,6 @@ class AgentData(DocChatAgent):
 
         for p in norm_paths:
             if isinstance(p, bytes):
-                # Cannot infer an id from raw bytes; skip metadata persistence
                 continue
             try:
                 doc_id = Path(p).name
@@ -217,138 +177,56 @@ class AgentData(DocChatAgent):
 
     @tool
     def gcs_ingest(self, gcs_uri: str) -> str:
-        """Downloads a file from the given GCS URI, ingests it into the vector store.
+        """GCS ingestion is disabled after S109 migration to VPS.
 
-        Args:
-            gcs_uri (str): The GCS URI of the file to ingest, e.g.,
-                "gs://bucket-name/path/to/file.pdf".
-
-        Returns:
-            str: A confirmation message indicating the result of the ingestion.
+        Returns a message indicating GCS is no longer supported.
+        Inline text ingestion via /ingest endpoint still works.
         """
-
-        # Validate availability of Google Cloud Storage client
-        if storage is None or exceptions is None:  # pragma: no cover
-            return (
-                "GCS client libraries not available. Please install 'google-cloud-storage' "
-                f"and try again. URI: {gcs_uri}"
-            )
-
-        def parse_gcs_uri(uri: str) -> tuple[str, str]:
-            if not uri.startswith("gs://"):
-                raise ValueError(
-                    f"Invalid GCS URI '{uri}'. Expected format: gs://<bucket>/<path>"
-                )
-            path = uri[len("gs://") :]
-            if "/" not in path:
-                raise ValueError(
-                    f"Invalid GCS URI '{uri}'. Missing object path after bucket name."
-                )
-            bucket_name, blob_name = path.split("/", 1)
-            if not bucket_name or not blob_name:
-                raise ValueError(
-                    f"Invalid GCS URI '{uri}'. Bucket and object path must be non-empty."
-                )
-            return bucket_name, blob_name
-
-        try:
-            bucket_name, blob_name = parse_gcs_uri(gcs_uri)
-
-            client = storage.Client()
-            bucket = client.bucket(bucket_name)
-            blob = bucket.blob(blob_name)
-
-            with tempfile.TemporaryDirectory(prefix="agentdata_gcs_") as tmpdir:
-                # Save to a simple filename inside the temporary directory
-                filename = Path(blob_name).name or "downloaded_object"
-                local_path = Path(tmpdir) / filename
-                blob.download_to_filename(str(local_path))
-
-                # After download, integrate with DocChatAgent ingestion.
-                ingestion_result = None
-                try:
-                    ingestion_result = self.ingest_doc_paths([str(local_path)])
-                except (
-                    Exception
-                ) as ingest_err:  # pragma: no cover - integration fallback
-                    ingestion_result = f"Ingestion skipped or failed: {ingest_err}"
-
-                # Best-effort: cache text for simple QA when vecdb/LLM are absent
-                try:
-                    text = local_path.read_text(encoding="utf-8", errors="ignore")
-                    self.last_ingested_text = text[:10000]
-                except Exception:
-                    pass
-
-                # Note: local_path resides in a TemporaryDirectory and will be
-                # cleaned up on context exit; we return the ingestion result
-                # for confirmation in logs or tooling.
-                return f"Successfully downloaded and ingested {gcs_uri}. Result: {ingestion_result}"
-
-        except Exception as e:
-            # Handle common GCS exceptions with clearer messages
-            if exceptions is not None and isinstance(e, exceptions.NotFound):
-                return f"File not found: {gcs_uri}"
-            if exceptions is not None and isinstance(e, exceptions.Forbidden):
-                return (
-                    "Access forbidden when attempting to download from GCS. "
-                    f"Check permissions for URI: {gcs_uri}"
-                )
-            if exceptions is not None and isinstance(e, exceptions.GoogleAPICallError):
-                return f"GCS API error for URI {gcs_uri}: {e}"
-            # Fallback for any other error
-            return f"Failed to download from GCS for URI {gcs_uri}: {e}"
+        return (
+            "GCS ingestion is disabled. The system no longer depends on Google Cloud Storage. "
+            f"Use inline text ingestion via POST /ingest instead. URI: {gcs_uri}"
+        )
 
     @tool
     def add_metadata(self, document_id: str, metadata_json: str) -> str:
-        """Adds or overwrites metadata for a given document ID in Firestore.
-
-        Args:
-            document_id (str): The unique identifier for the document.
-            metadata_json (str): A JSON string representing the metadata to add.
-        Returns:
-            str: A confirmation message or error detail.
-        """
+        """Adds or overwrites metadata for a given document ID in PostgreSQL."""
 
         if "add_metadata" not in self.tools:
             self.tools.append("add_metadata")
 
         if self.db is None:
-            return "Firestore client not initialized."
+            return "PostgreSQL store not initialized."
         try:
             data = json.loads(metadata_json)
         except Exception as e:  # pragma: no cover
             return f"Invalid metadata JSON: {e}"
 
         try:
-            self.db.collection(self.METADATA_COLLECTION).document(document_id).set(data)
+            from agent_data import pg_store
+
+            pg_store.set_doc(self.METADATA_COLLECTION, document_id, data)
             return f"Metadata for {document_id} saved."
         except Exception as e:  # pragma: no cover
             return f"Failed to add metadata for {document_id}: {e}"
 
     @tool
     def get_metadata(self, document_id: str) -> str:
-        """Retrieves the metadata for a given document ID from Firestore.
-
-        Args:
-            document_id (str): The unique identifier for the document to retrieve.
-        Returns:
-            str: A JSON string of the metadata, or an error message.
-        """
+        """Retrieves the metadata for a given document ID from PostgreSQL."""
 
         if "get_metadata" not in self.tools:
             self.tools.append("get_metadata")
 
         if self.db is None:
-            return "Firestore client not initialized."
+            return "PostgreSQL store not initialized."
         try:
-            doc_ref = self.db.collection(self.METADATA_COLLECTION).document(document_id)
-            doc = doc_ref.get()
-            if getattr(doc, "exists", False):
+            from agent_data import pg_store
+
+            data = pg_store.get_doc(self.METADATA_COLLECTION, document_id)
+            if data is not None:
                 try:
-                    return json.dumps(doc.to_dict())
+                    return json.dumps(data)
                 except Exception:
-                    return str(doc.to_dict())
+                    return str(data)
             else:
                 return f"Metadata not found for {document_id}."
         except Exception as e:  # pragma: no cover
@@ -356,23 +234,18 @@ class AgentData(DocChatAgent):
 
     @tool
     def update_ingestion_status(self, document_id: str, status: str) -> str:
-        """Updates the ingestion status for a document in Firestore.
-
-        Args:
-            document_id (str): The unique identifier for the document.
-            status (str): The new status (e.g., 'pending', 'completed', 'failed').
-        Returns:
-            str: A confirmation message or error detail.
-        """
+        """Updates the ingestion status for a document in PostgreSQL."""
 
         if "update_ingestion_status" not in self.tools:
             self.tools.append("update_ingestion_status")
 
         if self.db is None:
-            return "Firestore client not initialized."
+            return "PostgreSQL store not initialized."
         try:
-            self.db.collection(self.METADATA_COLLECTION).document(document_id).update(
-                {"ingestion_status": status}
+            from agent_data import pg_store
+
+            pg_store.update_doc(
+                self.METADATA_COLLECTION, document_id, {"ingestion_status": status}
             )
             return f"Ingestion status for {document_id} updated to '{status}'."
         except Exception as e:  # pragma: no cover

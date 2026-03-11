@@ -29,16 +29,7 @@ from agent_data.event_system import (
 from agent_data.main import AgentData, AgentDataConfig
 from agent_data.resilient_client import health_registry, resilient_lifespan
 
-try:
-    from google.cloud import pubsub_v1  # type: ignore
-except Exception:  # pragma: no cover - optional dependency in local/dev
-    # Provide a shim object so tests can patch PublisherClient attribute
-    class _PubSubShim:  # pragma: no cover - test/mocking helper
-        class PublisherClient:  # type: ignore
-            def __init__(self, *args, **kwargs):
-                raise RuntimeError("Pub/Sub client not available")
-
-    pubsub_v1 = _PubSubShim()  # type: ignore
+from agent_data import pg_store
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -351,7 +342,7 @@ except Exception as exc:
 
 def _sync_vector_entry(
     *,
-    doc_ref,
+    doc_key: str,
     document_id: str,
     content: str | None,
     metadata: dict[str, Any] | None,
@@ -373,7 +364,7 @@ def _sync_vector_entry(
     )
 
     if result.status == "skipped":
-        doc_ref.update({"vector_status": "skipped"})
+        pg_store.update_doc(KB_COLLECTION, doc_key, {"vector_status": "skipped"})
         return
 
     update_payload: dict[str, Any] = {
@@ -384,7 +375,7 @@ def _sync_vector_entry(
         update_payload["vector_error"] = result.error
     else:
         update_payload["vector_error"] = None
-    doc_ref.update(update_payload)
+    pg_store.update_doc(KB_COLLECTION, doc_key, update_payload)
 
 
 def _delete_vector_entry(document_id: str) -> None:
@@ -404,17 +395,15 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
 
 
 def _compute_data_integrity() -> DataIntegrity | None:
-    """Best-effort data integrity metrics from Firestore + Qdrant."""
+    """Best-effort data integrity metrics from PostgreSQL + Qdrant."""
     try:
         store = vector_store.get_vector_store()
         if not store.enabled:
             return None
 
-        db = _firestore()
-        docs = list(db.collection(KB_COLLECTION).stream())
-        doc_count = sum(
-            1 for snap in docs if (snap.to_dict() or {}).get("deleted_at") is None
-        )
+        _ensure_pg()
+        docs = pg_store.stream_docs(KB_COLLECTION)
+        doc_count = sum(1 for d in docs if d.get("deleted_at") is None)
         vec_count = store.count()
         if vec_count < 0:
             return None
@@ -499,182 +488,84 @@ async def serve_openapi_spec():
 
 @app.post("/ingest", response_model=ChatResponse, status_code=202)
 async def ingest(message: ChatMessage):
-    """Queue an ingest task by publishing a Pub/Sub message and return 202.
+    """Ingest inline text into the knowledge base.
 
-    Message schema: {"gcs_uri": "gs://bucket/path/to/file"}
+    S109: GCS and Pub/Sub dependencies removed. Only inline text ingestion remains.
     """
     try:
-        gcs_uri = (message.text or message.message or "").strip()
-        if not gcs_uri:
-            raise ValueError("Missing GCS URI in request body")
+        text = (message.text or message.message or "").strip()
+        if not text:
+            raise ValueError("Missing text in request body")
 
-        if not gcs_uri.startswith("gs://"):
-            inline_text = gcs_uri.strip()
-            agent.last_ingested_text = inline_text[:10000]
-            doc_id = f"inline-{uuid4()}"
-            metadata = {"title": doc_id, "source": "inline"}
-            try:
-                kb_collection = os.getenv("KB_COLLECTION", "kb_documents")
-                if getattr(agent, "db", None) is not None:
-                    now_iso = datetime.now(UTC).isoformat()
-                    kb_payload = {
-                        "document_id": doc_id,
-                        "parent_id": "root",
-                        "content": {
-                            "mime_type": "text/plain",
-                            "body": inline_text,
-                        },
-                        "metadata": metadata,
-                        "is_human_readable": True,
-                        "created_at": now_iso,
-                        "updated_at": now_iso,
-                        "deleted_at": None,
-                        "revision": 1,
-                    }
-                    agent.db.collection(kb_collection).document(_fs_key(doc_id)).set(
-                        kb_payload
-                    )
-            except Exception:
-                pass
-
-            # Sync to Qdrant vector store for RAG
-            try:
-                store = vector_store.get_vector_store()
-                vec_result = store.upsert_document(
-                    document_id=doc_id,
-                    content=inline_text,
-                    metadata=metadata,
-                    parent_id="root",
-                    is_human_readable=True,
-                )
-                if vec_result.status == "error":
-                    logger.warning(
-                        "Vector sync error for %s: %s", doc_id, vec_result.error
-                    )
-                elif vec_result.status == "skipped":
-                    logger.info("Vector sync skipped for %s (store disabled)", doc_id)
-                else:
-                    logger.info(
-                        "Vector sync completed for %s: %s", doc_id, vec_result.status
-                    )
-            except Exception as vec_err:
-                logger.warning("Vector sync failed for %s: %s", doc_id, vec_err)
-
-            try:
-                INGEST_SUCCESS.inc()
-            except Exception:
-                pass
-            ack = "Accepted ingest request (inline)"
+        if text.startswith("gs://"):
             return ChatResponse(
-                response=ack,
-                content=ack,
+                response="GCS ingestion is disabled after S109 migration. Use inline text instead.",
+                content="GCS ingestion is disabled after S109 migration. Use inline text instead.",
                 session_id=message.session_id,
             )
 
-        topic = os.getenv("PUBSUB_TOPIC", "agent-data-tasks-test")
-        # Allow overriding project via common envs
-        project_id = (
-            os.getenv("GCP_PROJECT_ID")
-            or os.getenv("GCP_PROJECT")
-            or os.getenv("GOOGLE_CLOUD_PROJECT")
-        )
-
-        if pubsub_v1 is None:
-            # In local/dev without pubsub client, simulate acceptance
-            logger.warning("Pub/Sub client not available; simulating queued ingest")
-            msg = json.dumps({"gcs_uri": gcs_uri, "simulated": True})
-            try:
-                INGEST_SUCCESS.inc()
-            except Exception:
-                pass
-            return ChatResponse(
-                response=f"Accepted ingest request (simulated): {msg}",
-                content=f"Accepted ingest request (simulated): {msg}",
-                session_id=message.session_id,
-            )
-
-        if not project_id:
-            # Fallback to ADC to derive project if not provided
-            try:
-                import google.auth  # type: ignore
-
-                creds, prj = google.auth.default()
-                project_id = prj
-            except Exception:
-                project_id = None
-
-        if not project_id:
-            # In unit-test or local contexts without ADC/project env, use a safe default
-            project_id = os.getenv("PUBSUB_PROJECT", "test-project")
-            logger.warning(
-                "GCP project not found in env/ADC; defaulting to %s for Pub/Sub publish",
-                project_id,
-            )
-
-        publisher = pubsub_v1.PublisherClient()
-        topic_path = f"projects/{project_id}/topics/{topic}"
-        payload = json.dumps({"gcs_uri": gcs_uri}).encode("utf-8")
-        future = publisher.publish(topic_path, data=payload)
-        msg_id = None
+        inline_text = text
+        agent.last_ingested_text = inline_text[:10000]
+        doc_id = f"inline-{uuid4()}"
+        metadata = {"title": doc_id, "source": "inline"}
         try:
-            msg_id = future.result(timeout=10)
-        except Exception:
-            # Best-effort: still return 202 if publish is in-flight
-            pass
-
-        ack = f"Accepted ingest request for {gcs_uri}. MessageId={msg_id or 'pending'}"
-        # Best-effort: immediately persist metadata to aid async E2E verification
-        try:
-            from urllib.parse import urlparse
-
-            # derive document_id from GCS path (filename)
-            path = urlparse(gcs_uri).path
-            doc_id = (path.rsplit("/", 1)[-1] or "object").strip("/")
-            meta = json.dumps(
-                {
-                    "source_uri": gcs_uri,
-                    "ingestion_status": "completed",
-                    "timestamp_utc": datetime.now(UTC).isoformat(),
-                }
-            )
-            agent.add_metadata(doc_id, meta)
-
-            # Best-effort: cache a KB document for search context when possible.
-            kb_collection = os.getenv("KB_COLLECTION", "kb_documents")
             if getattr(agent, "db", None) is not None:
-                try:
-                    agent.gcs_ingest(gcs_uri)
-                    content = (getattr(agent, "last_ingested_text", None) or "").strip()
-                    if content:
-                        now_iso = datetime.now(UTC).isoformat()
-                        kb_payload = {
-                            "document_id": doc_id,
-                            "parent_id": "root",
-                            "content": {"mime_type": "text/plain", "body": content},
-                            "metadata": {"title": doc_id, "source": gcs_uri},
-                            "is_human_readable": True,
-                            "created_at": now_iso,
-                            "updated_at": now_iso,
-                            "deleted_at": None,
-                            "revision": 1,
-                        }
-                        agent.db.collection(kb_collection).document(
-                            _fs_key(doc_id)
-                        ).set(kb_payload)
-                except Exception:
-                    pass
+                now_iso = datetime.now(UTC).isoformat()
+                kb_payload = {
+                    "document_id": doc_id,
+                    "parent_id": "root",
+                    "content": {
+                        "mime_type": "text/plain",
+                        "body": inline_text,
+                    },
+                    "metadata": metadata,
+                    "is_human_readable": True,
+                    "created_at": now_iso,
+                    "updated_at": now_iso,
+                    "deleted_at": None,
+                    "revision": 1,
+                }
+                pg_store.set_doc(KB_COLLECTION, _fs_key(doc_id), kb_payload)
         except Exception:
             pass
+
+        # Sync to Qdrant vector store for RAG
+        try:
+            store = vector_store.get_vector_store()
+            vec_result = store.upsert_document(
+                document_id=doc_id,
+                content=inline_text,
+                metadata=metadata,
+                parent_id="root",
+                is_human_readable=True,
+            )
+            if vec_result.status == "error":
+                logger.warning(
+                    "Vector sync error for %s: %s", doc_id, vec_result.error
+                )
+            elif vec_result.status == "skipped":
+                logger.info("Vector sync skipped for %s (store disabled)", doc_id)
+            else:
+                logger.info(
+                    "Vector sync completed for %s: %s", doc_id, vec_result.status
+                )
+        except Exception as vec_err:
+            logger.warning("Vector sync failed for %s: %s", doc_id, vec_err)
 
         try:
             INGEST_SUCCESS.inc()
         except Exception:
             pass
-        return ChatResponse(response=ack, content=ack, session_id=message.session_id)
+        ack = "Accepted ingest request (inline)"
+        return ChatResponse(
+            response=ack,
+            content=ack,
+            session_id=message.session_id,
+        )
     except Exception as e:
         logger.error(f"Ingest endpoint failed: {e}")
         raise _error(
-            500, "INTERNAL", "Failed to queue ingest task", error=str(e)
+            500, "INTERNAL", "Failed to ingest", error=str(e)
         ) from e
 
 
@@ -695,7 +586,7 @@ def query_knowledge(payload: QueryKnowledgeRequest):
 
         session_id = payload.session_id or str(uuid4())
 
-        # Bind session memory when Firestore-backed history is available
+        # Bind session memory when DB-backed history is available
         try:
             agent.set_session(session_id)
             if getattr(agent, "history", None) is not None:
@@ -852,20 +743,20 @@ KB_COLLECTION = os.getenv("KB_COLLECTION", "kb_documents")
 
 
 def _fs_key(doc_id: str) -> str:
-    """Encode a document ID for use as a flat Firestore document key.
+    """Encode a document ID for use as a flat database key.
 
-    Replaces '/' with '__' so that Firestore does not interpret slashes
-    as nested collection/document paths.  Flat IDs without slashes pass
-    through unchanged, preserving backward compatibility.
+    Replaces '/' with '__' so that IDs are safe for use as database keys.
+    Flat IDs without slashes pass through unchanged.
     """
     return doc_id.replace("/", "__")
 
 
-def _firestore():
+def _ensure_pg():
+    """Ensure PostgreSQL store is available."""
     db = getattr(agent, "db", None)
     if db is None:
-        raise _error(500, "INTERNAL", "Firestore client not initialized")
-    return db
+        raise _error(500, "INTERNAL", "PostgreSQL store not initialized")
+    return True
 
 
 def _error(status: int, code: str, message: str, **details) -> HTTPException:
@@ -906,7 +797,7 @@ def _retrieve_query_context(
     """Fetch candidate documents to ground the knowledge query.
 
     Strategy: Use Qdrant vector search first (semantic similarity).
-    Falls back to Firestore keyword scan if vector store is unavailable.
+    Falls back to PostgreSQL keyword scan if vector store is unavailable.
     """
 
     # --- Strategy 1: Qdrant vector search ---
@@ -934,30 +825,23 @@ def _retrieve_query_context(
                     )
                 return contexts
     except Exception as exc:
-        logger.warning("Vector search failed, falling back to Firestore: %s", exc)
+        logger.warning("Vector search failed, falling back to PostgreSQL: %s", exc)
 
-    # --- Strategy 2: Firestore keyword scan (fallback) ---
+    # --- Strategy 2: PostgreSQL keyword scan (fallback) ---
     try:
-        db = _firestore()
+        _ensure_pg()
     except HTTPException:
         return []
 
     try:
-        collection = db.collection(KB_COLLECTION)
-        stream_fn = getattr(collection, "stream", None)
-        snapshots = list(stream_fn()) if callable(stream_fn) else []
+        all_docs = pg_store.stream_docs(KB_COLLECTION)
     except Exception as exc:
         logger.warning("Failed to stream documents for query context: %s", exc)
         return []
 
     contexts: list[QueryContextEntry] = []
     query_words = [w for w in re.findall(r"\w+", query.lower()) if len(w) > 2]
-    for snap in snapshots:
-        try:
-            data = snap.to_dict() if hasattr(snap, "to_dict") else {}
-        except Exception:
-            data = {}
-
+    for data in all_docs:
         if not data or data.get("deleted_at") is not None:
             continue
 
@@ -995,7 +879,7 @@ def _retrieve_query_context(
         score = matched / max(len(query_words), 1)
         contexts.append(
             QueryContextEntry(
-                document_id=data.get("document_id") or getattr(snap, "id", "unknown"),
+                document_id=data.get("document_id") or data.get("_key", "unknown"),
                 snippet=body[:500],
                 score=score,
                 metadata=metadata if isinstance(metadata, dict) else None,
@@ -1021,19 +905,21 @@ def _retrieve_query_context(
     return contexts
 
 
-def _assert_move_target_valid(*, db, document_id: str, new_parent_id: str) -> None:
+def _assert_move_target_valid(*, document_id: str, new_parent_id: str) -> None:
     """Validate that move target exists and will not create cycles."""
 
     root_sentinels = {None, "", "root"}
     if new_parent_id in root_sentinels:
         return
 
-    parent_ref = db.collection(KB_COLLECTION).document(_fs_key(new_parent_id))
-    parent_snapshot = parent_ref.get()
-    if not getattr(parent_snapshot, "exists", False):
+    parent_key = _fs_key(new_parent_id)
+    parent_data = pg_store.get_doc(KB_COLLECTION, parent_key)
+    if parent_data is None:
         # Auto-create parent as a folder document
         now_iso = datetime.now(UTC).isoformat()
-        parent_ref.set(
+        pg_store.set_doc(
+            KB_COLLECTION,
+            parent_key,
             {
                 "document_id": new_parent_id,
                 "parent_id": "/".join(new_parent_id.split("/")[:-1]) or "root",
@@ -1048,7 +934,7 @@ def _assert_move_target_valid(*, db, document_id: str, new_parent_id: str) -> No
                 "deleted_at": None,
                 "revision": 1,
                 "vector_status": "none",
-            }
+            },
         )
         logger.info("Auto-created folder document: %s", new_parent_id)
 
@@ -1065,7 +951,6 @@ def _assert_move_target_valid(*, db, document_id: str, new_parent_id: str) -> No
                 parent_id=new_parent_id,
             )
         if current_id in lineage_seen:
-            # Detected existing cycle in stored data; abort move.
             raise _error(
                 409,
                 "CONFLICT",
@@ -1074,11 +959,9 @@ def _assert_move_target_valid(*, db, document_id: str, new_parent_id: str) -> No
             )
         lineage_seen.add(current_id)
 
-        ancestor_ref = db.collection(KB_COLLECTION).document(_fs_key(current_id))
-        ancestor_snapshot = ancestor_ref.get()
-        if not getattr(ancestor_snapshot, "exists", False):
+        ancestor_data = pg_store.get_doc(KB_COLLECTION, _fs_key(current_id))
+        if ancestor_data is None:
             break
-        ancestor_data = ancestor_snapshot.to_dict() or {}
         current_id = ancestor_data.get("parent_id")
         safety_counter += 1
 
@@ -1090,15 +973,13 @@ async def create_document(
     _=Depends(require_api_key),
 ):
     try:
-        db = _firestore()
+        _ensure_pg()
         doc_id = payload.document_id
-        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-        snapshot = doc_ref.get()
-        if getattr(snapshot, "exists", False):
-            existing = snapshot.to_dict() or {}
+        doc_key = _fs_key(doc_id)
+        existing = pg_store.get_doc(KB_COLLECTION, doc_key)
+        if existing is not None:
             if existing.get("deleted_at") is None:
                 if upsert:
-                    # Upsert: update existing document in-place
                     current_revision = existing.get("revision", 0)
                     now_iso = datetime.now(UTC).isoformat()
                     new_content = payload.content.model_dump()
@@ -1110,11 +991,11 @@ async def create_document(
                         "updated_at": now_iso,
                         "revision": current_revision + 1,
                     }
-                    doc_ref.update(updates)
+                    pg_store.update_doc(KB_COLLECTION, doc_key, updates)
                     try:
                         _delete_vector_entry(doc_id)
                         _sync_vector_entry(
-                            doc_ref=doc_ref,
+                            doc_key=doc_key,
                             document_id=doc_id,
                             content=new_content.get("body"),
                             metadata=new_metadata,
@@ -1161,11 +1042,11 @@ async def create_document(
             "vector_status": "pending",
         }
 
-        doc_ref.set(document_data)
+        pg_store.set_doc(KB_COLLECTION, doc_key, document_data)
 
         try:
             _sync_vector_entry(
-                doc_ref=doc_ref,
+                doc_key=doc_key,
                 document_id=doc_id,
                 content=document_data.get("content", {}).get("body"),
                 metadata=document_data.get("metadata"),
@@ -1199,13 +1080,12 @@ async def update_document(
     _=Depends(require_api_key),
 ):
     try:
-        db = _firestore()
-        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-        snapshot = doc_ref.get()
-        if not getattr(snapshot, "exists", False):
+        _ensure_pg()
+        doc_key = _fs_key(doc_id)
+        current = pg_store.get_doc(KB_COLLECTION, doc_key)
+        if current is None:
             raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
 
-        current = snapshot.to_dict() or {}
         current_revision = current.get("revision", 0)
         if (
             payload.last_known_revision is not None
@@ -1263,7 +1143,7 @@ async def update_document(
         if not fields_updated:
             raise _error(400, "INVALID_ARGUMENT", "update_mask empty or patch missing")
 
-        doc_ref.update(updates)
+        pg_store.update_doc(KB_COLLECTION, doc_key, updates)
         current["content"] = new_content
         current["metadata"] = new_metadata
         current["is_human_readable"] = new_is_hr
@@ -1279,7 +1159,7 @@ async def update_document(
                 # Delete old vectors first to avoid stale chunks when content shrinks
                 _delete_vector_entry(doc_id)
                 _sync_vector_entry(
-                    doc_ref=doc_ref,
+                    doc_key=doc_key,
                     document_id=doc_id,
                     content=(
                         merged_content.get("body")
@@ -1338,10 +1218,10 @@ async def move_document(
         if payload is None:
             raise _error(400, "INVALID_ARGUMENT", "Move payload is required")
 
-        db = _firestore()
-        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-        snapshot = doc_ref.get()
-        if not getattr(snapshot, "exists", False):
+        _ensure_pg()
+        doc_key = _fs_key(doc_id)
+        current = pg_store.get_doc(KB_COLLECTION, doc_key)
+        if current is None:
             raise _error(
                 404,
                 "NOT_FOUND",
@@ -1349,7 +1229,6 @@ async def move_document(
                 document_id=doc_id,
             )
 
-        current = snapshot.to_dict() or {}
         if current.get("deleted_at") is not None:
             raise _error(
                 409,
@@ -1368,7 +1247,7 @@ async def move_document(
             )
 
         _assert_move_target_valid(
-            db=db, document_id=doc_id, new_parent_id=new_parent_id
+            document_id=doc_id, new_parent_id=new_parent_id
         )
 
         now_iso = datetime.now(UTC).isoformat()
@@ -1379,7 +1258,7 @@ async def move_document(
             "revision": next_revision,
         }
 
-        doc_ref.update(updates)
+        pg_store.update_doc(KB_COLLECTION, doc_key, updates)
         current["parent_id"] = new_parent_id
         try:
             # Move only changes parent_id — content is unchanged.
@@ -1409,32 +1288,30 @@ async def delete_document(
     doc_id: str = Path(..., min_length=1), _=Depends(require_api_key)
 ):
     try:
-        db = _firestore()
-        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-        snapshot = doc_ref.get()
-        doc_exists = getattr(snapshot, "exists", False)
+        _ensure_pg()
+        doc_key = _fs_key(doc_id)
+        current = pg_store.get_doc(KB_COLLECTION, doc_key)
 
-        # Always attempt Qdrant vector deletion, even if Firestore doc is
-        # missing.  This prevents orphan vectors when the Firestore record
-        # was already removed (race condition, manual cleanup, etc.).
+        # Always attempt Qdrant vector deletion, even if DB doc is missing.
         try:
             _delete_vector_entry(doc_id)
         except Exception as exc:  # pragma: no cover
             logger.error("Vector deletion failed for %s: %s", doc_id, exc)
 
-        if not doc_exists:
+        if current is None:
             raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
 
         now_iso = datetime.now(UTC).isoformat()
-        current = snapshot.to_dict() or {}
         next_revision = current.get("revision", 0) + 1
-        doc_ref.update(
+        pg_store.update_doc(
+            KB_COLLECTION,
+            doc_key,
             {
                 "deleted_at": now_iso,
                 "updated_at": now_iso,
                 "vector_status": "deleted",
                 "revision": next_revision,
-            }
+            },
         )
         get_event_bus().emit_fire_and_forget(
             DOCUMENT_DELETED,
@@ -1477,12 +1354,10 @@ async def get_document(
     (vector search is skipped in full mode unless ``?search=true`` is also set).
     """
     try:
-        db = _firestore()
-        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-        snap = doc_ref.get()
-        if not getattr(snap, "exists", False):
+        _ensure_pg()
+        data = pg_store.get_doc(KB_COLLECTION, _fs_key(doc_id))
+        if data is None:
             raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
-        data = snap.to_dict() or {}
         if data.get("deleted_at") is not None:
             raise _error(404, "NOT_FOUND", "Document deleted", document_id=doc_id)
 
@@ -1559,13 +1434,12 @@ async def patch_document(
     or appears more than once.
     """
     try:
-        db = _firestore()
-        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-        snap = doc_ref.get()
-        if not getattr(snap, "exists", False):
+        _ensure_pg()
+        doc_key = _fs_key(doc_id)
+        data = pg_store.get_doc(KB_COLLECTION, doc_key)
+        if data is None:
             raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
 
-        data = snap.to_dict() or {}
         if data.get("deleted_at") is not None:
             raise _error(404, "NOT_FOUND", "Document deleted", document_id=doc_id)
 
@@ -1604,13 +1478,13 @@ async def patch_document(
             "updated_at": now_iso,
             "revision": current_revision + 1,
         }
-        doc_ref.update(updates)
+        pg_store.update_doc(KB_COLLECTION, doc_key, updates)
 
         # Re-embed
         try:
             _delete_vector_entry(doc_id)
             _sync_vector_entry(
-                doc_ref=doc_ref,
+                doc_key=doc_key,
                 document_id=doc_id,
                 content=new_body,
                 metadata=(
@@ -1667,15 +1541,13 @@ async def batch_read_documents(
     Pass ``full: true`` to get full content for all documents.
     """
     try:
-        db = _firestore()
+        _ensure_pg()
         results = []
         for doc_id in payload.paths:
-            doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-            snap = doc_ref.get()
-            if not getattr(snap, "exists", False):
+            data = pg_store.get_doc(KB_COLLECTION, _fs_key(doc_id))
+            if data is None:
                 results.append({"document_id": doc_id, "error": "not_found"})
                 continue
-            data = snap.to_dict() or {}
             if data.get("deleted_at") is not None:
                 results.append({"document_id": doc_id, "error": "deleted"})
                 continue
@@ -1713,22 +1585,21 @@ async def batch_read_documents(
 
 
 # ---------------- KB Document Read Endpoints ----------------
-# These expose Firestore KB documents for MCP tools (list + get).
+# These expose KB documents for MCP tools (list + get).
 # Distinct from /api/docs/* which serves GitHub-synced content.
 
 
 @app.get("/kb/list")
 async def list_kb_documents(prefix: str = ""):
-    """List KB documents from Firestore, optionally filtered by path prefix."""
+    """List KB documents from PostgreSQL, optionally filtered by path prefix."""
     try:
-        db = _firestore()
-        docs = list(db.collection(KB_COLLECTION).stream())
+        _ensure_pg()
+        docs = pg_store.stream_docs(KB_COLLECTION)
         items = []
-        for snap in docs:
-            data = snap.to_dict() or {}
+        for data in docs:
             if data.get("deleted_at") is not None:
                 continue
-            doc_id = data.get("document_id", snap.id)
+            doc_id = data.get("document_id", data.get("_key", ""))
             if prefix and not doc_id.startswith(prefix):
                 continue
             items.append(
@@ -1751,14 +1622,12 @@ async def list_kb_documents(prefix: str = ""):
 
 @app.get("/kb/get/{doc_id:path}")
 async def get_kb_document(doc_id: str = Path(..., min_length=1)):
-    """Get a single KB document's full content from Firestore."""
+    """Get a single KB document's full content from PostgreSQL."""
     try:
-        db = _firestore()
-        doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-        snap = doc_ref.get()
-        if not getattr(snap, "exists", False):
+        _ensure_pg()
+        data = pg_store.get_doc(KB_COLLECTION, _fs_key(doc_id))
+        if data is None:
             raise _error(404, "NOT_FOUND", "Document not found", document_id=doc_id)
-        data = snap.to_dict() or {}
         if data.get("deleted_at") is not None:
             raise _error(404, "NOT_FOUND", "Document deleted", document_id=doc_id)
         content = data.get("content", {})
@@ -1778,7 +1647,7 @@ async def get_kb_document(doc_id: str = Path(..., min_length=1)):
 
 @app.post("/kb/reindex", dependencies=[Depends(require_api_key)])
 async def reindex_kb_documents():
-    """Re-index all Firestore KB documents into Qdrant vector store.
+    """Re-index all KB documents into Qdrant vector store.
 
     Iterates every non-deleted document in KB_COLLECTION, upserts each
     into Qdrant with embeddings.  Returns counts of indexed/skipped/errors.
@@ -1792,19 +1661,18 @@ async def reindex_kb_documents():
             reason="missing QDRANT_URL/API_KEY/OPENAI_API_KEY",
         )
 
-    db = _firestore()
-    docs = list(db.collection(KB_COLLECTION).stream())
+    _ensure_pg()
+    docs = pg_store.stream_docs(KB_COLLECTION)
 
     indexed = 0
     skipped = 0
     errors = []
-    for snap in docs:
-        data = snap.to_dict() or {}
+    for data in docs:
         if data.get("deleted_at") is not None:
             skipped += 1
             continue
 
-        doc_id = data.get("document_id", snap.id)
+        doc_id = data.get("document_id", data.get("_key", ""))
         content = data.get("content") or {}
         body = content.get("body", "") if isinstance(content, dict) else ""
         if not body.strip():
@@ -1832,17 +1700,16 @@ async def reindex_kb_documents():
         else:
             indexed += 1
 
-            # Update Firestore vector_status
+            # Update PostgreSQL vector_status
             try:
-                doc_ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-                doc_ref.update({"vector_status": "ready"})
+                pg_store.update_doc(KB_COLLECTION, _fs_key(doc_id), {"vector_status": "ready"})
             except Exception:
                 pass
 
     vector_count = store.count()
     return {
         "status": "completed",
-        "firestore_total": len(docs),
+        "db_total": len(docs),
         "indexed": indexed,
         "skipped": skipped,
         "errors": errors,
@@ -1866,9 +1733,9 @@ class AuditSyncRequest(BaseModel):
 
 @app.post("/kb/cleanup-orphans", dependencies=[Depends(require_api_key)])
 async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
-    """Remove Qdrant vectors whose documents no longer exist in Firestore.
+    """Remove Qdrant vectors whose documents no longer exist in PostgreSQL.
 
-    Compares document_ids in Qdrant against Firestore KB and deletes orphans.
+    Compares document_ids in Qdrant against PostgreSQL KB and deletes orphans.
     Supports dry_run (default True) and max_delete safety limit.
     """
     if payload is None:
@@ -1888,18 +1755,15 @@ async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
             "qdrant_vectors": store.count(),
         }
 
-    db = _firestore()
+    _ensure_pg()
     orphan_ids: list[str] = []
     for doc_id in qdrant_doc_ids:
         try:
-            ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-            snap = ref.get()
-            if not getattr(snap, "exists", False):
+            data = pg_store.get_doc(KB_COLLECTION, _fs_key(doc_id))
+            if data is None:
                 orphan_ids.append(doc_id)
-            else:
-                data = snap.to_dict() or {}
-                if data.get("deleted_at") is not None:
-                    orphan_ids.append(doc_id)
+            elif data.get("deleted_at") is not None:
+                orphan_ids.append(doc_id)
         except Exception:
             pass
 
@@ -1917,7 +1781,7 @@ async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
             "qdrant_vectors": store.count(),
         }
 
-    result = _run_cleanup(store, db, orphan_ids, max_delete=payload.max_delete)
+    result = _run_cleanup(store, orphan_ids, max_delete=payload.max_delete)
     return {
         "mode": "execute",
         "orphans_found": result["orphans_found"],
@@ -1928,20 +1792,19 @@ async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
     }
 
 
-def _run_audit(store: Any, db: Any) -> dict[str, Any]:
-    """Internal: compare Firestore vs Qdrant and return audit result dict."""
-    docs = list(db.collection(KB_COLLECTION).stream())
+def _run_audit(store: Any, _unused: Any = None) -> dict[str, Any]:
+    """Internal: compare PostgreSQL vs Qdrant and return audit result dict."""
+    docs = pg_store.stream_docs(KB_COLLECTION)
 
-    firestore_ids: set[str] = set()
-    for snap in docs:
-        data = snap.to_dict() or {}
+    pg_ids: set[str] = set()
+    for data in docs:
         if data.get("deleted_at") is None:
-            doc_id = data.get("document_id", snap.id)
-            firestore_ids.add(doc_id)
+            doc_id = data.get("document_id", data.get("_key", ""))
+            pg_ids.add(doc_id)
 
     qdrant_ids = store.list_document_ids()
-    orphan_ids = sorted(qdrant_ids - firestore_ids)
-    ghost_ids = sorted(firestore_ids - qdrant_ids)
+    orphan_ids = sorted(qdrant_ids - pg_ids)
+    ghost_ids = sorted(pg_ids - qdrant_ids)
 
     status = "clean"
     recommendations: list[str] = []
@@ -1959,7 +1822,7 @@ def _run_audit(store: Any, db: Any) -> dict[str, Any]:
         )
 
     return {
-        "total_documents": len(firestore_ids),
+        "total_documents": len(pg_ids),
         "total_vectors": store.count(),
         "documents_without_vectors": ghost_ids,
         "ghost_count": len(ghost_ids),
@@ -1970,7 +1833,7 @@ def _run_audit(store: Any, db: Any) -> dict[str, Any]:
     }
 
 
-def _run_reindex(store: Any, db: Any, ghost_ids: list[str]) -> dict[str, Any]:
+def _run_reindex(store: Any, _unused: Any, ghost_ids: list[str]) -> dict[str, Any]:
     """Internal: re-ingest ghost documents into Qdrant."""
     reindexed = 0
     failed: list[dict[str, str]] = []
@@ -1978,14 +1841,12 @@ def _run_reindex(store: Any, db: Any, ghost_ids: list[str]) -> dict[str, Any]:
 
     for doc_id in ghost_ids:
         try:
-            ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-            snap = ref.get()
-            if not getattr(snap, "exists", False):
+            data = pg_store.get_doc(KB_COLLECTION, _fs_key(doc_id))
+            if data is None:
                 details.append({"document_id": doc_id, "status": "not_found"})
                 continue
-            data = snap.to_dict() or {}
         except Exception:
-            failed.append({"document_id": doc_id, "error": "firestore_read_failed"})
+            failed.append({"document_id": doc_id, "error": "pg_read_failed"})
             continue
 
         content = data.get("content") or {}
@@ -2016,8 +1877,7 @@ def _run_reindex(store: Any, db: Any, ghost_ids: list[str]) -> dict[str, Any]:
                 {"document_id": doc_id, "chunks_created": result.chunks_created}
             )
             try:
-                ref = db.collection(KB_COLLECTION).document(_fs_key(doc_id))
-                ref.update({"vector_status": "ready"})
+                pg_store.update_doc(KB_COLLECTION, _fs_key(doc_id), {"vector_status": "ready"})
             except Exception:
                 pass
 
@@ -2030,7 +1890,7 @@ def _run_reindex(store: Any, db: Any, ghost_ids: list[str]) -> dict[str, Any]:
 
 
 def _run_cleanup(
-    store: Any, db: Any, orphan_ids: list[str], max_delete: int = 100
+    store: Any, orphan_ids: list[str], max_delete: int = 100
 ) -> dict[str, Any]:
     """Internal: delete orphan vectors from Qdrant."""
     to_delete = orphan_ids[:max_delete]
@@ -2061,7 +1921,7 @@ def _run_cleanup(
 
 @app.post("/kb/audit-sync", dependencies=[Depends(require_api_key)])
 async def audit_sync(payload: AuditSyncRequest | None = None):
-    """Compare Firestore documents with Qdrant vectors and report mismatches.
+    """Compare PostgreSQL documents with Qdrant vectors and report mismatches.
 
     Returns orphans (vectors without docs) and ghosts (docs without vectors).
     When auto_heal=True, automatically fixes issues and runs a verification audit.
@@ -2073,8 +1933,8 @@ async def audit_sync(payload: AuditSyncRequest | None = None):
     if not store.enabled:
         raise _error(503, "UNAVAILABLE", "Vector store not available")
 
-    db = _firestore()
-    audit_before = _run_audit(store, db)
+    _ensure_pg()
+    audit_before = _run_audit(store)
 
     if not payload.auto_heal or audit_before["status"] == "clean":
         logger.info(
@@ -2102,7 +1962,7 @@ async def audit_sync(payload: AuditSyncRequest | None = None):
     # Fix ghosts (docs without vectors)
     if audit_before["ghost_count"] > 0:
         reindex_result = _run_reindex(
-            store, db, audit_before["documents_without_vectors"]
+            store, None, audit_before["documents_without_vectors"]
         )
         heal_report["reindex"] = reindex_result
         logger.info(
@@ -2117,7 +1977,7 @@ async def audit_sync(payload: AuditSyncRequest | None = None):
     # Fix orphans (vectors without docs)
     if audit_before["orphan_count"] > 0:
         cleanup_result = _run_cleanup(
-            store, db, audit_before["orphan_vector_document_ids"], max_delete=100
+            store, audit_before["orphan_vector_document_ids"], max_delete=100
         )
         heal_report["cleanup"] = cleanup_result
         logger.info(
@@ -2130,7 +1990,7 @@ async def audit_sync(payload: AuditSyncRequest | None = None):
         )
 
     # Verification audit
-    audit_after = _run_audit(store, db)
+    audit_after = _run_audit(store)
     heal_report["audit_before"] = audit_before
     heal_report["audit_after"] = audit_after
     heal_report["final_status"] = audit_after["status"]
@@ -2149,20 +2009,20 @@ async def audit_sync(payload: AuditSyncRequest | None = None):
 
 @app.post("/kb/reindex-missing", dependencies=[Depends(require_api_key)])
 async def reindex_missing():
-    """Re-index documents that exist in Firestore but have no vectors in Qdrant.
+    """Re-index documents that exist in PostgreSQL but have no vectors in Qdrant.
 
-    Reads content from Firestore and ingests into Qdrant using the standard
+    Reads content from PostgreSQL and ingests into Qdrant using the standard
     upsert flow. Only processes 'ghost' documents (active docs without vectors).
     """
     store = vector_store.get_vector_store(refresh=True)
     if not store.enabled:
         raise _error(503, "UNAVAILABLE", "Vector store not available")
 
-    db = _firestore()
-    audit = _run_audit(store, db)
+    _ensure_pg()
+    audit = _run_audit(store)
     ghost_ids = audit["documents_without_vectors"]
 
-    return _run_reindex(store, db, ghost_ids)
+    return _run_reindex(store, None, ghost_ids)
 
 
 # ---- Webhook / Event System API Endpoints ----

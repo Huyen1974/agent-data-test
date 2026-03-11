@@ -24,6 +24,9 @@ FROM python:3.11-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# Install libpq for psycopg2 runtime
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy installed site-packages and scripts from builder
