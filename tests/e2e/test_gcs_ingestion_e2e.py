@@ -3,6 +3,7 @@ import time
 
 import pytest
 import requests
+
 try:
     from google.cloud import firestore  # type: ignore
 except ImportError:
