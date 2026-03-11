@@ -85,28 +85,16 @@ jobs:
 
             echo ""
             echo "=== Step 4: Run data import ==="
-            # Run import script inside the postgres container
-            docker exec -e PG_HOST=localhost incomex-postgres python3 -c "
-            import json, os, sys
-            try:
-                import psycopg2
-                import psycopg2.extras
-            except ImportError:
-                # Install psycopg2 in postgres container
-                os.system('pip install psycopg2-binary')
-                import psycopg2
-                import psycopg2.extras
-            " 2>/dev/null || true
+            # Copy import script into running agent-data container
+            docker cp /opt/incomex/docker/agent-data-repo/scripts/import_firestore_to_pg.py incomex-agent-data:/tmp/import_firestore_to_pg.py
 
-            # Run import from agent-data container (it has psycopg2 and network access to postgres)
-            docker exec -e PG_HOST=postgres incomex-agent-data python3 /app/scripts/import_firestore_to_pg.py 2>&1 || {
-              echo "Import script not at /app/scripts. Trying repo path..."
-              docker exec -e PG_HOST=postgres incomex-agent-data python3 /opt/incomex/docker/agent-data-repo/scripts/import_firestore_to_pg.py 2>&1 || {
-                echo "Running import directly on host..."
-                cd /opt/incomex/docker/agent-data-repo
-                PG_HOST=localhost python3 scripts/import_firestore_to_pg.py 2>&1
-              }
-            }
+            # Also copy backup data into the container if it exists on host
+            if [ -d /opt/incomex/backups/gcp-pre-migration/firestore ]; then
+              docker cp /opt/incomex/backups/gcp-pre-migration/firestore incomex-agent-data:/opt/incomex/backups/gcp-pre-migration/firestore
+            fi
+
+            # Run import from agent-data container (has psycopg2 + network access to postgres)
+            docker exec -e PG_HOST=postgres incomex-agent-data python3 /tmp/import_firestore_to_pg.py 2>&1
 
             echo ""
             echo "=== Step 5: Verify document count ==="
