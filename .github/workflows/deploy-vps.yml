@@ -1,10 +1,14 @@
 name: Deploy Agent Data to VPS
 
 on:
-  workflow_run:
-    workflows: ["Artifact Registry CD"]
-    types: [completed]
+  push:
     branches: [main]
+    paths:
+      - 'agent_data/**'
+      - 'Dockerfile'
+      - 'requirements*.txt'
+      - 'pyproject.toml'
+      - '.github/workflows/deploy-vps.yml'
   workflow_dispatch:
 
 concurrency:
@@ -13,60 +17,46 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
-
-env:
-  REGION: asia-southeast1
-  PROJECT_ID: github-chatgpt-ggcloud
-  AGENT_DATA_IMAGE: asia-southeast1-docker.pkg.dev/github-chatgpt-ggcloud/agent-data/agent-data-test:latest
 
 jobs:
   deploy:
-    name: Deploy Agent Data to VPS
+    name: Build & Deploy to VPS
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        id: gcp-auth
-        uses: google-github-actions/auth@v2
-        with:
-          project_id: ${{ env.PROJECT_ID }}
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-          token_format: access_token
-
-      - name: Deploy to VPS
+      - name: Build & Deploy on VPS
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: AGENT_DATA_IMAGE
+          command_timeout: 10m
           script: |
             set -euo pipefail
+            cd /opt/incomex/docker/agent-data-repo
+
+            echo "=== Pulling latest code ==="
+            git fetch origin main
+            git reset --hard origin/main
+            echo "Commit: $(git log -1 --oneline)"
+
+            echo ""
+            echo "=== Building Docker image ==="
+            docker build -t agent-data-local:latest .
+
+            echo ""
+            echo "=== Deploying ==="
             cd /opt/incomex/docker
-
-            # Login to Artifact Registry
-            echo "${{ steps.gcp-auth.outputs.access_token }}" | \
-              docker login -u oauth2accesstoken --password-stdin ${{ env.REGION }}-docker.pkg.dev
-
-            echo "=== Pulling Agent Data image ==="
-            docker pull "$AGENT_DATA_IMAGE"
-
-            echo "=== Recreating agent-data service ==="
             docker compose up -d --no-build agent-data
 
             # Agent Data needs 35-45s warm-up for search to work
             echo "Waiting 45s for warm-up..."
             sleep 45
 
+            echo ""
             echo "=== Health Checks ==="
             FAILED=0
 
@@ -88,9 +78,7 @@ jobs:
 
             docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" | grep incomex-agent-data
 
-            docker logout ${{ env.REGION }}-docker.pkg.dev 2>/dev/null || true
-
-            # Post-deploy connection gate: document count sanity check
+            # Post-deploy: document count sanity check
             DOC_COUNT=$(curl -sf https://vps.incomexsaigoncorp.vn/api/health | python3 -c "import sys,json; print(json.load(sys.stdin)['data_integrity']['document_count'])" 2>/dev/null || echo 0)
             echo "Document count: $DOC_COUNT"
             if [[ $DOC_COUNT -lt 100 ]]; then

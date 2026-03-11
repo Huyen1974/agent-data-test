@@ -21,12 +21,10 @@ All changes follow the **2-Mũ (Two-Hat) process**:
 Never push directly to `main`. The pre-push hook blocks it. Always use feature branches and PRs.
 
 ### Rule 4: deploy
-Deploy to VPS only after PR merge to `main`:
-```bash
-ssh -i ~/.ssh/contabo_vps root@38.242.240.89 \
-  "cd /opt/incomex/docker && docker compose pull agent-data && docker compose up -d agent-data"
-```
-Verify with `/health` endpoint after deploy.
+Deploy to VPS is automated via GitHub Actions (`deploy-vps.yml`):
+- Push to `main` triggers: git pull on VPS → docker build → compose up → health check
+- Manual: `workflow_dispatch` on GitHub Actions
+- Verify with `/health` endpoint after deploy.
 
 ### Rule 5: search_first
 Before creating any document, search first: `search_knowledge('topic')` and `list_documents('prefix')`. Prevent duplicates. If a document exists, update it — don't create a new one.
