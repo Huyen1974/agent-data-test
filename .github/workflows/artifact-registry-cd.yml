@@ -1,15 +1,15 @@
-name: Artifact Registry CD
+name: Artifact Registry CD (DISABLED)
+
+# DISABLED: Migration S109 — now deploying directly to VPS
+# See deploy-vps.yml for the active deployment workflow
+# Keeping file for reference; remove after migration verified stable
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'agent_data/**'
-      - 'Dockerfile'
-      - 'requirements*.txt'
-      - 'pyproject.toml'
-      - '.github/workflows/artifact-registry-cd.yml'
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'yes' to run legacy AR build (emergency only)"
+        required: true
 
 concurrency:
   group: artifact-registry-cd-${{ github.ref }}
@@ -28,6 +28,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'yes'
     steps:
       - uses: actions/checkout@v4
 
