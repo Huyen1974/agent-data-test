@@ -28,13 +28,15 @@ jobs:
 
             echo "=== Vector-Document Audit (TD-131) ==="
 
-            # Get API key from .env
+            # Get API key from .env (try API_KEY first, then AGENT_DATA_API_KEY)
             cd /opt/incomex/docker
-            API_KEY=$(grep '^API_KEY=' .env 2>/dev/null | cut -d= -f2- || echo "")
+            set -a && source .env 2>/dev/null && set +a || true
+            API_KEY="${API_KEY:-${AGENT_DATA_API_KEY:-}}"
             if [[ -z "$API_KEY" ]]; then
-              echo "ERROR: API_KEY not found in .env"
+              echo "ERROR: Neither API_KEY nor AGENT_DATA_API_KEY found in .env"
               exit 1
             fi
+            echo "API key loaded from .env"
 
             AUTO_HEAL="${{ inputs.auto_heal }}"
 
