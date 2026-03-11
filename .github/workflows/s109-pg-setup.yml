@@ -88,8 +88,9 @@ jobs:
             # Copy import script into running agent-data container
             docker cp /opt/incomex/docker/agent-data-repo/scripts/import_firestore_to_pg.py incomex-agent-data:/tmp/import_firestore_to_pg.py
 
-            # Also copy backup data into the container if it exists on host
+            # Create backup dir in container and copy backup data
             if [ -d /opt/incomex/backups/gcp-pre-migration/firestore ]; then
+              docker exec incomex-agent-data mkdir -p /opt/incomex/backups/gcp-pre-migration
               docker cp /opt/incomex/backups/gcp-pre-migration/firestore incomex-agent-data:/opt/incomex/backups/gcp-pre-migration/firestore
             fi
 
