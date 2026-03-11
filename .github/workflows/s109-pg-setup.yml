@@ -99,7 +99,14 @@ jobs:
 
             echo ""
             echo "=== Step 5: Verify document count ==="
-            docker exec incomex-postgres psql -U incomex -d incomex_metadata -c "SELECT count(*) FROM kb_documents;" 2>&1
+            docker exec -e PG_HOST=postgres incomex-agent-data python3 -c "
+            from agent_data import pg_store
+            pg_store.init_pool()
+            docs = pg_store.stream_docs('kb_documents')
+            print(f'kb_documents count: {len(docs)}')
+            active = [d for d in docs if d.get('deleted_at') is None]
+            print(f'Active documents: {len(active)}')
+            " 2>&1
 
             echo ""
             echo "=== Step 6: Restart agent-data to pick up data ==="
