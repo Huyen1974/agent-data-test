@@ -385,7 +385,6 @@ async def probe_postgres() -> bool:
     try:
         from agent_data import pg_store
 
-        t0 = time.monotonic()
         ok, latency = await asyncio.to_thread(pg_store.probe)
         if ok:
             health_registry.mark_healthy("postgres", latency)
