@@ -1,0 +1,87 @@
+name: "Vector Audit & Cleanup"
+
+on:
+  workflow_dispatch:
+    inputs:
+      auto_heal:
+        description: "Auto-heal orphans and ghosts"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Vector-Document Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run vector audit
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+
+            echo "=== Vector-Document Audit (TD-131) ==="
+
+            # Get API key from .env
+            cd /opt/incomex/docker
+            API_KEY=$(grep '^API_KEY=' .env 2>/dev/null | cut -d= -f2- || echo "")
+            if [[ -z "$API_KEY" ]]; then
+              echo "ERROR: API_KEY not found in .env"
+              exit 1
+            fi
+
+            AUTO_HEAL="${{ inputs.auto_heal }}"
+
+            echo ""
+            echo "=== Step 1: Health Check ==="
+            HEALTH=$(curl -sf http://localhost:8000/health 2>/dev/null || echo '{}')
+            echo "$HEALTH" | python3 -m json.tool
+
+            DOC_COUNT=$(echo "$HEALTH" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data_integrity',{}).get('document_count',0))" 2>/dev/null || echo 0)
+            VEC_COUNT=$(echo "$HEALTH" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data_integrity',{}).get('vector_point_count',0))" 2>/dev/null || echo 0)
+            RATIO=$(echo "$HEALTH" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data_integrity',{}).get('ratio',0))" 2>/dev/null || echo 0)
+            SYNC=$(echo "$HEALTH" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data_integrity',{}).get('sync_status','unknown'))" 2>/dev/null || echo "unknown")
+
+            echo ""
+            echo "Documents: $DOC_COUNT"
+            echo "Vectors:   $VEC_COUNT"
+            echo "Ratio:     $RATIO"
+            echo "Status:    $SYNC"
+
+            echo ""
+            echo "=== Step 2: Detailed Audit ==="
+            AUDIT=$(curl -sf -X POST http://localhost:8000/kb/audit-sync \
+              -H "Content-Type: application/json" \
+              -H "X-API-Key: $API_KEY" \
+              -d "{\"auto_heal\": $AUTO_HEAL}" 2>/dev/null || echo '{"error":"audit failed"}')
+            echo "$AUDIT" | python3 -m json.tool
+
+            ORPHAN_COUNT=$(echo "$AUDIT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('orphan_count', d.get('audit_before',{}).get('orphan_count',0)))" 2>/dev/null || echo "?")
+            GHOST_COUNT=$(echo "$AUDIT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('ghost_count', d.get('audit_before',{}).get('ghost_count',0)))" 2>/dev/null || echo "?")
+
+            echo ""
+            echo "Orphan vectors: $ORPHAN_COUNT"
+            echo "Ghost documents: $GHOST_COUNT"
+
+            if [[ "$AUTO_HEAL" == "true" ]]; then
+              echo ""
+              echo "=== Step 3: Post-Heal Health Check ==="
+              sleep 5
+              HEALTH2=$(curl -sf http://localhost:8000/health 2>/dev/null || echo '{}')
+              echo "$HEALTH2" | python3 -m json.tool
+
+              NEW_RATIO=$(echo "$HEALTH2" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data_integrity',{}).get('ratio',0))" 2>/dev/null || echo 0)
+              NEW_SYNC=$(echo "$HEALTH2" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data_integrity',{}).get('sync_status','unknown'))" 2>/dev/null || echo "unknown")
+              echo ""
+              echo "New ratio: $NEW_RATIO (was $RATIO)"
+              echo "New status: $NEW_SYNC (was $SYNC)"
+            fi
+
+            echo ""
+            echo "=== Audit complete ==="
