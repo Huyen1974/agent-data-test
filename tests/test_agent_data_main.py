@@ -1,7 +1,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.api_core import exceptions
 
 from agent_data.main import AgentData, AgentDataConfig
 
@@ -46,9 +45,7 @@ def test_agent_data_config_handling():
 def test_gcs_ingest_is_registered_tool():
     """Verify the gcs_ingest tool is registered and callable.
 
-    Ensures that the AgentData instance exposes the tool name in a tools
-    collection for simple discovery, and that calling the tool method returns
-    the expected placeholder message containing the input URI.
+    Since S109, gcs_ingest returns a disabled message for all URIs.
     """
 
     cfg = AgentDataConfig()
@@ -60,211 +57,93 @@ def test_gcs_ingest_is_registered_tool():
     assert hasattr(agent, "tools"), "Agent should expose a tools collection"
     assert "gcs_ingest" in agent.tools
 
-    # Verify placeholder logic returns the URI
+    # Verify disabled message returns the URI
     uri = "gs://fake-bucket/test.pdf"
     result = agent.gcs_ingest(uri)
     assert uri in result
+    assert "disabled" in result.lower()
 
 
 @pytest.mark.unit
-@patch("agent_data.main.storage")
-def test_gcs_ingest_download_success(
-    mock_storage: MagicMock, monkeypatch: pytest.MonkeyPatch
+def test_gcs_ingest_returns_disabled_message():
+    """After S109 migration, gcs_ingest always returns disabled message."""
+
+    cfg = AgentDataConfig()
+    cfg.vecdb = None
+    agent = AgentData(cfg)
+
+    result = agent.gcs_ingest("gs://test-bucket/test.txt")
+    assert "disabled" in result.lower()
+    assert "inline text ingestion" in result.lower()
+
+
+@pytest.mark.unit
+def test_gcs_ingest_disabled_for_any_uri():
+    """gcs_ingest returns disabled message regardless of URI format."""
+
+    cfg = AgentDataConfig()
+    cfg.vecdb = None
+    agent = AgentData(cfg)
+
+    for uri in [
+        "gs://bucket/file.txt",
+        "http://not-a-gcs-uri",
+        "gs://bucket-only",
+        "gs://bucket/",
+    ]:
+        res = agent.gcs_ingest(uri)
+        assert "disabled" in res.lower(), f"Expected disabled message for {uri}"
+
+
+@pytest.mark.unit
+@patch("agent_data.main.PostgresChatHistory")
+def test_agent_data_initializes_chat_history(mock_pch):
+    """AgentData should initialize PostgresChatHistory and assign to history."""
+
+    cfg = AgentDataConfig()
+    cfg.vecdb = None
+    agent = AgentData(cfg)
+
+    mock_pch.assert_called_once()
+    assert agent.history is mock_pch.return_value
+
+
+# ==== PostgreSQL metadata tool tests ====
+
+
+@pytest.mark.unit
+@patch("agent_data.pg_store.set_doc")
+@patch("agent_data.pg_store.init_pool")
+@patch("agent_data.pg_store.ensure_tables")
+def test_add_metadata_tool_calls_pg_store(
+    mock_ensure: MagicMock,
+    mock_init: MagicMock,
+    mock_set_doc: MagicMock,
 ):
-    """Mock a successful GCS download via storage.Client and ensure it's called."""
-
-    # Arrange: mock storage client, bucket, and blob
-    mock_client = MagicMock()
-    mock_bucket = MagicMock()
-    mock_blob = MagicMock()
-
-    mock_storage.Client.return_value = mock_client
-    mock_client.bucket.return_value = mock_bucket
-    mock_bucket.blob.return_value = mock_blob
+    """Ensure add_metadata parses JSON and calls pg_store.set_doc."""
 
     cfg = AgentDataConfig()
     cfg.vecdb = None
     agent = AgentData(cfg)
 
-    # Act + Assert within patched ingest_doc_paths
-    # Ensure caching path executes by faking file reads to return content
-    monkeypatch.setattr(
-        "pathlib.Path.read_text", lambda self, **kwargs: "Framework text"
-    )
-
-    with patch.object(
-        agent, "ingest_doc_paths", return_value="Mock ingestion result."
-    ) as mock_ingest:
-        uri = "gs://test-bucket/test.txt"
-        result = agent.gcs_ingest(uri)
-
-        # Ensure download and ingestion were invoked
-        mock_blob.download_to_filename.assert_called_once()
-        mock_ingest.assert_called_once()
-
-        # Result should include mocked ingestion output
-        assert "Mock ingestion result." in result
-        # last_ingested_text should be set from our fake content
-        assert agent.last_ingested_text == "Framework text"
-
-
-@pytest.mark.unit
-@patch("agent_data.main.storage")
-def test_gcs_ingest_handles_not_found_error(mock_storage: MagicMock):
-    """Ensure NotFound errors are translated into a friendly message."""
-
-    mock_client = MagicMock()
-    mock_bucket = MagicMock()
-    mock_blob = MagicMock()
-
-    mock_storage.Client.return_value = mock_client
-    mock_client.bucket.return_value = mock_bucket
-    mock_bucket.blob.return_value = mock_blob
-
-    # Configure the blob to raise NotFound from google.api_core.exceptions
-    mock_blob.download_to_filename.side_effect = exceptions.NotFound("not found")
-
-    cfg = AgentDataConfig()
-    cfg.vecdb = None
-    agent = AgentData(cfg)
-
-    uri = "gs://test-bucket/missing.txt"
-    result = agent.gcs_ingest(uri)
-
-    assert "File not found" in result
-
-
-@pytest.mark.unit
-def test_gcs_ingest_missing_client_libraries(monkeypatch: pytest.MonkeyPatch):
-    """When GCS client libs are unavailable, method returns helpful message."""
-
-    import agent_data.main as adm
-
-    # Simulate unavailable google-cloud libraries
-    monkeypatch.setattr(adm, "storage", None, raising=False)
-    monkeypatch.setattr(adm, "exceptions", None, raising=False)
-
-    cfg = AgentDataConfig()
-    cfg.vecdb = None
-    agent = AgentData(cfg)
-
-    res = agent.gcs_ingest("gs://bucket/obj.txt")
-    assert "GCS client libraries not available" in res
-
-
-@pytest.mark.unit
-@patch("agent_data.main.storage")
-def test_gcs_ingest_handles_forbidden_error(mock_storage: MagicMock):
-    """Ensure Forbidden errors produce an access message."""
-
-    mock_client = MagicMock()
-    mock_bucket = MagicMock()
-    mock_blob = MagicMock()
-    mock_storage.Client.return_value = mock_client
-    mock_client.bucket.return_value = mock_bucket
-    mock_bucket.blob.return_value = mock_blob
-
-    mock_blob.download_to_filename.side_effect = exceptions.Forbidden("forbidden")
-
-    cfg = AgentDataConfig()
-    cfg.vecdb = None
-    agent = AgentData(cfg)
-
-    res = agent.gcs_ingest("gs://bucket/protected.txt")
-    assert "Access forbidden" in res
-
-
-@pytest.mark.unit
-def test_gcs_ingest_invalid_uri_returns_failure_message():
-    """Invalid URI should be handled and return a failure message."""
-
-    cfg = AgentDataConfig()
-    cfg.vecdb = None
-    agent = AgentData(cfg)
-
-    res = agent.gcs_ingest("http://not-a-gcs-uri")
-    assert "Failed to download" in res
-
-
-@pytest.mark.unit
-@patch("agent_data.main.FirestoreChatHistory")
-def test_agent_data_initializes_firestore_history(mock_fsh):
-    """AgentData should initialize FirestoreChatHistory and assign to history.
-
-    Verifies the integration point by asserting the class is instantiated
-    once and the resulting instance is assigned to agent.history.
-    """
-
-    cfg = AgentDataConfig()
-    cfg.vecdb = None
-    agent = AgentData(cfg)
-
-    mock_fsh.assert_called_once()
-    assert agent.history is mock_fsh.return_value
-
-
-@pytest.mark.unit
-def test_gcs_ingest_invalid_uri_missing_object_path():
-    """URI missing object path should be handled with failure message."""
-
-    cfg = AgentDataConfig()
-    cfg.vecdb = None
-    agent = AgentData(cfg)
-
-    res = agent.gcs_ingest("gs://bucket-only")
-    assert "Failed to download" in res
-
-
-@pytest.mark.unit
-def test_gcs_ingest_invalid_uri_empty_blob():
-    """URI with empty blob path should be handled with failure message."""
-
-    cfg = AgentDataConfig()
-    cfg.vecdb = None
-    agent = AgentData(cfg)
-
-    res = agent.gcs_ingest("gs://bucket/")
-    assert "Failed to download" in res
-
-
-# ==== Firestore tool skeleton tests ====
-
-
-@pytest.mark.unit
-@patch("agent_data.main.firestore")
-def test_add_metadata_tool_calls_firestore(mock_firestore: MagicMock):
-    """Ensure add_metadata parses JSON and calls Firestore .set with dict."""
-
-    # Arrange Firestore mock chain
-    client = mock_firestore.Client.return_value
-    coll = client.collection.return_value
-    doc_ref = coll.document.return_value
-
-    cfg = AgentDataConfig()
-    cfg.vecdb = None
-    agent = AgentData(cfg)
-
-    # Act
     result = agent.add_metadata(document_id="doc1", metadata_json='{"data":"test"}')
 
-    # Assert
     assert "saved" in result
-    doc_ref.set.assert_called_once_with({"data": "test"})
+    mock_set_doc.assert_called_once_with("metadata_store", "doc1", {"data": "test"})
 
 
 @pytest.mark.unit
-@patch("agent_data.main.firestore")
-def test_get_metadata_tool_returns_json(mock_firestore: MagicMock):
-    """Ensure get_metadata returns JSON from Firestore doc."""
+@patch("agent_data.pg_store.get_doc")
+@patch("agent_data.pg_store.init_pool")
+@patch("agent_data.pg_store.ensure_tables")
+def test_get_metadata_tool_returns_json(
+    mock_ensure: MagicMock,
+    mock_init: MagicMock,
+    mock_get_doc: MagicMock,
+):
+    """Ensure get_metadata returns JSON from pg_store."""
 
-    client = mock_firestore.Client.return_value
-    coll = client.collection.return_value
-    doc_ref = coll.document.return_value
-    # Mock a document snapshot
-    doc = MagicMock()
-    doc.exists = True
-    doc.to_dict.return_value = {"data": "mock_value"}
-    doc_ref.get.return_value = doc
+    mock_get_doc.return_value = {"data": "mock_value"}
 
     cfg = AgentDataConfig()
     cfg.vecdb = None
@@ -272,19 +151,21 @@ def test_get_metadata_tool_returns_json(mock_firestore: MagicMock):
 
     out = agent.get_metadata("doc1")
     assert out == '{"data": "mock_value"}' or out == '{"data":"mock_value"}'
+    mock_get_doc.assert_called_once_with("metadata_store", "doc1")
 
 
 @pytest.mark.unit
-@patch("agent_data.main.firestore")
-def test_get_metadata_tool_not_found(mock_firestore: MagicMock):
+@patch("agent_data.pg_store.get_doc")
+@patch("agent_data.pg_store.init_pool")
+@patch("agent_data.pg_store.ensure_tables")
+def test_get_metadata_tool_not_found(
+    mock_ensure: MagicMock,
+    mock_init: MagicMock,
+    mock_get_doc: MagicMock,
+):
     """Ensure get_metadata returns not-found when doc does not exist."""
 
-    client = mock_firestore.Client.return_value
-    coll = client.collection.return_value
-    doc_ref = coll.document.return_value
-    doc = MagicMock()
-    doc.exists = False
-    doc_ref.get.return_value = doc
+    mock_get_doc.return_value = None
 
     cfg = AgentDataConfig()
     cfg.vecdb = None
@@ -295,13 +176,15 @@ def test_get_metadata_tool_not_found(mock_firestore: MagicMock):
 
 
 @pytest.mark.unit
-@patch("agent_data.main.firestore")
-def test_update_status_tool_calls_firestore(mock_firestore: MagicMock):
-    """Ensure update_ingestion_status calls Firestore .update with correct dict."""
-
-    client = mock_firestore.Client.return_value
-    coll = client.collection.return_value
-    doc_ref = coll.document.return_value
+@patch("agent_data.pg_store.update_doc")
+@patch("agent_data.pg_store.init_pool")
+@patch("agent_data.pg_store.ensure_tables")
+def test_update_status_tool_calls_pg_store(
+    mock_ensure: MagicMock,
+    mock_init: MagicMock,
+    mock_update_doc: MagicMock,
+):
+    """Ensure update_ingestion_status calls pg_store.update_doc."""
 
     cfg = AgentDataConfig()
     cfg.vecdb = None
@@ -309,17 +192,21 @@ def test_update_status_tool_calls_firestore(mock_firestore: MagicMock):
 
     out = agent.update_ingestion_status(document_id="doc1", status="completed")
     assert "updated to 'completed'" in out
-    doc_ref.update.assert_called_once_with({"ingestion_status": "completed"})
+    mock_update_doc.assert_called_once_with(
+        "metadata_store", "doc1", {"ingestion_status": "completed"}
+    )
 
 
 @pytest.mark.unit
-@patch("agent_data.main.firestore")
 @patch("agent_data.main.AgentData.add_metadata")
 @patch("langroid.agent.special.doc_chat_agent.DocChatAgent.ingest_doc_paths")
+@patch("agent_data.pg_store.init_pool")
+@patch("agent_data.pg_store.ensure_tables")
 def test_ingest_doc_paths_override_saves_metadata(
+    mock_ensure: MagicMock,
+    mock_init: MagicMock,
     mock_super_ingest: MagicMock,
     mock_add_metadata: MagicMock,
-    mock_firestore: MagicMock,
 ):
     """Override calls parent ingest and persists metadata per path (skip bytes)."""
 
@@ -342,23 +229,13 @@ def test_ingest_doc_paths_override_saves_metadata(
 
 
 @pytest.mark.unit
-@patch("agent_data.main.storage")
-def test_gcs_ingest_handles_api_error(mock_storage: MagicMock):
-    """Simulate a generic Google API error during download."""
-
-    mock_client = MagicMock()
-    mock_bucket = MagicMock()
-    mock_blob = MagicMock()
-
-    mock_storage.Client.return_value = mock_client
-    mock_client.bucket.return_value = mock_bucket
-    mock_bucket.blob.return_value = mock_blob
-
-    mock_blob.download_to_filename.side_effect = exceptions.GoogleAPICallError("boom")
+def test_add_metadata_no_db():
+    """When PostgreSQL is not initialized, add_metadata returns error message."""
 
     cfg = AgentDataConfig()
     cfg.vecdb = None
     agent = AgentData(cfg)
+    agent.db = None
 
-    res = agent.gcs_ingest("gs://bucket/file.txt")
-    assert "GCS API error" in res
+    result = agent.add_metadata(document_id="doc1", metadata_json='{"data":"test"}')
+    assert "not initialized" in result.lower()

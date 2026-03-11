@@ -1,69 +1,47 @@
+from __future__ import annotations
+
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 import agent_data.server as server
 
-
-class _Snap:
-    def __init__(self, data, exists):
-        self._data = dict(data)
-        self._exists = exists
-
-    @property
-    def exists(self):
-        return self._exists
-
-    def to_dict(self):
-        return dict(self._data)
-
-
-class _Doc:
-    def __init__(self, store, doc_id):
-        self._store = store
-        self._id = doc_id
-
-    def set(self, data):
-        self._store[self._id] = dict(data)
-
-    def update(self, updates):
-        self._store[self._id].update(dict(updates))
-
-    def get(self):
-        if self._id in self._store:
-            return _Snap(self._store[self._id], True)
-        return _Snap({}, False)
-
-
-class _Col:
-    def __init__(self, buckets):
-        self._buckets = buckets
-
-    def document(self, doc_id):
-        return _Doc(self._buckets, doc_id)
-
-
-class _FS:
-    def __init__(self):
-        self._collections = {}
-
-    def collection(self, name):
-        if name not in self._collections:
-            self._collections[name] = {}
-        return _Col(self._collections[name])
-
-
 pytestmark = pytest.mark.e2e
 
 
-def _setup_fake_db(monkeypatch):
-    fake = _FS()
-    monkeypatch.setattr(server, "agent", server.agent)
-    server.agent.db = fake
-    return fake
+def _setup_pg_mocks():
+    """Set agent.db = True and return pg_store patches + in-memory store."""
+    server.agent.db = True
+    store: dict[str, dict] = {}
+
+    def fake_get(collection, key):
+        return store.get(key)
+
+    def fake_set(collection, key, data):
+        store[key] = dict(data)
+
+    def fake_update(collection, key, updates):
+        if key in store:
+            store[key].update(updates)
+
+    def fake_stream(collection):
+        return [{"_key": k, **v} for k, v in store.items()]
+
+    return store, fake_get, fake_set, fake_update, fake_stream
 
 
-def test_kb_crud_endpoints(monkeypatch):
-    _setup_fake_db(monkeypatch)
+@patch("agent_data.pg_store.stream_docs")
+@patch("agent_data.pg_store.update_doc")
+@patch("agent_data.pg_store.set_doc")
+@patch("agent_data.pg_store.get_doc")
+def test_kb_crud_endpoints(mock_get, mock_set, mock_update, mock_stream, monkeypatch):
+    store, fake_get, fake_set, fake_update, fake_stream = _setup_pg_mocks()
+    mock_get.side_effect = fake_get
+    mock_set.side_effect = fake_set
+    mock_update.side_effect = fake_update
+    mock_stream.side_effect = fake_stream
+
     client = TestClient(server.app)
     monkeypatch.setenv("API_KEY", "test-key")
 

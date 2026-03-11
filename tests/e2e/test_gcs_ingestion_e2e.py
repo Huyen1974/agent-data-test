@@ -3,7 +3,11 @@ import time
 
 import pytest
 import requests
-from google.cloud import firestore
+
+try:
+    from google.cloud import firestore  # type: ignore
+except ImportError:
+    firestore = None  # S109: Firestore removed, tests will be skipped
 
 import agent_data.main as _main  # noqa: F401
 

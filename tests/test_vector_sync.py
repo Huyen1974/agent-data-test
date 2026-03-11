@@ -14,70 +14,13 @@ Verifies that:
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 import agent_data.server as server
 import agent_data.vector_store as vs_mod
-
-# ---- Fake Firestore helpers (reused from unit tests) ----
-
-
-class _Snap:
-    def __init__(self, data=None, exists=True):
-        self._data = dict(data or {})
-        self._exists = exists
-
-    @property
-    def exists(self):
-        return self._exists
-
-    def to_dict(self):
-        return dict(self._data)
-
-
-class _Doc:
-    def __init__(self, store, doc_id):
-        self._store = store
-        self._id = doc_id
-
-    def set(self, data):
-        self._store[self._id] = dict(data)
-
-    def update(self, updates):
-        if self._id in self._store:
-            self._store[self._id].update(dict(updates))
-
-    def get(self):
-        if self._id not in self._store:
-            return _Snap(exists=False)
-        return _Snap(self._store[self._id])
-
-
-class _Col:
-    def __init__(self, buckets):
-        self._buckets = buckets
-
-    def document(self, doc_id):
-        return _Doc(self._buckets, doc_id)
-
-    def stream(self):
-        for key, data in self._buckets.items():
-            snap = _Snap(data)
-            snap.id = key
-            yield snap
-
-
-class _FS:
-    def __init__(self):
-        self._collections: dict[str, dict] = {}
-
-    def collection(self, name):
-        if name not in self._collections:
-            self._collections[name] = {}
-        return _Col(self._collections[name])
-
 
 # ---- Fake vector store that tracks calls ----
 
@@ -159,10 +102,34 @@ def env(monkeypatch):
 
 
 @pytest.fixture()
-def fake_db(monkeypatch):
-    fake = _FS()
-    server.agent.db = fake
-    return fake
+def pg_mocks(monkeypatch):
+    """Mock pg_store with an in-memory dict and set agent.db = True."""
+    server.agent.db = True
+    store: dict[str, dict] = {}
+
+    def fake_get(collection, key):
+        return store.get(key)
+
+    def fake_set(collection, key, data):
+        store[key] = dict(data)
+
+    def fake_update(collection, key, updates):
+        if key in store:
+            store[key].update(updates)
+
+    def fake_stream(collection):
+        return [{"_key": k, **v} for k, v in store.items()]
+
+    patches = {
+        "get": patch("agent_data.pg_store.get_doc", side_effect=fake_get),
+        "set": patch("agent_data.pg_store.set_doc", side_effect=fake_set),
+        "update": patch("agent_data.pg_store.update_doc", side_effect=fake_update),
+        "stream": patch("agent_data.pg_store.stream_docs", side_effect=fake_stream),
+    }
+    mocks = {name: p.start() for name, p in patches.items()}
+    yield {"store": store, "mocks": mocks}
+    for p in patches.values():
+        p.stop()
 
 
 @pytest.fixture()
@@ -174,7 +141,7 @@ def fake_vs(monkeypatch):
 
 
 @pytest.fixture()
-def client(env, fake_db, fake_vs):
+def client(env, pg_mocks, fake_vs):
     return TestClient(server.app)
 
 
@@ -195,7 +162,7 @@ def _create_doc(client, doc_id="test-doc", body="Original content", **kwargs):
 
 
 # ===================================================================
-# Phase 1 Tests — Vector Sync on UPDATE
+# Phase 1 Tests -- Vector Sync on UPDATE
 # ===================================================================
 
 
@@ -316,7 +283,9 @@ class TestUpdateVectorSync:
     def test_update_multi_chunk_deletes_all_old_chunks(self, client, fake_vs):
         """Long document with multiple chunks: ALL old chunks deleted on update."""
         # Create a long document that will produce multiple chunks
-        long_body = "Section A about elephants. " * 100  # ~2700 chars → multiple chunks
+        long_body = (
+            "Section A about elephants. " * 100
+        )  # ~2700 chars -> multiple chunks
         _create_doc(client, body=long_body)
 
         old_chunk_count = fake_vs.count_by_document_id("test-doc")
@@ -351,7 +320,7 @@ class TestUpdateVectorSync:
 
 
 # ===================================================================
-# Phase 1 Tests — Vector Sync on MOVE
+# Phase 1 Tests -- Vector Sync on MOVE
 # ===================================================================
 
 
@@ -385,7 +354,7 @@ class TestMoveVectorSync:
 
 
 # ===================================================================
-# Phase 1 Tests — Vector Sync on DELETE
+# Phase 1 Tests -- Vector Sync on DELETE
 # ===================================================================
 
 
@@ -407,7 +376,7 @@ class TestDeleteVectorSync:
 
 
 # ===================================================================
-# Phase 1 Tests — count_by_document_id
+# Phase 1 Tests -- count_by_document_id
 # ===================================================================
 
 
