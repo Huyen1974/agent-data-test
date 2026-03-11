@@ -17,13 +17,13 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agent_data.memory import PostgresChatHistory
-
 from langroid.agent.special.doc_chat_agent import (
     DocChatAgent,
     DocChatAgentConfig,
 )
 from langroid.agent.tool_message import ToolMessage  # noqa: F401
+
+from agent_data.memory import PostgresChatHistory
 
 try:  # prefer canonical location
     from langroid.agent.chat_agent import tool  # type: ignore
