@@ -145,6 +145,7 @@ omit = [
     "agent_data/cli.py",
     "agent_data/pubsub_*",
     "agent_data/server.py",
+    "agent_data/pg_store.py",
 ]
 
 [tool.coverage.report]
