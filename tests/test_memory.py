@@ -1,74 +1,63 @@
-from unittest.mock import Mock, patch
+"""Tests for PostgresChatHistory (formerly FirestoreChatHistory)."""
+
+from unittest.mock import patch
 
 import pytest
 
-from agent_data.memory import FirestoreChatHistory
+from agent_data.memory import FirestoreChatHistory, PostgresChatHistory
 
 # Mark all tests in this module as unit tests
 pytestmark = pytest.mark.unit
 
 
+def test_backward_compat_alias():
+    assert FirestoreChatHistory is PostgresChatHistory
+
+
 def test_init_sets_attributes_and_calls_super():
-    client = Mock()
     with patch(
         "agent_data.memory.ChatHistory.__init__", return_value=None
     ) as super_init:
-        inst = FirestoreChatHistory(session_id="session-123", firestore_client=client)
+        inst = PostgresChatHistory(session_id="session-123")
         super_init.assert_called_once()
 
     assert inst.session_id == "session-123"
-    assert inst.client is client
 
 
-def test_add_messages_raises_not_implemented():
-    # Now implemented: verify Firestore add called with serialized data
-    client = Mock()
-    coll = client.collection.return_value.document.return_value.collection.return_value
-    inst = FirestoreChatHistory(session_id="s", firestore_client=client)
+@patch("agent_data.pg_store.add_chat_message")
+def test_add_messages_single_dict(mock_add):
+    inst = PostgresChatHistory(session_id="s")
     inst.add_messages({"role": "user", "content": "hi"})
-    assert coll.add.called
+    mock_add.assert_called_once_with(session_id="s", role="user", content="hi")
 
 
-def test_get_messages_raises_not_implemented():
-    # Mock Firestore stream to return snapshots with to_dict
-    class Snap:
-        def __init__(self, data):
-            self._d = data
+@patch("agent_data.pg_store.add_chat_message")
+def test_add_messages_list(mock_add):
+    inst = PostgresChatHistory(session_id="s")
+    inst.add_messages(
+        [
+            {"role": "user", "content": "a"},
+            {"role": "assistant", "content": "b"},
+        ]
+    )
+    assert mock_add.call_count == 2
 
-        def to_dict(self):
-            return self._d
 
-    client = Mock()
-    coll = client.collection.return_value.document.return_value.collection.return_value
-    # order_by().stream() → iterable of snapshots
-    coll.order_by.return_value.stream.return_value = [
-        Snap({"role": "user", "content": "a", "ts": 1}),
-        Snap({"role": "assistant", "content": "b", "ts": 2}),
+@patch("agent_data.pg_store.get_chat_messages")
+def test_get_messages(mock_get):
+    mock_get.return_value = [
+        {"role": "user", "content": "a", "ts": 1},
+        {"role": "assistant", "content": "b", "ts": 2},
     ]
-    inst = FirestoreChatHistory(session_id="s", firestore_client=client)
+    inst = PostgresChatHistory(session_id="s")
     msgs = inst.get_messages()
     assert isinstance(msgs, list) and len(msgs) == 2
     assert msgs[0]["role"] == "user" and msgs[0]["content"] == "a"
+    mock_get.assert_called_once_with("s")
 
 
-def test_clear_raises_not_implemented():
-    # Mock Firestore stream deleting each snapshot's reference
-    class Ref:
-        def __init__(self):
-            self.deleted = False
-
-        def delete(self):
-            self.deleted = True
-
-    class Snap:
-        def __init__(self):
-            self.reference = Ref()
-
-    client = Mock()
-    coll = client.collection.return_value.document.return_value.collection.return_value
-    snaps = [Snap(), Snap()]
-    coll.stream.return_value = snaps
-
-    inst = FirestoreChatHistory(session_id="s", firestore_client=client)
+@patch("agent_data.pg_store.clear_chat_messages")
+def test_clear(mock_clear):
+    inst = PostgresChatHistory(session_id="s")
     inst.clear()
-    assert all(s.reference.deleted for s in snaps)
+    mock_clear.assert_called_once_with("s")
