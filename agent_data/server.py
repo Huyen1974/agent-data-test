@@ -490,7 +490,7 @@ async def serve_openapi_spec():
     return RedirectResponse(url="/openapi.json", status_code=301)
 
 
-@app.post("/ingest", response_model=ChatResponse, status_code=202)
+@app.post("/ingest", response_model=ChatResponse, status_code=202, dependencies=[Depends(require_api_key)])
 async def ingest(message: ChatMessage):
     """Ingest inline text into the knowledge base.
 
@@ -569,7 +569,7 @@ async def ingest(message: ChatMessage):
         raise _error(500, "INTERNAL", "Failed to ingest", error=str(e)) from e
 
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_api_key)])
 def query_knowledge(payload: QueryKnowledgeRequest):
     """Query knowledge base using RAG flow per MCP contract.
 
@@ -1587,7 +1587,7 @@ async def batch_read_documents(
 # Distinct from /api/docs/* which serves GitHub-synced content.
 
 
-@app.get("/kb/list")
+@app.get("/kb/list", dependencies=[Depends(require_api_key)])
 async def list_kb_documents(prefix: str = ""):
     """List KB documents from PostgreSQL, optionally filtered by path prefix."""
     try:
@@ -1618,7 +1618,7 @@ async def list_kb_documents(prefix: str = ""):
         raise _error(500, "INTERNAL", "List KB documents failed", error=str(e)) from e
 
 
-@app.get("/kb/get/{doc_id:path}")
+@app.get("/kb/get/{doc_id:path}", dependencies=[Depends(require_api_key)])
 async def get_kb_document(doc_id: str = Path(..., min_length=1)):
     """Get a single KB document's full content from PostgreSQL."""
     try:
