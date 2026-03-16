@@ -1756,16 +1756,14 @@ async def cleanup_orphan_vectors(payload: CleanupOrphansRequest | None = None):
         }
 
     _ensure_pg()
-    orphan_ids: list[str] = []
-    for doc_id in qdrant_doc_ids:
-        try:
-            data = pg_store.get_doc(KB_COLLECTION, _fs_key(doc_id))
-            if data is None:
-                orphan_ids.append(doc_id)
-            elif data.get("deleted_at") is not None:
-                orphan_ids.append(doc_id)
-        except Exception:
-            pass
+    # Batch: load all doc keys from PG in one query, then compare
+    all_docs = pg_store.stream_docs(KB_COLLECTION)
+    live_ids: set[str] = set()
+    for doc in all_docs:
+        if doc.get("deleted_at") is None:
+            doc_id = doc.get("document_id", doc.get("_key", ""))
+            live_ids.add(doc_id)
+    orphan_ids = [did for did in qdrant_doc_ids if did not in live_ids]
 
     if payload.dry_run:
         to_delete = orphan_ids[: payload.max_delete]
