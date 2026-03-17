@@ -1,3 +1,7 @@
+# ROLE: MONITOR-ONLY (not blocking)
+# This workflow satisfies branch protection rules.
+# Blocking checks: quality-gate.yml (lint), guard_bootstrap.yml (guard)
+# To add real checks: create tool scripts in scripts/quality-gate/tools/
 name: Pass Gate
 on:
   pull_request:
@@ -9,7 +13,8 @@ jobs:
   pass-gate:
     runs-on: ubuntu-latest
     steps:
-      - name: Green skip — no Apply here
+      - name: Monitor gate (not blocking)
         run: |
-          echo "::notice::Pass Gate is monitor-only; no GCP creds → green."
+          echo "::notice::Pass Gate is MONITOR-ONLY. Blocking checks: quality-gate.yml, guard_bootstrap.yml"
+          echo "To convert to blocking: add real test steps above this line."
           exit 0

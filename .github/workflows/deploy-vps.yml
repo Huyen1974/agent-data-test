@@ -97,7 +97,8 @@ jobs:
             VEC_RATIO=$(echo "$HEALTH_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data_integrity',{}).get('ratio',0))" 2>/dev/null || echo "0")
             echo "Vector sync_status: $SYNC_STATUS (ratio: $VEC_RATIO)"
             if [[ "$SYNC_STATUS" == "critical" ]]; then
-              echo "::warning::Vector sync is critical (ratio=$VEC_RATIO). Run POST /kb/audit-sync with auto_heal=true."
+              echo "::error::Vector sync is critical (ratio=$VEC_RATIO). Run POST /kb/audit-sync with auto_heal=true."
+              FAILED=1
             fi
 
             if [[ $FAILED -ne 0 ]]; then
