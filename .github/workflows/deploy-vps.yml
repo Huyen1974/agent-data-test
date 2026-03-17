@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'agent_data/**'
+      - 'dot/**'
       - 'Dockerfile'
       - 'requirements*.txt'
       - 'pyproject.toml'
