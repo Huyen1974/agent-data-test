@@ -77,10 +77,11 @@ case "$tool_lower" in
     echo "[quality-gate] Simulating custom script run"
     ;;
   *)
-    echo "[quality-gate] Unknown tool '$tool'; treating as informational" >&2
+    echo "[quality-gate] ERROR: Unknown tool '$tool' — no test executed" >&2
+    exit 1
     ;;
  esac
 
-# If external command execution is needed, the matrix command should be customised.
-# Default behaviour is success with exit code 0.
-exit 0
+# Known tools without actual implementation → FAIL (not fake PASS)
+echo "[quality-gate] ERROR: Tool '$tool' has no implementation. Add script to tools/ or set QUALITY_GATE_TOOL_COMMAND_${tool_upper}." >&2
+exit 1
