@@ -21,12 +21,13 @@ def stub_vector_store(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.unit
-def test_ingest_gcs_uri_returns_disabled():
+def test_ingest_gcs_uri_returns_disabled(monkeypatch):
     """Posting a GCS URI to /ingest returns a disabled message."""
+    monkeypatch.setenv("API_KEY", "secret")
     client = TestClient(server.app)
 
     payload = {"text": "gs://test-bucket/test.pdf"}
-    resp = client.post("/ingest", json=payload)
+    resp = client.post("/ingest", json=payload, headers={"x-api-key": "secret"})
 
     assert resp.status_code == 202
     body = resp.json()
