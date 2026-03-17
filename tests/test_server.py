@@ -16,7 +16,7 @@ def stub_vector_store(monkeypatch: pytest.MonkeyPatch):
     store.update_metadata.return_value = VectorSyncResult(status="skipped")
 
     monkeypatch.setattr(server.vector_store, "get_vector_store", lambda: store)
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     return store
 
 
@@ -26,7 +26,9 @@ def test_ingest_gcs_uri_returns_disabled():
     client = TestClient(server.app)
 
     payload = {"text": "gs://test-bucket/test.pdf"}
-    resp = client.post("/ingest", json=payload)
+    resp = client.post(
+        "/ingest", json=payload, headers={"X-API-Key": "test-api-key-for-ci"}
+    )
 
     assert resp.status_code == 202
     body = resp.json()
@@ -43,7 +45,9 @@ def test_ingest_inline_text_returns_202(
     client = TestClient(server.app)
 
     payload = {"text": "Some inline knowledge text"}
-    resp = client.post("/ingest", json=payload)
+    resp = client.post(
+        "/ingest", json=payload, headers={"X-API-Key": "test-api-key-for-ci"}
+    )
 
     assert resp.status_code == 202
     assert isinstance(resp.json().get("content"), str)
@@ -62,7 +66,9 @@ def test_query_knowledge_calls_agent_llm_response(mock_agent: MagicMock):
     mock_agent.set_session = MagicMock()
 
     payload = {"query": "Hello", "routing": {"noop_qdrant": True}}
-    resp = client.post("/chat", json=payload)
+    resp = client.post(
+        "/chat", json=payload, headers={"X-API-Key": "test-api-key-for-ci"}
+    )
 
     assert resp.status_code == 200
     mock_agent.llm_response.assert_called_once()
@@ -104,7 +110,9 @@ def test_query_knowledge_returns_context(
         "top_k": 3,
     }
 
-    resp = client.post("/chat", json=payload)
+    resp = client.post(
+        "/chat", json=payload, headers={"X-API-Key": "test-api-key-for-ci"}
+    )
 
     assert resp.status_code == 200
     data = resp.json()
@@ -146,7 +154,7 @@ def test_create_document_persists_payload(
     stub_vector_store: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     # Document does not exist yet
@@ -159,7 +167,9 @@ def test_create_document_persists_payload(
         "metadata": {"title": "Intro Doc", "tags": ["intro"]},
     }
 
-    resp = client.post("/documents", json=payload, headers={"x-api-key": "secret"})
+    resp = client.post(
+        "/documents", json=payload, headers={"X-API-Key": "test-api-key-for-ci"}
+    )
 
     assert resp.status_code == 200
     mock_set_doc.assert_called_once()
@@ -183,7 +193,7 @@ def test_create_document_conflict_returns_error(
     stub_vector_store: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     # Document already exists
@@ -196,7 +206,9 @@ def test_create_document_conflict_returns_error(
         "metadata": {"title": "Hello"},
     }
 
-    resp = client.post("/documents", json=payload, headers={"x-api-key": "secret"})
+    resp = client.post(
+        "/documents", json=payload, headers={"X-API-Key": "test-api-key-for-ci"}
+    )
 
     assert resp.status_code == 409
     detail = resp.json()
@@ -217,7 +229,7 @@ def test_create_document_sets_vector_status_ready(
     stub_vector_store: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     stub_vector_store.upsert_document.return_value = VectorSyncResult(status="ready")
@@ -233,7 +245,9 @@ def test_create_document_sets_vector_status_ready(
         "is_human_readable": True,
     }
 
-    resp = client.post("/documents", json=payload, headers={"x-api-key": "secret"})
+    resp = client.post(
+        "/documents", json=payload, headers={"X-API-Key": "test-api-key-for-ci"}
+    )
 
     assert resp.status_code == 200
     # vector_status is set via update_doc after vector sync
@@ -253,7 +267,7 @@ def test_update_document_revision_conflict(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     mock_get_doc.return_value = {
@@ -275,7 +289,7 @@ def test_update_document_revision_conflict(
     resp = client.put(
         "/documents/doc-123",
         json=payload,
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 409
@@ -296,7 +310,7 @@ def test_update_document_syncs_vector(
     stub_vector_store: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     stub_vector_store.upsert_document.return_value = VectorSyncResult(status="ready")
@@ -322,7 +336,7 @@ def test_update_document_syncs_vector(
     resp = client.put(
         "/documents/doc-123",
         json=payload,
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 200
@@ -347,7 +361,7 @@ def test_update_document_replaces_content_body(
     stub_vector_store: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     stub_vector_store.upsert_document.return_value = VectorSyncResult(status="ready")
@@ -373,7 +387,7 @@ def test_update_document_replaces_content_body(
     resp = client.put(
         "/documents/doc-abc",
         json=payload,
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 200
@@ -399,7 +413,7 @@ def test_move_document_updates_parent(
     stub_vector_store: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     stub_vector_store.update_metadata.return_value = VectorSyncResult(status="ready")
@@ -429,7 +443,7 @@ def test_move_document_updates_parent(
     resp = client.post(
         "/documents/doc-123/move",
         json=payload,
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 200
@@ -458,7 +472,7 @@ def test_move_document_minimal_payload_updates_parent(
 ):
     """Ensure the move API only requires new_parent_id and updates pg_store."""
 
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     stub_vector_store.update_metadata.return_value = VectorSyncResult(status="ready")
@@ -486,7 +500,7 @@ def test_move_document_minimal_payload_updates_parent(
     resp = client.post(
         "/documents/doc-xyz/move",
         json={"new_parent_id": "folder-new"},
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 200
@@ -507,7 +521,7 @@ def test_move_document_detects_cycle(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     doc_data = {
@@ -532,7 +546,7 @@ def test_move_document_detects_cycle(
     resp = client.post(
         "/documents/doc-123/move",
         json=payload,
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 400
@@ -552,12 +566,14 @@ def test_delete_document_marks_deleted(
     stub_vector_store: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     mock_get_doc.return_value = {"revision": 3}
 
-    resp = client.delete("/documents/doc-123", headers={"x-api-key": "secret"})
+    resp = client.delete(
+        "/documents/doc-123", headers={"X-API-Key": "test-api-key-for-ci"}
+    )
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "deleted"
@@ -581,7 +597,7 @@ def test_get_document_truncated_by_default(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     long_body = "A" * 1000
@@ -595,7 +611,7 @@ def test_get_document_truncated_by_default(
 
     resp = client.get(
         "/documents/knowledge/dev/long-doc.md",
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 200
@@ -615,7 +631,7 @@ def test_get_document_full_returns_complete(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     long_body = "B" * 1000
@@ -629,7 +645,7 @@ def test_get_document_full_returns_complete(
 
     resp = client.get(
         "/documents/knowledge/dev/full-doc.md?full=true",
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 200
@@ -647,14 +663,14 @@ def test_get_document_not_found(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     mock_get_doc.return_value = None
 
     resp = client.get(
         "/documents/knowledge/missing",
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
     assert resp.status_code == 404
 
@@ -667,7 +683,7 @@ def test_get_document_short_content_not_truncated(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     short_body = "Hello world"
@@ -679,7 +695,9 @@ def test_get_document_short_content_not_truncated(
         "deleted_at": None,
     }
 
-    resp = client.get("/documents/test/short", headers={"x-api-key": "secret"})
+    resp = client.get(
+        "/documents/test/short", headers={"X-API-Key": "test-api-key-for-ci"}
+    )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -701,7 +719,7 @@ def test_patch_document_replaces_string(
     stub_vector_store: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     mock_get_doc.return_value = {
@@ -720,7 +738,7 @@ def test_patch_document_replaces_string(
     resp = client.patch(
         "/documents/knowledge/dev/doc.md",
         json={"old_str": "Hello world", "new_str": "Hi earth"},
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 200
@@ -740,7 +758,7 @@ def test_patch_document_not_found(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     mock_get_doc.return_value = None
@@ -748,7 +766,7 @@ def test_patch_document_not_found(
     resp = client.patch(
         "/documents/knowledge/missing",
         json={"old_str": "foo", "new_str": "bar"},
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
     assert resp.status_code == 404
 
@@ -761,7 +779,7 @@ def test_patch_document_old_str_missing(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     mock_get_doc.return_value = {
@@ -774,7 +792,7 @@ def test_patch_document_old_str_missing(
     resp = client.patch(
         "/documents/test/doc",
         json={"old_str": "NOT IN CONTENT", "new_str": "bar"},
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
     assert resp.status_code == 409
     assert resp.json()["code"] == "NOT_FOUND_IN_CONTENT"
@@ -788,7 +806,7 @@ def test_patch_document_ambiguous_match(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     mock_get_doc.return_value = {
@@ -801,7 +819,7 @@ def test_patch_document_ambiguous_match(
     resp = client.patch(
         "/documents/test/doc",
         json={"old_str": "foo", "new_str": "qux"},
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
     assert resp.status_code == 409
     assert resp.json()["code"] == "AMBIGUOUS"
@@ -818,7 +836,7 @@ def test_batch_read_multiple_docs(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     doc_a = {
@@ -848,7 +866,7 @@ def test_batch_read_multiple_docs(
     resp = client.post(
         "/documents/batch",
         json={"paths": ["doc/a", "doc/b", "doc/missing"]},
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 200
@@ -876,7 +894,7 @@ def test_batch_read_full_mode(
     mock_ensure_pg: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     big_body = "C" * 800
@@ -891,7 +909,7 @@ def test_batch_read_full_mode(
     resp = client.post(
         "/documents/batch",
         json={"paths": ["doc/c"], "full": True},
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
 
     assert resp.status_code == 200
@@ -902,26 +920,26 @@ def test_batch_read_full_mode(
 
 @pytest.mark.unit
 def test_batch_read_empty_paths_rejected(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     resp = client.post(
         "/documents/batch",
         json={"paths": []},
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
     assert resp.status_code == 422  # validation error
 
 
 @pytest.mark.unit
 def test_batch_read_exceeds_max_rejected(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     client = TestClient(server.app)
 
     paths = [f"doc/{i}" for i in range(21)]
     resp = client.post(
         "/documents/batch",
         json={"paths": paths},
-        headers={"x-api-key": "secret"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
     )
     assert resp.status_code == 422  # validation error
