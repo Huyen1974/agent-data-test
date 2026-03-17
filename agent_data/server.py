@@ -490,7 +490,12 @@ async def serve_openapi_spec():
     return RedirectResponse(url="/openapi.json", status_code=301)
 
 
-@app.post("/ingest", response_model=ChatResponse, status_code=202, dependencies=[Depends(require_api_key)])
+@app.post(
+    "/ingest",
+    response_model=ChatResponse,
+    status_code=202,
+    dependencies=[Depends(require_api_key)],
+)
 async def ingest(message: ChatMessage):
     """Ingest inline text into the knowledge base.
 
