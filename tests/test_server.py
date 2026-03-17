@@ -38,13 +38,14 @@ def test_ingest_gcs_uri_returns_disabled(monkeypatch):
 @patch("agent_data.server._ensure_pg", return_value=True)
 @patch("agent_data.pg_store.set_doc")
 def test_ingest_inline_text_returns_202(
-    mock_set_doc: MagicMock, mock_ensure_pg: MagicMock
+    mock_set_doc: MagicMock, mock_ensure_pg: MagicMock, monkeypatch
 ):
     """Posting inline text to /ingest returns 202."""
+    monkeypatch.setenv("API_KEY", "secret")
     client = TestClient(server.app)
 
     payload = {"text": "Some inline knowledge text"}
-    resp = client.post("/ingest", json=payload)
+    resp = client.post("/ingest", json=payload, headers={"x-api-key": "secret"})
 
     assert resp.status_code == 202
     assert isinstance(resp.json().get("content"), str)
@@ -52,7 +53,8 @@ def test_ingest_inline_text_returns_202(
 
 @pytest.mark.unit
 @patch("agent_data.server.agent")
-def test_query_knowledge_calls_agent_llm_response(mock_agent: MagicMock):
+def test_query_knowledge_calls_agent_llm_response(mock_agent: MagicMock, monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-key")
     client = TestClient(server.app)
 
     mock_reply = MagicMock()
@@ -63,7 +65,7 @@ def test_query_knowledge_calls_agent_llm_response(mock_agent: MagicMock):
     mock_agent.set_session = MagicMock()
 
     payload = {"query": "Hello", "routing": {"noop_qdrant": True}}
-    resp = client.post("/chat", json=payload)
+    resp = client.post("/chat", json=payload, headers={"x-api-key": "test-key"})
 
     assert resp.status_code == 200
     mock_agent.llm_response.assert_called_once()
@@ -77,8 +79,9 @@ def test_query_knowledge_calls_agent_llm_response(mock_agent: MagicMock):
 @patch("agent_data.server._ensure_pg", return_value=True)
 @patch("agent_data.pg_store.stream_docs")
 def test_query_knowledge_returns_context(
-    mock_stream: MagicMock, mock_ensure_pg: MagicMock, mock_agent: MagicMock
+    mock_stream: MagicMock, mock_ensure_pg: MagicMock, mock_agent: MagicMock, monkeypatch
 ):
+    monkeypatch.setenv("API_KEY", "test-key")
     client = TestClient(server.app)
 
     mock_agent.history = None
@@ -105,7 +108,7 @@ def test_query_knowledge_returns_context(
         "top_k": 3,
     }
 
-    resp = client.post("/chat", json=payload)
+    resp = client.post("/chat", json=payload, headers={"x-api-key": "test-key"})
 
     assert resp.status_code == 200
     data = resp.json()
