@@ -53,9 +53,35 @@ jobs:
             docker build -t agent-data-local:latest .
 
             echo ""
-            echo "=== Deploying ==="
+            echo "=== Updating docker-compose to use local image ==="
             cd /opt/incomex/docker
-            docker compose up -d --no-build agent-data
+            # Replace the GCP artifact registry image with locally-built image
+            # and ensure PORT=8000 for backward compatibility with nginx
+            python3 -c "
+            import yaml
+            with open('docker-compose.yml') as f:
+                dc = yaml.safe_load(f)
+            svc = dc['services']['agent-data']
+            old_image = svc.get('image', '(none)')
+            svc['image'] = 'agent-data-local:latest'
+            env = svc.get('environment', {})
+            if isinstance(env, list):
+                env_dict = {}
+                for item in env:
+                    k, v = item.split('=', 1)
+                    env_dict[k] = v
+                env = env_dict
+            env['PORT'] = '8000'
+            svc['environment'] = env
+            with open('docker-compose.yml', 'w') as f:
+                yaml.dump(dc, f, default_flow_style=False, sort_keys=False)
+            print(f'Image updated: {old_image} -> agent-data-local:latest')
+            print(f'PORT set to 8000')
+            "
+
+            echo ""
+            echo "=== Deploying ==="
+            docker compose up -d --no-build --force-recreate agent-data
 
             # Agent Data needs 35-45s warm-up for search to work
             echo "Waiting 45s for warm-up..."
