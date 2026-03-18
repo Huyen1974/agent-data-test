@@ -16,7 +16,7 @@ jobs:
       policy: ${{ steps.extract.outputs.policy }}
       non-blocking-threshold: ${{ steps.extract.outputs.non_blocking_threshold }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - id: extract
         name: Generate matrix from webapp.test-suite.yaml
@@ -31,7 +31,7 @@ jobs:
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Prepare results directory
         run: mkdir -p quality-results
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload test result artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: quality-result-${{ matrix.test_id }}
           path: quality-results/${{ matrix.test_id }}.json
@@ -95,10 +95,10 @@ jobs:
     if: always()
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Download test results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           pattern: quality-result-*
           path: quality-results

@@ -25,17 +25,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Authenticate to Google Cloud (WIF)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed  # v2
         with:
           workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
           service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
 
       - name: Fetch live E2E secrets
         id: fetch-secrets
-        uses: google-github-actions/get-secret-manager-secrets@v1
+        uses: google-github-actions/get-secretmanager-secrets@4d6d3dfd94110800dda8d84109cb6da0f6a5919d  # v1
         with:
           secrets: |
             qdrant_api_key:projects/${{ env.GCP_PROJECT_ID }}/secrets/Qdrant_agent_data_N1D8R2vC0_5
@@ -43,10 +43,10 @@ jobs:
             openai_api_key:projects/${{ env.GCP_PROJECT_ID }}/secrets/OPENAI_API_KEY
 
       - name: Setup gcloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f  # v2
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
