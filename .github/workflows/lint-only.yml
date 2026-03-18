@@ -24,8 +24,8 @@ jobs:
   lint:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
@@ -105,8 +105,8 @@ jobs:
       TF_IN_AUTOMATION: "1"
       TF_CLI_ARGS: "-no-color"
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3
         with:
           terraform_version: "1.8.*"
 
@@ -124,7 +124,7 @@ jobs:
     needs: lint
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Dry-run deploy manage_qdrant
         run: bash functions/manage_qdrant/deploy.sh
@@ -136,8 +136,8 @@ jobs:
     env:
       QDRANT_FN_URL: "https://mocki.io/v1/8f2fa8b8-88d9-4c4c-9d02-5f2414e7ca10"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
@@ -164,8 +164,8 @@ jobs:
     runs-on: ubuntu-22.04
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
@@ -178,7 +178,7 @@ jobs:
         run: python scripts/qdrant_cost_calc.py
 
       - name: Upload cost artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: qdrant-cost-report
           path: qdrant_cost.json
@@ -188,8 +188,8 @@ jobs:
     runs-on: ubuntu-22.04
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
           cache: pip
@@ -224,13 +224,13 @@ jobs:
       TF_VAR_qdrant_region: "us-east4"
       SKIP_IMPORT: 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Prep plugin cache dir
         run: mkdir -p "${{ env.TF_PLUGIN_CACHE_DIR }}"
 
       - name: Cache terraform providers
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: tf-plugins-${{ runner.os }}-${{ hashFiles('terraform/.terraform.lock.hcl') }}
@@ -257,14 +257,14 @@ jobs:
         id: auth-wif
         if: ${{ github.event_name != 'pull_request' && steps.detect.outputs.HAS_WIF == 'true' }}
         continue-on-error: false # hardened
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed  # v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Fallback authentication (JSON key)
         if: ${{ github.event_name != 'pull_request' && steps.auth-wif.outcome != 'success' }}
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed  # v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY_JSON }}
           create_credentials_file: true
@@ -281,7 +281,7 @@ jobs:
           # Test GCP access to ensure auth worked
           gcloud auth list --filter=status:ACTIVE --format="value(account)" | head -1
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd  # v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
