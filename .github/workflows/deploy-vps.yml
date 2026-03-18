@@ -40,11 +40,14 @@ jobs:
 
       - name: Build & Deploy on VPS
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2  # v1
+        env:
+          PG_PASSWORD: ${{ secrets.VPS_PG_PASSWORD }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 10m
+          envs: PG_PASSWORD
           script: |
             set -euo pipefail
             cd /opt/incomex/docker/agent-data-repo
@@ -53,12 +56,10 @@ jobs:
             docker build -t agent-data-local:latest .
 
             echo ""
-            echo "=== Updating docker-compose to use local image ==="
+            echo "=== Updating docker-compose ==="
             cd /opt/incomex/docker
-            # Replace the GCP artifact registry image with locally-built image
-            # and ensure PORT=8000 for backward compatibility with nginx
             python3 -c "
-            import yaml
+            import yaml, os
             with open('docker-compose.yml') as f:
                 dc = yaml.safe_load(f)
             svc = dc['services']['agent-data']
@@ -72,11 +73,16 @@ jobs:
                     env_dict[k] = v
                 env = env_dict
             env['PORT'] = '8000'
+            env['PG_HOST'] = 'postgres'
+            env['PG_PORT'] = '5432'
+            env['PG_USER'] = 'incomex'
+            env['PG_PASSWORD'] = os.environ['PG_PASSWORD']
+            env['PG_DATABASE'] = 'incomex_metadata'
             svc['environment'] = env
             with open('docker-compose.yml', 'w') as f:
                 yaml.dump(dc, f, default_flow_style=False, sort_keys=False)
-            print(f'Image updated: {old_image} -> agent-data-local:latest')
-            print(f'PORT set to 8000')
+            print(f'Image: {old_image} -> agent-data-local:latest')
+            print('PG env vars configured')
             "
 
             echo ""

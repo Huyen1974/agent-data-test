@@ -85,3 +85,25 @@ jobs:
             except Exception as e:
                 print(f'init_pool failed: {e}')
             " 2>&1
+
+            echo ""
+            echo "=== Postgres container credentials ==="
+            docker exec postgres printenv POSTGRES_USER 2>/dev/null || echo "POSTGRES_USER: (not set)"
+            docker exec postgres printenv POSTGRES_DB 2>/dev/null || echo "POSTGRES_DB: (not set)"
+            echo "POSTGRES_PASSWORD: $(docker exec postgres printenv POSTGRES_PASSWORD 2>/dev/null | head -c 3)***" || echo "POSTGRES_PASSWORD: (not set)"
+
+            echo ""
+            echo "=== Postgres databases ==="
+            docker exec postgres psql -U postgres -c "\l" 2>/dev/null || echo "Cannot list databases"
+
+            echo ""
+            echo "=== Postgres users ==="
+            docker exec postgres psql -U postgres -c "\du" 2>/dev/null || echo "Cannot list users"
+
+            echo ""
+            echo "=== Check incomex_metadata tables ==="
+            docker exec postgres psql -U postgres -d incomex_metadata -c "\dt" 2>/dev/null || echo "Cannot list tables"
+
+            echo ""
+            echo "=== Docker network inspect (DNS) ==="
+            docker network inspect docker_incomex --format '{{range .Containers}}{{.Name}}: {{.IPv4Address}}{{"\n"}}{{end}}' 2>/dev/null || echo "Cannot inspect network"
