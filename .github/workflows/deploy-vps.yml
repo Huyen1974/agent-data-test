@@ -41,7 +41,7 @@ jobs:
       - name: Build & Deploy on VPS
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2  # v1
         env:
-          PG_PASSWORD: ${{ secrets.VPS_PG_PASSWORD }}
+          PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: root
