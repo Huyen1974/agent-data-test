@@ -37,7 +37,7 @@ authlib==1.6.0
     # via fastmcp
 babel==2.17.0
     # via courlan
-beautifulsoup4==4.13.4
+beautifulsoup4==4.14.3
     # via
     #   bs4
     #   markdownify
