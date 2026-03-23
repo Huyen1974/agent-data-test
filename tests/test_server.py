@@ -3,6 +3,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.langroid_test_stubs import install_langroid_stubs
+
+install_langroid_stubs()
+
 import agent_data.server as server
 from agent_data.vector_store import VectorSyncResult
 
@@ -18,6 +22,21 @@ def stub_vector_store(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(server.vector_store, "get_vector_store", lambda: store)
     monkeypatch.setenv("API_KEY", "test-api-key-for-ci")
     return store
+
+
+@pytest.fixture(autouse=True)
+def stub_session_gate(monkeypatch: pytest.MonkeyPatch):
+    def _ok(**kwargs):
+        return server.SessionReadinessResult(
+            ready=True,
+            status="PASS",
+            session_id=kwargs.get("session_id", "test-session"),
+            agent=kwargs.get("agent_name", "test-agent"),
+            transport=kwargs.get("transport", "test-transport"),
+            attempts=1,
+        )
+
+    monkeypatch.setattr(server, "_ensure_session_ready_result", _ok)
 
 
 @pytest.mark.unit
@@ -139,6 +158,54 @@ def test_health_endpoint_ok():
     assert resp.status_code == 200
     body = resp.json()
     assert {"status", "version", "langroid_available"}.issubset(body.keys())
+
+
+@pytest.mark.unit
+def test_session_ready_endpoint_returns_gate_result():
+    client = TestClient(server.app)
+    resp = client.post(
+        "/session-ready",
+        json={"session_id": "session-gate-1", "agent": "codex", "transport": "cli"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "PASS"
+    assert body["ready"] is True
+    assert body["session_id"] == "session-gate-1"
+
+
+@pytest.mark.unit
+def test_session_ready_endpoint_returns_not_ready(monkeypatch: pytest.MonkeyPatch):
+    client = TestClient(server.app)
+
+    def _not_ready(**kwargs):
+        return server.SessionReadinessResult(
+            ready=False,
+            status="NOT_READY",
+            session_id=kwargs.get("session_id", "session-gate-2"),
+            agent=kwargs.get("agent_name", "codex"),
+            transport=kwargs.get("transport", "cli"),
+            attempts=4,
+            failure_stage="sentinel_query",
+            classification="tool_route_down",
+            error="Sentinel query returned empty context",
+        )
+
+    monkeypatch.setattr(server, "_ensure_session_ready_result", _not_ready)
+
+    resp = client.post(
+        "/session-ready",
+        json={"session_id": "session-gate-2", "agent": "codex", "transport": "cli"},
+        headers={"X-API-Key": "test-api-key-for-ci"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "NOT_READY"
+    assert body["ready"] is False
+    assert body["classification"] == "tool_route_down"
 
 
 @pytest.mark.unit

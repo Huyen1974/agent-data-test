@@ -34,6 +34,8 @@ AGENT_DATA_API_KEY_CLOUD = os.getenv("AGENT_DATA_API_KEY_CLOUD", "")
 # Track which endpoint is currently active
 _active_url: str = AGENT_DATA_URL
 _active_api_key: str = AGENT_DATA_API_KEY_LOCAL
+_STDIO_SESSION_ID = os.getenv("AGENT_DATA_SESSION_ID", f"stdio:{os.getpid()}")
+_session_ready_result: dict[str, object] | None = None
 
 
 def _get_auth_headers(url: str | None = None) -> dict[str, str]:
@@ -114,6 +116,40 @@ async def _request_with_fallback(
     )
 
 
+async def _ensure_remote_session_ready(client: httpx.AsyncClient) -> dict[str, object]:
+    """Run the shared session gate once per stdio process."""
+    global _session_ready_result
+
+    if _session_ready_result and _session_ready_result.get("ready"):
+        return _session_ready_result
+
+    response = await _request_with_fallback(
+        client,
+        "POST",
+        "/session-ready",
+        json={
+            "session_id": _STDIO_SESSION_ID,
+            "agent": "mcp-stdio",
+            "transport": "stdio",
+        },
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Session gate HTTP {response.status_code}: {response.text[:200]}"
+        )
+
+    data = response.json()
+    if not data.get("ready"):
+        raise RuntimeError(
+            "Session gate failed: "
+            f"{data.get('classification')}/{data.get('failure_stage')} "
+            f"{data.get('error', '')}".strip()
+        )
+
+    _session_ready_result = data
+    return data
+
+
 # Create MCP server
 server = Server("agent-data")
 
@@ -131,6 +167,10 @@ async def list_tools() -> list[Tool]:
                     "query": {
                         "type": "string",
                         "description": "The search query in natural language",
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Optional session identifier for readiness gate and chat history binding",
                     },
                 },
                 "required": ["query"],
@@ -331,13 +371,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
+            await _ensure_remote_session_ready(client)
+
             if name == "search_knowledge":
                 query = arguments.get("query", "")
+                session_id = arguments.get("session_id", _STDIO_SESSION_ID)
                 response = await _request_with_fallback(
                     client,
                     "POST",
                     "/chat",
-                    json={"message": query},
+                    json={"message": query, "session_id": session_id},
                 )
                 if response.status_code == 200:
                     data = response.json()

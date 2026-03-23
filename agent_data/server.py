@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from datetime import UTC, datetime
+from hashlib import sha1
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -28,6 +29,14 @@ from agent_data.event_system import (
 )
 from agent_data.main import AgentData, AgentDataConfig
 from agent_data.resilient_client import health_registry, resilient_lifespan
+from agent_data.session_readiness import (
+    CLASS_BACKEND_DOWN,
+    CLASS_SESSION_BINDING_FAILED,
+    CLASS_TOOL_ROUTE_DOWN,
+    SessionGateError,
+    SessionReadinessGate,
+    SessionReadinessResult,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -264,6 +273,30 @@ class QueryKnowledgeRequest(BaseModel):
         return (self.query or self.text or self.message or "").strip()
 
 
+class SessionReadyRequest(BaseModel):
+    session_id: str | None = None
+    agent: str = "unknown"
+    transport: str = "unknown"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SessionReadyResponse(BaseModel):
+    status: str
+    ready: bool
+    session_id: str
+    agent: str
+    transport: str
+    attempts: int
+    failure_stage: str | None = None
+    classification: str | None = None
+    error: str | None = None
+    sentinel_hits: int = 0
+    latency_ms: int = 0
+    cached: bool = False
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class DocumentMoveRequest(BaseModel):
     """Payload for moving a document under a different parent."""
 
@@ -336,6 +369,163 @@ except Exception as exc:
         agent = AgentData(agent_config)
     else:
         raise
+
+
+SESSION_SENTINEL_QUERY = "agent data access confirmation"
+SESSION_SENTINEL_DOC_ID = (
+    "knowledge/current-state/reports/gpt-agent-data-access-confirmation.md"
+)
+
+
+def _build_transport_session_id(request: Request, *, prefix: str) -> str:
+    explicit = request.headers.get("X-Session-ID") or request.headers.get(
+        "Mcp-Session-Id"
+    )
+    if explicit:
+        return explicit
+
+    client_host = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("User-Agent", "unknown")
+    fingerprint = sha1(f"{prefix}|{client_host}|{user_agent}".encode()).hexdigest()[
+        :16
+    ]
+    return f"{prefix}:{fingerprint}"
+
+
+def _session_health_check() -> dict[str, Any]:
+    services = health_registry.summary()
+    overall = health_registry.overall_status()
+
+    try:
+        pg_ok, pg_latency = pg_store.probe()
+    except Exception as exc:
+        raise SessionGateError(
+            classification=CLASS_BACKEND_DOWN,
+            failure_stage="health",
+            message=f"PostgreSQL probe failed: {exc}",
+            details={"service": "postgres"},
+        ) from exc
+
+    if not pg_ok:
+        raise SessionGateError(
+            classification=CLASS_BACKEND_DOWN,
+            failure_stage="health",
+            message="PostgreSQL probe returned unhealthy",
+            details={"service": "postgres"},
+        )
+
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        raise SessionGateError(
+            classification=CLASS_BACKEND_DOWN,
+            failure_stage="health",
+            message="OPENAI_API_KEY is not configured",
+            details={"service": "openai"},
+        )
+
+    return {
+        "overall_status": overall,
+        "services": services,
+        "postgres_probe": {"status": "ok", "latency_ms": round(pg_latency, 2)},
+        "openai_key_present": True,
+        "qdrant_status": services.get("qdrant", {}).get("status", "unknown"),
+    }
+
+
+def _session_binding_check(session_id: str) -> dict[str, Any]:
+    try:
+        agent.set_session(session_id)
+    except Exception as exc:
+        raise SessionGateError(
+            classification=CLASS_SESSION_BINDING_FAILED,
+            failure_stage="session_binding",
+            message=f"Failed to bind session: {exc}",
+            details={"session_id": session_id},
+        ) from exc
+
+    db_enabled = getattr(agent, "db", None) is not None
+    history = getattr(agent, "history", None)
+    if db_enabled and history is None:
+        raise SessionGateError(
+            classification=CLASS_SESSION_BINDING_FAILED,
+            failure_stage="session_binding",
+            message="Session history not available after binding",
+            details={"session_id": session_id, "db_enabled": True},
+        )
+
+    message_count = 0
+    if history is not None and hasattr(history, "get_messages"):
+        try:
+            message_count = len(history.get_messages())  # type: ignore[call-arg]
+        except Exception as exc:
+            raise SessionGateError(
+                classification=CLASS_SESSION_BINDING_FAILED,
+                failure_stage="session_binding",
+                message=f"Session history read failed: {exc}",
+                details={"session_id": session_id},
+            ) from exc
+
+    return {
+        "db_enabled": db_enabled,
+        "history_backend": type(history).__name__ if history is not None else None,
+        "message_count": message_count,
+    }
+
+
+def _session_sentinel_check() -> dict[str, Any]:
+    known_good_exists = False
+    try:
+        known_good_exists = (
+            pg_store.get_doc(KB_COLLECTION, _fs_key(SESSION_SENTINEL_DOC_ID)) is not None
+        )
+    except Exception:
+        known_good_exists = False
+
+    try:
+        contexts = _retrieve_query_context(
+            query=SESSION_SENTINEL_QUERY,
+            filters=None,
+            top_k=1,
+        )
+    except Exception as exc:
+        raise SessionGateError(
+            classification=CLASS_TOOL_ROUTE_DOWN,
+            failure_stage="sentinel_query",
+            message=f"Sentinel query failed: {exc}",
+            details={
+                "query": SESSION_SENTINEL_QUERY,
+                "known_good_doc": known_good_exists,
+            },
+        ) from exc
+
+    top_document = contexts[0].document_id if contexts else None
+    return {
+        "query": SESSION_SENTINEL_QUERY,
+        "hits": len(contexts),
+        "top_document": top_document,
+        "known_good_doc": known_good_exists,
+    }
+
+
+session_readiness_gate = SessionReadinessGate(
+    health_check=_session_health_check,
+    bind_session=_session_binding_check,
+    sentinel_check=_session_sentinel_check,
+)
+
+
+def _ensure_session_ready_result(
+    *,
+    session_id: str,
+    agent_name: str,
+    transport: str,
+    request_id: str | None = None,
+) -> SessionReadinessResult:
+    return session_readiness_gate.ensure_ready(
+        session_id=session_id,
+        agent=agent_name,
+        transport=transport,
+        request_id=request_id,
+    )
 
 
 def _sync_vector_entry(
@@ -482,6 +672,26 @@ async def root():
 async def health():
     """Health check endpoint."""
     return await root()
+
+
+@app.post(
+    "/session-ready",
+    response_model=SessionReadyResponse,
+    dependencies=[Depends(require_api_key)],
+)
+def session_ready(payload: SessionReadyRequest, request: Request):
+    """Verify a transport/session is ready before starting real work."""
+    session_id = payload.session_id or _build_transport_session_id(
+        request,
+        prefix=f"session-ready:{payload.transport}",
+    )
+    result = _ensure_session_ready_result(
+        session_id=session_id,
+        agent_name=payload.agent,
+        transport=payload.transport,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return SessionReadyResponse(**result.to_dict())
 
 
 @app.get("/chatgpt-openapi.json", include_in_schema=False)
@@ -2326,7 +2536,10 @@ async def mcp_info():
     }
 
 
-async def _dispatch_mcp_tool(tool_name: str, args: dict) -> dict:
+async def _dispatch_mcp_tool(
+    tool_name: str,
+    args: dict,
+) -> dict:
     """Internal dispatch: call Python functions directly, NO HTTP.
 
     This is the single dispatch point for all MCP tool calls, used by
