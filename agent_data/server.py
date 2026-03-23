@@ -386,9 +386,7 @@ def _build_transport_session_id(request: Request, *, prefix: str) -> str:
 
     client_host = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("User-Agent", "unknown")
-    fingerprint = sha1(f"{prefix}|{client_host}|{user_agent}".encode()).hexdigest()[
-        :16
-    ]
+    fingerprint = sha1(f"{prefix}|{client_host}|{user_agent}".encode()).hexdigest()[:16]
     return f"{prefix}:{fingerprint}"
 
 
@@ -475,7 +473,8 @@ def _session_sentinel_check() -> dict[str, Any]:
     known_good_exists = False
     try:
         known_good_exists = (
-            pg_store.get_doc(KB_COLLECTION, _fs_key(SESSION_SENTINEL_DOC_ID)) is not None
+            pg_store.get_doc(KB_COLLECTION, _fs_key(SESSION_SENTINEL_DOC_ID))
+            is not None
         )
     except Exception:
         known_good_exists = False
