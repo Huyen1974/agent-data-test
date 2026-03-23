@@ -612,7 +612,7 @@ rpds-py==0.26.0
     #   referencing
 rsa==4.9.1
     # via google-auth
-scikit-learn==1.7.0
+scikit-learn==1.7.2
     # via agent-data-langroid (pyproject.toml)
 scipy==1.16.0
     # via scikit-learn
