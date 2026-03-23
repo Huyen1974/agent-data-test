@@ -178,7 +178,7 @@ jobs:
         run: python scripts/qdrant_cost_calc.py
 
       - name: Upload cost artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
         with:
           name: qdrant-cost-report
           path: qdrant_cost.json
