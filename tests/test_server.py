@@ -7,8 +7,8 @@ from tests.langroid_test_stubs import install_langroid_stubs
 
 install_langroid_stubs()
 
-import agent_data.server as server
-from agent_data.vector_store import VectorSyncResult
+import agent_data.server as server  # noqa: E402
+from agent_data.vector_store import VectorSyncResult  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

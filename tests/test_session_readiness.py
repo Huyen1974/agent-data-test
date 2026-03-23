@@ -7,7 +7,7 @@ from tests.langroid_test_stubs import install_langroid_stubs
 
 install_langroid_stubs()
 
-from agent_data.session_readiness import (
+from agent_data.session_readiness import (  # noqa: E402
     CLASS_SESSION_BINDING_FAILED,
     CLASS_TOOL_ROUTE_DOWN,
     SessionGateError,

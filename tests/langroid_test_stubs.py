@@ -113,7 +113,9 @@ def install_langroid_stubs() -> None:
                 pass
 
             def getconn(self):
-                raise RuntimeError("psycopg2 pool stub should not be used in offline tests")
+                raise RuntimeError(
+                    "psycopg2 pool stub should not be used in offline tests"
+                )
 
             def putconn(self, conn) -> None:
                 return None
